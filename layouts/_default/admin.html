@@ -9,6 +9,13 @@
     <p class="text-sm text-m-on-surface-variant">{{ if $isEn }}Please sign in via Cloudflare Access to manage the library.{{ else }}请先通过 Cloudflare Access 登录后再管理书库。{{ end }}</p>
   </div>
 
+  {{/* 存储未开放提示（STORAGE_ENABLED=false 时显示） */}}
+  <div id="adm-closed" class="hidden text-center py-20">
+    <div class="w-16 h-16 mx-auto mb-4 opacity-60">{{ partial "icon.html" (dict "name" "book" "uid" "closed") }}</div>
+    <p class="text-base font-bold mb-2">{{ if $isEn }}Uploads not open yet{{ else }}上传暂未开放{{ end }}</p>
+    <p class="text-sm text-m-on-surface-variant">{{ if $isEn }}The library is being set up. Please check back later.{{ else }}书库正在整理中，稍后再来。{{ end }}</p>
+  </div>
+
   <div id="adm-main" class="hidden">
     {{/* 上传区 */}}
     <section class="mb-10">
@@ -649,7 +656,16 @@ document.getElementById('adm-edit-save').addEventListener('click', async functio
 /* ============ 启动 ============ */
 async function boot(){
   var auth = document.getElementById('adm-auth');
+  var closed = document.getElementById('adm-closed');
   var main = document.getElementById('adm-main');
+  /* 先查存储开关：未启用直接显示「上传暂未开放」 */
+  try{
+    var st = await api('/api/status');
+    if(st.ok){
+      var sj = await st.json();
+      if(!sj.storage_enabled){ closed.classList.remove('hidden'); return; }
+    }
+  }catch(e){}
   try{
     var r = await api('/api/admin/books');
     if(r.status === 401 || r.status === 403){ auth.classList.remove('hidden'); return; }

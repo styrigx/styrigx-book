@@ -1,7 +1,7 @@
 // GET /api/shelf/cover/:id — 书单封面（公开，无需 Access）
 // 这是 private 书封面的唯一公开出口：必须严格校验 in_shelf=1。
 // 查不到 / 无封面 → 404。CORS 仅允许 https://styrigx.com；Cache-Control: public, max-age=300。
-import { err, methodNotAllowed } from '../../_lib.js';
+import { err, methodNotAllowed, storageEnabled } from '../../_lib.js';
 
 const CORS_ORIGIN = 'https://styrigx.com';
 
@@ -30,6 +30,9 @@ export async function onRequest(context) {
     .bind(id)
     .first();
   if (!row || !row.cover_key) return err('not found', 404);
+
+  // 存储未启用时直接 404（优雅降级）
+  if (!storageEnabled(env)) return err('not found', 404);
 
   const obj = await env.BOOKS.get(row.cover_key);
   if (!obj) return err('not found', 404);

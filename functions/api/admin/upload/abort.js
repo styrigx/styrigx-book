@@ -1,6 +1,6 @@
 // POST /api/admin/upload/abort — 取消 multipart 上传，需 Access JWT
 // body: {uploadId, key} → {ok:true}（幂等：上传已不存在也视为成功）
-import { json, err, methodNotAllowed, BOOK_KEY_RE } from '../../_lib.js';
+import { json, err, methodNotAllowed, BOOK_KEY_RE, storageEnabled, storageDisabledResponse } from '../../_lib.js';
 import { requireAccess } from '../../_access.js';
 
 export async function onRequest(context) {
@@ -8,6 +8,7 @@ export async function onRequest(context) {
   if (request.method !== 'POST') return methodNotAllowed('POST');
   const { response } = await requireAccess(context);
   if (response) return response;
+  if (!storageEnabled(env)) return storageDisabledResponse();
 
   let body;
   try {

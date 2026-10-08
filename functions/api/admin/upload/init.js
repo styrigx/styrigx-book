@@ -1,7 +1,7 @@
 // POST /api/admin/upload/init — 初始化 R2 multipart 上传，需 Access JWT
 // body: {filename,size,sha256,format}
 // sha256 已存在 → 409 {exists:true, book:{id,title}}；否则 → {uploadId, key}
-import { json, err, methodNotAllowed, BOOK_KEY_RE } from '../../_lib.js';
+import { json, err, methodNotAllowed, BOOK_KEY_RE, storageEnabled, storageDisabledResponse } from '../../_lib.js';
 import { requireAccess } from '../../_access.js';
 
 const SHA256_RE = /^[a-fA-F0-9]{64}$/;
@@ -11,6 +11,7 @@ export async function onRequest(context) {
   if (request.method !== 'POST') return methodNotAllowed('POST');
   const { response } = await requireAccess(context);
   if (response) return response;
+  if (!storageEnabled(env)) return storageDisabledResponse();
 
   let body;
   try {

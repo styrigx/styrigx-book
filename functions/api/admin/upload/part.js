@@ -2,7 +2,7 @@
 // body 为分片二进制（ArrayBuffer）。partNumber=1 时严格校验文件魔数：
 // PDF 须为 %PDF，EPUB 须为 PK\x03\x04；不符 → 400 并 abort 整个上传。
 // 成功 → {etag}
-import { json, err, methodNotAllowed, BOOK_KEY_RE } from '../../_lib.js';
+import { json, err, methodNotAllowed, BOOK_KEY_RE, storageEnabled, storageDisabledResponse } from '../../_lib.js';
 import { requireAccess } from '../../_access.js';
 
 function checkMagic(buf, format) {
@@ -19,6 +19,7 @@ export async function onRequest(context) {
   if (request.method !== 'POST') return methodNotAllowed('POST');
   const { response } = await requireAccess(context);
   if (response) return response;
+  if (!storageEnabled(env)) return storageDisabledResponse();
 
   const q = new URL(request.url).searchParams;
   const uploadId = q.get('uploadId');

@@ -53,6 +53,22 @@ export const BOOK_KEY_RE =
   /^books\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(epub|pdf)$/;
 export const COVER_KEY_RE = /^covers\/[a-f0-9-]+\.webp$/;
 
+/* ===== 存储开关 =====
+ * STORAGE_ENABLED 环境变量控制 R2 存储是否启用。
+ * 未启用（false/未设置）或 BOOKS 绑定缺失时，所有文件读写走优雅降级：
+ * - 上传/写入类接口返回 503
+ * - 读取类接口返回 404（就当文件不存在）
+ * - 删除接口只删 D1 记录，跳过 R2
+ * 以后开通 R2 后：建 bucket、Pages 绑定 BOOKS、把 STORAGE_ENABLED 改成 true 即可，无需改代码。
+ */
+export function storageEnabled(env) {
+  return env.STORAGE_ENABLED === 'true' && !!env.BOOKS;
+}
+
+export function storageDisabledResponse() {
+  return err('storage not enabled', 503);
+}
+
 export function contentTypeForFormat(format) {
   return format === 'pdf' ? 'application/pdf' : 'application/epub+zip';
 }
@@ -84,7 +100,9 @@ export function parseRange(header, size) {
 }
 
 // 从 R2 取文件并返回，支持 Range（206 + Content-Range / Accept-Ranges，非法范围 416）
+// 存储未启用时返回 404（优雅降级，不报错）
 export async function serveR2File(env, r2Key, contentType, rangeHeader) {
+  if (!storageEnabled(env)) return err('not found', 404);
   const meta = await env.BOOKS.head(r2Key);
   if (!meta) return err('not found', 404);
   const size = meta.size;

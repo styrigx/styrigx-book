@@ -61,10 +61,12 @@ window.__setHeadH();
 <link rel="stylesheet" href="{{ (resources.Get "css/main.css" | minify | fingerprint).RelPermalink }}">
 </head>
 <body class="bg-m-surface text-m-on-surface font-sans antialiased" style="background-image:var(--m-wallpaper);background-attachment:fixed">
-{{/* 极简顶栏：左 ← Styrigx（回主站），中 书库/Library */}}
+{{/* 极简顶栏：左 头像+Styrigx（回主站），中 书库/Library */}}
+{{ $avatar := resources.Get "images/avatar.png" }}
 <header id="site-nav" class="fixed top-0 inset-x-0 z-50 h-14 flex items-center px-4 backdrop-blur-xl bg-m-surface/70 border-b border-m-outline/40">
-  <a href="https://styrigx.com" class="flex items-center gap-1.5 text-sm font-semibold text-m-primary hover:opacity-80">
-    <span aria-hidden="true">←</span><span>Styrigx</span>
+  <a href="https://styrigx.com" class="flex items-center gap-2 text-sm font-semibold text-m-on-surface hover:opacity-80">
+    {{ with $avatar }}<img src="{{ .RelPermalink }}" alt="" class="w-7 h-7 rounded-full object-cover">{{ end }}
+    <span>Styrigx</span>
   </a>
   <span class="absolute left-1/2 -translate-x-1/2 text-[15px] font-bold">{{ if $isEn }}Library{{ else }}书库{{ end }}</span>
 </header>

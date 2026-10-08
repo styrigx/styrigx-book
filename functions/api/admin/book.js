@@ -1,7 +1,7 @@
 // /api/admin/book?id= — 单书管理，需 Access JWT
 // PUT body {title,author,lang,tags,visibility,coverKey?,in_shelf?} → 更新元数据 → {ok:true}
 // DELETE → 删除 R2 文件+封面、D1 books+progress → {ok:true}
-import { json, err, methodNotAllowed, COVER_KEY_RE } from '../_lib.js';
+import { json, err, methodNotAllowed, COVER_KEY_RE, storageEnabled } from '../_lib.js';
 import { requireAccess } from '../_access.js';
 
 export async function onRequest(context) {
@@ -75,8 +75,11 @@ export async function onRequest(context) {
     .bind(id)
     .first();
   if (!row) return err('not found', 404);
-  const keys = [row.r2_key, row.cover_key].filter(Boolean);
-  if (keys.length) await env.BOOKS.delete(keys);
+  // 存储启用时才删 R2 文件；未启用时只删 D1 记录
+  if (storageEnabled(env)) {
+    const keys = [row.r2_key, row.cover_key].filter(Boolean);
+    if (keys.length) await env.BOOKS.delete(keys);
+  }
   await env.DB.prepare('DELETE FROM books WHERE id=?1').bind(id).run();
   await env.DB.prepare('DELETE FROM progress WHERE book_id=?1').bind(id).run();
   return json({ ok: true });

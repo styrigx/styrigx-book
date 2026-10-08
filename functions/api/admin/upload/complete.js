@@ -3,7 +3,7 @@
 // 注：sha256 为必填（books.sha256 列 NOT NULL + UNIQUE，init 阶段客户端已计算）。
 // in_shelf: 1=上架到主站书单，默认 0。
 // 成功 → {id}
-import { json, err, methodNotAllowed, BOOK_KEY_RE, COVER_KEY_RE } from '../../_lib.js';
+import { json, err, methodNotAllowed, BOOK_KEY_RE, COVER_KEY_RE, storageEnabled, storageDisabledResponse } from '../../_lib.js';
 import { requireAccess } from '../../_access.js';
 
 const SHA256_RE = /^[a-fA-F0-9]{64}$/;
@@ -13,6 +13,7 @@ export async function onRequest(context) {
   if (request.method !== 'POST') return methodNotAllowed('POST');
   const { response } = await requireAccess(context);
   if (response) return response;
+  if (!storageEnabled(env)) return storageDisabledResponse();
 
   let body;
   try {

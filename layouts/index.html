@@ -44,8 +44,8 @@
   {{/* 空态 */}}
   <div id="bk-empty" class="hidden text-center py-20">
     <div class="w-16 h-16 mx-auto mb-4 opacity-60">{{ partial "icon.html" (dict "name" "book" "uid" "empty") }}</div>
-    <p class="text-base font-bold mb-1">{{ if $isEn }}No books yet{{ else }}书库是空的{{ end }}</p>
-    <p id="bk-empty-sub" class="text-sm text-m-on-surface-variant">{{ if $isEn }}Nothing to show here.{{ else }}这里还没有书。{{ end }}</p>
+    <p class="text-base font-bold mb-1">{{ if $isEn }}Library coming soon{{ else }}书库正在整理{{ end }}</p>
+    <p id="bk-empty-sub" class="text-sm text-m-on-surface-variant">{{ if $isEn }}We're getting the shelves ready.{{ else }}书架正在整理中，敬请期待。{{ end }}</p>
   </div>
 
   {{/* 错误态 */}}
@@ -298,8 +298,7 @@ function renderGrid(){
     empty.classList.remove('hidden');
     var sub = document.getElementById('bk-empty-sub');
     if(query.trim() || filter !== 'all'){ sub.textContent = T.noResult; }
-    else if(!loggedIn){ sub.textContent = T.noBookLogin; }
-    else{ sub.textContent = T.noBookAdmin; }
+    /* 无搜索/筛选时的默认文案（HTML 里已写好「书库正在整理」）保持不动 */
     return;
   }
   empty.classList.add('hidden');

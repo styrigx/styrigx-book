@@ -52,9 +52,8 @@ export async function verifyAccess(request, env) {
 
   const teamDomain = env.ACCESS_TEAM_DOMAIN;
   if (!teamDomain) {
-    const e = new Error('access team domain not configured');
-    e.status = 500;
-    throw e;
+    // Access 未启用：视为未登录，返回 401（不是 500，避免信息泄露）
+    throw unauthorized();
   }
 
   const parts = token.split('.');
