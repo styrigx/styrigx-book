@@ -1,0 +1,397 @@
+{{ define "main" }}
+{{ $isEn := or (eq .Lang "en") (hasPrefix .RelPermalink "/en/") }}
+<main class="max-w-6xl mx-auto px-4 sm:px-6 pb-16">
+  {{ partial "subpage-head.html" (dict "title" (cond $isEn "Library" "书库") "sub" (cond $isEn "Loading…" "加载中…") "isEn" $isEn) }}
+
+  {{/* 搜索条：书名 / 作者本地过滤 */}}
+  <div class="mx-auto w-full max-w-md mb-6" role="search">
+    <div class="flex items-center gap-2 h-12 px-4 rounded-full bg-m-container-lowest border border-m-outline/50 shadow-sm focus-within:border-m-primary">
+      {{ partial "icon.html" "search" }}
+      <input id="bk-search" type="search" autocomplete="off" enterkeyhint="search"
+        placeholder="{{ if $isEn }}Search title / author{{ else }}搜索书名 / 作者{{ end }}"
+        aria-label="{{ if $isEn }}Search title / author{{ else }}搜索书名 / 作者{{ end }}"
+        class="flex-1 min-w-0 bg-transparent outline-none text-sm text-m-on-surface placeholder:text-m-on-surface-variant/60">
+    </div>
+  </div>
+
+  {{/* 继续阅读：localStorage bk-progress-<id> */}}
+  <section id="bk-continue-sec" class="mb-8 hidden">
+    <h2 class="text-sm font-bold text-m-on-surface-variant mb-3 px-1">{{ if $isEn }}Continue reading{{ else }}继续阅读{{ end }}</h2>
+    <div id="bk-continue" class="flex gap-3 overflow-x-auto pb-2 -mx-4 px-4 sm:mx-0 sm:px-0"></div>
+  </section>
+
+  {{/* 筛选芯片 + 排序 */}}
+  <div class="flex items-center gap-2 mb-5">
+    <div id="bk-chips" class="brw-cats flex-1 min-w-0" role="tablist" aria-label="{{ if $isEn }}Filter{{ else }}筛选{{ end }}"></div>
+    <select id="bk-sort" aria-label="{{ if $isEn }}Sort{{ else }}排序{{ end }}"
+      class="flex-shrink-0 h-11 px-3 rounded-full bg-m-container text-m-on-surface-variant text-[13px] font-semibold outline-none border border-transparent">
+      <option value="added">{{ if $isEn }}Recently added{{ else }}最近添加{{ end }}</option>
+      <option value="read">{{ if $isEn }}Recently read{{ else }}最近阅读{{ end }}</option>
+      <option value="title">{{ if $isEn }}Title{{ else }}书名{{ end }}</option>
+    </select>
+  </div>
+
+  {{/* 加载骨架 */}}
+  <div id="bk-loading" class="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-5" aria-hidden="true">
+    {{ range seq 12 }}
+    <div class="animate-pulse"><div class="aspect-[2/3] rounded-xl bg-m-container"></div><div class="h-3 rounded bg-m-container mt-2 w-4/5"></div><div class="h-3 rounded bg-m-container mt-1.5 w-3/5"></div></div>
+    {{ end }}
+  </div>
+
+  {{/* 封面网格 */}}
+  <div id="bk-grid" class="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-5 hidden"></div>
+
+  {{/* 空态 */}}
+  <div id="bk-empty" class="hidden text-center py-20">
+    <div class="w-16 h-16 mx-auto mb-4 opacity-60">{{ partial "icon.html" (dict "name" "book" "uid" "empty") }}</div>
+    <p class="text-base font-bold mb-1">{{ if $isEn }}No books yet{{ else }}书库是空的{{ end }}</p>
+    <p id="bk-empty-sub" class="text-sm text-m-on-surface-variant">{{ if $isEn }}Nothing to show here.{{ else }}这里还没有书。{{ end }}</p>
+  </div>
+
+  {{/* 错误态 */}}
+  <div id="bk-error" class="hidden text-center py-20">
+    <p class="text-sm text-m-on-surface-variant mb-3" id="bk-error-msg"></p>
+    <button type="button" id="bk-retry" class="h-11 px-6 rounded-full bg-m-primary text-m-on-primary text-sm font-bold">
+      {{ if $isEn }}Retry{{ else }}重试{{ end }}
+    </button>
+  </div>
+</main>
+
+{{/* 书籍详情：bottom sheet（手机）/ 居中弹窗（DeX） */}}
+<div id="sheet-wrap" class="fixed inset-0 z-[60]" role="dialog" aria-modal="true" aria-hidden="true">
+  <div id="sheet-bg" class="absolute inset-0 bg-black/45"></div>
+  <div id="sheet-panel">
+    <div class="sheet-handle" id="sheet-handle"></div>
+    <div id="sheet-body" class="overflow-y-auto px-5 pb-8 pt-1"></div>
+  </div>
+</div>
+{{ end }}
+
+{{ define "pagejs" }}
+{{ $isEn := or (eq .Lang "en") (hasPrefix .RelPermalink "/en/") }}
+<script>
+(function(){
+"use strict";
+var isEn = {{ if $isEn }}true{{ else }}false{{ end }};
+var readBase = {{ if $isEn }}'/en/read/'{{ else }}'/read/'{{ end }};
+var adminBase = {{ if $isEn }}'/en/admin/'{{ else }}'/admin/'{{ end }};
+
+/* 文案 */
+var T = {
+  count: function(n){ return isEn ? (n + ' book' + (n === 1 ? '' : 's')) : ('共 ' + n + ' 本'); },
+  loading: isEn ? 'Loading…' : '加载中…',
+  loadFail: isEn ? 'Failed to load. Check your connection and retry.' : '加载失败，请检查网络后重试。',
+  noResult: isEn ? 'No books match your search.' : '没有匹配的书。',
+  noBookLogin: isEn ? 'Sign in to see your private books.' : '登录后可查看私有书籍。',
+  noBookAdmin: isEn ? 'Go to Admin to upload your first book.' : '去后台上传第一本书吧。',
+  unknownAuthor: isEn ? 'Unknown author' : '未知作者',
+  read: isEn ? 'Read' : '阅读',
+  download: isEn ? 'Download' : '下载',
+  edit: isEn ? 'Edit' : '编辑',
+  pages: isEn ? 'pages' : '页',
+  size: isEn ? 'Size' : '大小',
+  tags: isEn ? 'Tags' : '标签',
+  addedOn: isEn ? 'Added' : '添加日期',
+  progress: isEn ? 'Progress' : '阅读进度',
+  all: isEn ? 'All' : '全部',
+  close: isEn ? 'Close' : '关闭',
+  noTags: isEn ? 'None' : '无'
+};
+
+function esc(s){
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
+function fmtSize(b){
+  b = Number(b) || 0;
+  if(b < 1024) return b + ' B';
+  if(b < 1048576) return (b / 1024).toFixed(1) + ' KB';
+  if(b < 1073741824) return (b / 1048576).toFixed(1) + ' MB';
+  return (b / 1073741824).toFixed(2) + ' GB';
+}
+function fmtDate(s){
+  if(!s) return '—';
+  try{ return new Date(s).toLocaleDateString(isEn ? 'en-US' : 'zh-CN', {year:'numeric', month:'short', day:'numeric'}); }
+  catch(e){ return '—'; }
+}
+function fmtPct(p){ return Math.round((Number(p) || 0) * 100) + '%'; }
+
+/* ---- 状态 ---- */
+var loggedIn = false;
+var books = [];
+var bookById = {};
+var filter = 'all';      /* all | EPUB | PDF | tag:<name> */
+var sortMode = 'added';  /* added | read | title */
+var query = '';
+var progressMap = {};    /* id -> {p, t, title, author, cover} */
+
+function coverURL(b){
+  if(!b || !b.cover_key) return '';
+  return (loggedIn ? '/api/private/cover?key=' : '/api/cover?key=') + encodeURIComponent(b.cover_key);
+}
+function fileURL(b){
+  return (loggedIn ? '/api/private/file?id=' : '/api/file?id=') + encodeURIComponent(b.id);
+}
+
+/* ---- 阅读进度（localStorage bk-progress-<id>） ---- */
+function loadProgress(){
+  progressMap = {};
+  try{
+    for(var i = 0; i < localStorage.length; i++){
+      var k = localStorage.key(i);
+      if(k && k.indexOf('bk-progress-') === 0){
+        try{
+          var v = JSON.parse(localStorage.getItem(k));
+          if(v && typeof v.p === 'number'){
+            progressMap[k.slice('bk-progress-'.length)] = v;
+          }
+        }catch(e){}
+      }
+    }
+  }catch(e){}
+}
+function progressOf(id){
+  var v = progressMap[id];
+  return v ? v.p : 0;
+}
+
+/* ---- 数据 ---- */
+function subEl(){ return document.querySelector('[data-subpage-head] .subpage-sub'); }
+async function checkLogin(){
+  var ok = false;
+  try{
+    var r = await fetch('/api/private/me', {credentials: 'same-origin'});
+    ok = r.ok;
+  }catch(e){}
+  if(ok !== loggedIn){
+    loggedIn = ok;
+    await loadBooks();
+  }
+}
+async function loadBooks(){
+  var loading = document.getElementById('bk-loading');
+  var grid = document.getElementById('bk-grid');
+  var empty = document.getElementById('bk-empty');
+  var err = document.getElementById('bk-error');
+  loading.classList.remove('hidden'); grid.classList.add('hidden');
+  empty.classList.add('hidden'); err.classList.add('hidden');
+  var sub = subEl(); if(sub) sub.textContent = T.loading;
+  try{
+    var r = await fetch(loggedIn ? '/api/private/books' : '/api/books', {credentials: 'same-origin'});
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+    var j = await r.json();
+    books = (j && j.books) || [];
+    bookById = {};
+    books.forEach(function(b){ bookById[b.id] = b; });
+    if(sub) sub.textContent = T.count(books.length);
+    renderChips(); renderContinue(); renderGrid();
+  }catch(e){
+    loading.classList.add('hidden');
+    err.classList.remove('hidden');
+    document.getElementById('bk-error-msg').textContent = T.loadFail;
+    if(sub) sub.textContent = '';
+  }
+}
+
+/* ---- 继续阅读 ---- */
+function renderContinue(){
+  loadProgress();
+  var sec = document.getElementById('bk-continue-sec');
+  var box = document.getElementById('bk-continue');
+  var items = Object.keys(progressMap).map(function(id){
+    var v = progressMap[id];
+    return {id: id, p: v.p, t: v.t || 0, title: v.title, author: v.author, cover: v.cover};
+  }).filter(function(x){ return x.p > 0 && x.p < 1; })
+    .sort(function(a, b){ return b.t - a.t; })
+    .slice(0, 3);
+  if(!items.length){ sec.classList.add('hidden'); return; }
+  sec.classList.remove('hidden');
+  box.innerHTML = items.map(function(x){
+    var b = bookById[x.id];
+    var title = x.title || (b && b.title) || '';
+    var author = x.author || (b && b.author) || T.unknownAuthor;
+    var cv = x.cover || (b && coverURL(b)) || '';
+    var img = cv
+      ? '<img src="' + esc(cv) + '" alt="" loading="lazy" class="w-12 h-[72px] rounded-lg object-cover bg-m-container flex-shrink-0">'
+      : '<div class="w-12 h-[72px] rounded-lg bg-m-container flex items-center justify-center flex-shrink-0 text-m-on-surface-variant text-lg font-bold">' + esc(String(title).slice(0,1)) + '</div>';
+    return '<a href="' + readBase + '?id=' + encodeURIComponent(x.id) + '" class="flex-shrink-0 w-64 flex gap-3 p-3 rounded-2xl bg-m-container-lowest border border-m-outline/40 hover:border-m-primary/60">' +
+      img +
+      '<div class="min-w-0 flex-1">' +
+        '<p class="text-sm font-semibold line-clamp-2 text-m-on-surface">' + esc(title) + '</p>' +
+        '<p class="text-xs text-m-on-surface-variant line-clamp-1 mt-0.5">' + esc(author) + '</p>' +
+        '<div class="h-1.5 rounded-full bg-m-container mt-2 overflow-hidden"><div class="h-full rounded-full bg-m-primary" style="width:' + fmtPct(x.p) + '"></div></div>' +
+        '<p class="text-[11px] text-m-on-surface-variant mt-1">' + fmtPct(x.p) + '</p>' +
+      '</div></a>';
+  }).join('');
+}
+
+/* ---- 筛选芯片 ---- */
+function allTags(){
+  var m = {};
+  books.forEach(function(b){
+    (b.tags || []).forEach(function(t){ if(t) m[t] = (m[t] || 0) + 1; });
+  });
+  return Object.keys(m).sort(function(a, b){ return m[b] - m[a]; });
+}
+function renderChips(){
+  var box = document.getElementById('bk-chips');
+  var chips = [{k: 'all', label: T.all}, {k: 'EPUB', label: 'EPUB'}, {k: 'PDF', label: 'PDF'}];
+  allTags().forEach(function(t){ chips.push({k: 'tag:' + t, label: t}); });
+  box.innerHTML = chips.map(function(c){
+    return '<button type="button" role="tab" aria-selected="' + (filter === c.k) + '" data-filter="' + esc(c.k) + '"' +
+      ' class="brw-cat flex-shrink-0' + (filter === c.k ? ' on' : '') + '">' + esc(c.label) + '</button>';
+  }).join('');
+}
+document.getElementById('bk-chips').addEventListener('click', function(e){
+  var b = e.target.closest('[data-filter]');
+  if(!b) return;
+  filter = b.getAttribute('data-filter');
+  renderChips(); renderGrid();
+});
+
+/* ---- 排序 + 过滤 + 渲染网格 ---- */
+function visibleBooks(){
+  var q = query.trim().toLowerCase();
+  var list = books.filter(function(b){
+    if(filter === 'EPUB' || filter === 'PDF'){
+      if((b.format || '').toUpperCase() !== filter) return false;
+    }else if(filter.indexOf('tag:') === 0){
+      var tag = filter.slice(4);
+      if(!(b.tags || []).includes(tag)) return false;
+    }
+    if(q){
+      var hay = ((b.title || '') + ' ' + (b.author || '')).toLowerCase();
+      if(hay.indexOf(q) === -1) return false;
+    }
+    return true;
+  });
+  if(sortMode === 'title'){
+    var loc = isEn ? 'en' : 'zh';
+    list.sort(function(a, b){ return String(a.title || '').localeCompare(String(b.title || ''), loc); });
+  }else if(sortMode === 'read'){
+    list.sort(function(a, b){
+      var ta = (progressMap[a.id] && progressMap[a.id].t) || 0;
+      var tb = (progressMap[b.id] && progressMap[b.id].t) || 0;
+      return tb - ta;
+    });
+  }else{
+    list.sort(function(a, b){ return new Date(b.created_at || 0) - new Date(a.created_at || 0); });
+  }
+  return list;
+}
+function coverTile(b, cls){
+  var cv = coverURL(b);
+  if(cv){
+    return '<img src="' + esc(cv) + '" alt="" loading="lazy" class="' + cls + ' w-full h-full object-cover">';
+  }
+  return '<div class="' + cls + ' w-full h-full flex items-center justify-center bg-m-primary-container text-m-on-primary-container text-2xl font-extrabold">' + esc(String(b.title || '?').slice(0, 1)) + '</div>';
+}
+function renderGrid(){
+  var loading = document.getElementById('bk-loading');
+  var grid = document.getElementById('bk-grid');
+  var empty = document.getElementById('bk-empty');
+  loading.classList.add('hidden');
+  var list = visibleBooks();
+  if(!list.length){
+    grid.classList.add('hidden');
+    empty.classList.remove('hidden');
+    var sub = document.getElementById('bk-empty-sub');
+    if(query.trim() || filter !== 'all'){ sub.textContent = T.noResult; }
+    else if(!loggedIn){ sub.textContent = T.noBookLogin; }
+    else{ sub.textContent = T.noBookAdmin; }
+    return;
+  }
+  empty.classList.add('hidden');
+  grid.classList.remove('hidden');
+  grid.innerHTML = list.map(function(b){
+    var p = progressOf(b.id);
+    var badges = '<span class="absolute left-1.5 top-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-black/55 text-white">' + esc((b.format || '').toUpperCase()) + '</span>';
+    if(p > 0){
+      badges += '<span class="absolute right-1.5 top-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-m-primary/90 text-m-on-primary">' + fmtPct(p) + '</span>';
+    }
+    return '<button type="button" data-book="' + esc(b.id) + '" class="text-left group">' +
+      '<div class="relative aspect-[2/3] rounded-xl overflow-hidden bg-m-container shadow-sm group-active:scale-[.97] transition-transform">' +
+        coverTile(b, '') + badges +
+        (p > 0 ? '<div class="absolute bottom-0 inset-x-0 h-1 bg-black/30"><div class="h-full bg-m-primary" style="width:' + fmtPct(p) + '"></div></div>' : '') +
+      '</div>' +
+      '<p class="text-[13px] font-semibold leading-snug mt-2 line-clamp-2 text-m-on-surface">' + esc(b.title || '') + '</p>' +
+      '<p class="text-xs text-m-on-surface-variant line-clamp-1 mt-0.5">' + esc(b.author || T.unknownAuthor) + '</p>' +
+    '</button>';
+  }).join('');
+}
+document.getElementById('bk-grid').addEventListener('click', function(e){
+  var c = e.target.closest('[data-book]');
+  if(c) openSheet(c.getAttribute('data-book'));
+});
+document.getElementById('bk-sort').addEventListener('change', function(e){
+  sortMode = e.target.value; renderGrid();
+});
+var searchTimer = null;
+document.getElementById('bk-search').addEventListener('input', function(e){
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(function(){ query = e.target.value; renderGrid(); }, 150);
+});
+document.getElementById('bk-retry').addEventListener('click', function(){ checkLogin().then(loadBooks); });
+
+/* ---- 详情 bottom sheet ---- */
+var sheetWrap = document.getElementById('sheet-wrap');
+function openSheet(id){
+  var b = bookById[id];
+  if(!b) return;
+  var p = progressOf(id);
+  var metaRows = [];
+  if(b.pages) metaRows.push('<div class="flex justify-between py-2.5 border-b border-m-outline/40"><span class="text-sm text-m-on-surface-variant">' + T.pages + '</span><span class="text-sm font-semibold">' + esc(b.pages) + '</span></div>');
+  metaRows.push('<div class="flex justify-between py-2.5 border-b border-m-outline/40"><span class="text-sm text-m-on-surface-variant">' + T.size + '</span><span class="text-sm font-semibold">' + esc(fmtSize(b.size)) + '</span></div>');
+  metaRows.push('<div class="flex justify-between py-2.5 border-b border-m-outline/40"><span class="text-sm text-m-on-surface-variant">' + T.tags + '</span><span class="text-sm font-semibold text-right max-w-[60%]">' + esc((b.tags || []).join('、') || T.noTags) + '</span></div>');
+  metaRows.push('<div class="flex justify-between py-2.5"><span class="text-sm text-m-on-surface-variant">' + T.addedOn + '</span><span class="text-sm font-semibold">' + esc(fmtDate(b.created_at)) + '</span></div>');
+  var prog = p > 0
+    ? '<div class="mt-4"><div class="flex justify-between text-xs text-m-on-surface-variant mb-1.5"><span>' + T.progress + '</span><span>' + fmtPct(p) + '</span></div>' +
+      '<div class="h-2 rounded-full bg-m-container overflow-hidden"><div class="h-full rounded-full bg-m-primary" style="width:' + fmtPct(p) + '"></div></div></div>'
+    : '';
+  var btns = '<div class="flex gap-2 mt-5">' +
+    '<a href="' + readBase + '?id=' + encodeURIComponent(b.id) + '" class="flex-1 h-12 inline-flex items-center justify-center rounded-full bg-m-primary text-m-on-primary text-sm font-bold">' + T.read + '</a>';
+  if(loggedIn){
+    btns += '<a href="' + esc(fileURL(b)) + '" download class="h-12 px-5 inline-flex items-center justify-center rounded-full bg-m-container text-m-on-surface text-sm font-bold">' + T.download + '</a>' +
+      '<a href="' + adminBase + '#book-' + encodeURIComponent(b.id) + '" class="h-12 px-5 inline-flex items-center justify-center rounded-full bg-m-container text-m-on-surface text-sm font-bold">' + T.edit + '</a>';
+  }
+  btns += '</div>';
+  document.getElementById('sheet-body').innerHTML =
+    '<div class="flex gap-4">' +
+      '<div class="w-24 flex-shrink-0 aspect-[2/3] rounded-xl overflow-hidden bg-m-container shadow">' + coverTile(b, '') + '</div>' +
+      '<div class="min-w-0 flex-1">' +
+        '<h3 class="text-lg font-extrabold leading-snug text-m-on-surface">' + esc(b.title || '') + '</h3>' +
+        '<p class="text-sm text-m-on-surface-variant mt-1">' + esc(b.author || T.unknownAuthor) + '</p>' +
+        '<span class="inline-block mt-2 text-[11px] font-bold px-2 py-0.5 rounded-md bg-m-primary-container text-m-on-primary-container">' + esc((b.format || '').toUpperCase()) + '</span>' +
+      '</div>' +
+    '</div>' +
+    '<div class="mt-4 rounded-2xl bg-m-container-low px-4">' + metaRows.join('') + '</div>' +
+    prog + btns;
+  sheetWrap.classList.remove('closing');
+  sheetWrap.classList.add('open');
+  sheetWrap.setAttribute('aria-hidden', 'false');
+  document.body.style.overflow = 'hidden';
+}
+function closeSheet(){
+  if(!sheetWrap.classList.contains('open')) return;
+  sheetWrap.classList.add('closing');
+  sheetWrap.classList.remove('open');
+  setTimeout(function(){
+    sheetWrap.classList.remove('closing');
+    sheetWrap.setAttribute('aria-hidden', 'true');
+  }, 250);
+  document.body.style.overflow = '';
+}
+document.getElementById('sheet-bg').addEventListener('click', closeSheet);
+document.getElementById('sheet-handle').addEventListener('click', closeSheet);
+document.addEventListener('keydown', function(e){ if(e.key === 'Escape') closeSheet(); });
+
+/* ---- 登录状态变化时刷新 ---- */
+document.addEventListener('visibilitychange', function(){ if(!document.hidden) checkLogin(); });
+window.addEventListener('bk-login-change', checkLogin);
+
+/* ---- 启动 ---- */
+checkLogin().then(loadBooks);
+})();
+</script>
+{{ end }}

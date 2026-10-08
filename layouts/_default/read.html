@@ -1,0 +1,794 @@
+{{/* 阅读器 /read/ —— EPUB（foliate-js）+ PDF（pdfjs-dist）在线阅读。逻辑全部在 pagejs 的内联 module 里。 */}}
+{{ define "main" }}
+{{ $isEn := or (eq .Lang "en") (hasPrefix .RelPermalink "/en/") }}
+<style>
+/* ===== 阅读器 chrome：One UI 8.5 风格，m-* 颜色变量 ===== */
+/* 阅读页沉浸式：隐藏站点顶栏/页脚（baseof 的），只留阅读器自己的顶栏底栏 */
+#site-nav{display:none!important}
+body>footer{display:none!important}
+#bkrd{position:relative;display:flex;flex-direction:column;flex:1 0 auto;min-height:100dvh;min-height:100svh;background:var(--m-surface,#f5f8fa);color:var(--m-on-surface,#161b20);overflow:hidden}
+.bkrd-bar{position:sticky;z-index:30;display:flex;align-items:center;gap:4px;padding:0 8px;background:color-mix(in srgb,var(--m-surface,#f5f8fa) 82%,transparent);-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px);transition:transform .28s ease}
+#bkrd-top{top:0;height:56px;border-bottom:1px solid var(--m-outline,#c2c8cf)}
+#bkrd-bottom{bottom:0;height:68px;border-top:1px solid var(--m-outline,#c2c8cf)}
+#bkrd #bkrd-bottom{padding:0 8px} /* 覆盖全局 footer 的 dock padding */
+#bkrd.bkrd-hide-chrome #bkrd-top{transform:translateY(-101%)}
+#bkrd.bkrd-hide-chrome #bkrd-bottom{transform:translateY(101%)}
+.bkrd-icbtn{flex:none;display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:9999px;color:var(--m-on-surface,#161b20);background:transparent;border:0;cursor:pointer}
+.bkrd-icbtn:hover{background:var(--m-container,#e7ecf1)}
+.bkrd-icbtn:active{background:var(--m-container-high,#e1e7ed)}
+.bkrd-icbtn svg{width:22px;height:22px}
+#bkrd-title{flex:1;min-width:0;margin:0 4px;font-size:17px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--m-on-surface,#161b20)}
+#bkrd-stage{flex:1;min-height:0;position:relative;background:#fff}
+#bkrd-stage[data-btheme="sepia"]{background:#f6eeda}
+#bkrd-stage[data-btheme="dark"]{background:#141414}
+#bkrd-epub,#bkrd-pdf{position:absolute;inset:0}
+#bkrd-pdf{overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;touch-action:pan-x pan-y}
+.bkrd-foliate{display:block;width:100%;height:100%}
+#bkrd-epub{display:none}
+#bkrd-epub.on{display:block}
+#bkrd-pdf{display:none}
+#bkrd-pdf.on{display:block}
+/* 加载 / 错误 */
+#bkrd-loading{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:var(--m-surface,#f5f8fa);z-index:5}
+#bkrd-loading[hidden]{display:none}
+.bkrd-spin{width:34px;height:34px;border-radius:50%;border:3px solid var(--m-container-high,#e1e7ed);border-top-color:var(--m-primary,#2f5f86);animation:bkrd-spin 0.8s linear infinite}
+@keyframes bkrd-spin{to{transform:rotate(360deg)}}
+#bkrd-err{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:24px;text-align:center;background:var(--m-surface,#f5f8fa);z-index:6;color:var(--m-on-surface-variant,#41484e)}
+#bkrd-err[hidden]{display:none}
+/* 底栏 */
+#bkrd-prev,#bkrd-next{flex:none}
+#bkrd-slider{flex:1;min-width:0;accent-color:var(--m-primary,#2f5f86);height:28px;cursor:pointer}
+#bkrd-pct{flex:none;min-width:52px;text-align:center;font-size:13px;font-variant-numeric:tabular-nums;color:var(--m-on-surface-variant,#41484e)}
+/* PDF 页 */
+.bkrd-pg{position:relative;margin:0 auto;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.18)}
+.bkrd-pg + .bkrd-pg{margin-top:12px}
+.bkrd-pg canvas{display:block;width:100%;height:100%}
+#bkrd-pdf[data-btheme="dark"] .bkrd-pg{background:#141414}
+#bkrd-pdf[data-btheme="dark"] canvas{filter:invert(1) hue-rotate(180deg)}
+.bkrd-pgnum{position:absolute;right:8px;bottom:6px;font-size:11px;color:#fff;background:rgba(0,0,0,.45);border-radius:8px;padding:1px 8px;pointer-events:none}
+/* 抽屉 / 遮罩 */
+#bkrd-scrim{position:fixed;inset:0;background:rgba(0,0,0,.38);z-index:40;border:0;padding:0;cursor:default}
+#bkrd-scrim[hidden]{display:none}
+.bkrd-drawer{position:fixed;top:0;bottom:0;width:min(340px,88vw);z-index:50;display:flex;flex-direction:column;background:var(--m-surface,#f5f8fa);color:var(--m-on-surface,#161b20);transition:transform .26s ease;box-shadow:0 0 24px rgba(0,0,0,.18)}
+#bkrd-toc{left:0;transform:translateX(-106%)}
+#bkrd-settings{right:0;transform:translateX(106%)}
+#bkrd-toc.open,#bkrd-settings.open{transform:none}
+.bkrd-drawer-head{flex:none;display:flex;align-items:center;gap:8px;padding:12px 8px 12px 16px;border-bottom:1px solid var(--m-outline,#c2c8cf)}
+.bkrd-drawer-head h2{flex:1;margin:0;font-size:17px;font-weight:600}
+.bkrd-drawer-body{flex:1;overflow-y:auto;padding:8px 0 24px;-webkit-overflow-scrolling:touch}
+.bkrd-toc-list{list-style:none;margin:0;padding:0}
+.bkrd-toc-list .bkrd-toc-list{padding-left:16px}
+.bkrd-toc-item{display:block;width:100%;text-align:left;background:none;border:0;padding:10px 16px;font-size:15px;line-height:1.45;color:var(--m-on-surface,#161b20);cursor:pointer;border-bottom:1px solid var(--m-container,#e7ecf1)}
+.bkrd-toc-item:hover{background:var(--m-container-low,#eef2f5)}
+.bkrd-toc-empty{padding:24px 16px;color:var(--m-on-surface-variant,#41484e);font-size:14px}
+/* 设置行 */
+.bkrd-set{padding:14px 16px;border-bottom:1px solid var(--m-container,#e7ecf1)}
+.bkrd-set > .bkrd-set-label{display:block;font-size:13px;font-weight:600;color:var(--m-on-surface-variant,#41484e);margin-bottom:10px;letter-spacing:.02em}
+.bkrd-seg{display:flex;background:var(--m-container,#e7ecf1);border-radius:9999px;padding:3px;gap:2px}
+.bkrd-seg button{flex:1;border:0;background:transparent;border-radius:9999px;padding:8px 4px;font-size:14px;color:var(--m-on-surface-variant,#41484e);cursor:pointer;white-space:nowrap}
+.bkrd-seg button[aria-pressed="true"]{background:var(--m-primary,#2f5f86);color:var(--m-on-primary,#fff);font-weight:600}
+.bkrd-range-row{display:flex;align-items:center;gap:12px}
+.bkrd-range-row input[type="range"]{flex:1;accent-color:var(--m-primary,#2f5f86)}
+.bkrd-range-val{flex:none;min-width:56px;text-align:right;font-size:14px;font-variant-numeric:tabular-nums;color:var(--m-on-surface-variant,#41484e)}
+/* 搜索面板 */
+#bkrd-search{position:fixed;top:0;left:0;right:0;bottom:0;z-index:50;display:flex;flex-direction:column;background:var(--m-surface,#f5f8fa)}
+#bkrd-search[hidden]{display:none}
+#bkrd-searchbar{flex:none;display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--m-outline,#c2c8cf);background:color-mix(in srgb,var(--m-surface,#f5f8fa) 90%,transparent)}
+#bkrd-q{flex:1;min-width:0;height:42px;border:1px solid var(--m-outline,#c2c8cf);border-radius:9999px;padding:0 16px;font-size:16px;background:var(--m-container-lowest,#fff);color:var(--m-on-surface,#161b20);outline:none}
+#bkrd-q:focus{border-color:var(--m-primary,#2f5f86)}
+#bkrd-results{flex:1;overflow-y:auto;padding:8px 12px 24px;-webkit-overflow-scrolling:touch}
+.bkrd-sr-group{margin:12px 0 4px;font-size:13px;font-weight:600;color:var(--m-primary,#2f5f86)}
+.bkrd-sr-item{display:block;width:100%;text-align:left;background:var(--m-container-lowest,#fff);border:1px solid var(--m-container,#e7ecf1);border-radius:12px;padding:10px 12px;margin:6px 0;font-size:14px;line-height:1.5;color:var(--m-on-surface,#161b20);cursor:pointer}
+.bkrd-sr-item mark{background:var(--m-primary-container,#d3e6f5);color:var(--m-on-primary-container,#0c2f47);border-radius:3px;padding:0 1px}
+.bkrd-sr-status{padding:20px;text-align:center;color:var(--m-on-surface-variant,#41484e);font-size:14px}
+/* PDF 页码跳转 */
+#bkrd-pagejump{display:none;align-items:center;gap:4px;margin-right:4px;font-size:14px;color:var(--m-on-surface-variant,#41484e)}
+#bkrd-pagejump.on{display:flex}
+#bkrd-pageinput{width:56px;height:36px;text-align:center;font-size:15px;border:1px solid var(--m-outline,#c2c8cf);border-radius:10px;background:var(--m-container-lowest,#fff);color:var(--m-on-surface,#161b20);outline:none;font-variant-numeric:tabular-nums}
+#bkrd-search-btn{display:none}
+#bkrd-search-btn.on{display:inline-flex}
+@media (max-width:480px){
+  #bkrd-title{font-size:15px}
+  #bkrd-pct{min-width:44px;font-size:12px}
+}
+</style>
+
+<div id="bkrd">
+  <header id="bkrd-top" class="bkrd-bar">
+    <button type="button" id="bkrd-back" class="bkrd-icbtn" aria-label="{{ if $isEn }}Back{{ else }}返回{{ end }}">{{ partial "icon.html" "arrow-left" }}</button>
+    <h1 id="bkrd-title"></h1>
+    <span id="bkrd-pagejump">
+      <input id="bkrd-pageinput" type="number" min="1" value="1" inputmode="numeric" aria-label="{{ if $isEn }}Page number{{ else }}页码{{ end }}">
+      <span id="bkrd-pagetotal"></span>
+    </span>
+    <button type="button" id="bkrd-tocbtn" class="bkrd-icbtn" aria-label="{{ if $isEn }}Contents{{ else }}目录{{ end }}">{{ partial "icon.html" "book-line" }}</button>
+    <button type="button" id="bkrd-search-btn" class="bkrd-icbtn" aria-label="{{ if $isEn }}Search in book{{ else }}书内搜索{{ end }}">{{ partial "icon.html" "search" }}</button>
+    <button type="button" id="bkrd-setbtn" class="bkrd-icbtn" aria-label="{{ if $isEn }}Settings{{ else }}设置{{ end }}">{{ partial "icon.html" "gear" }}</button>
+  </header>
+
+  <main id="bkrd-stage" data-btheme="light">
+    <div id="bkrd-loading"><div class="bkrd-spin"></div><div id="bkrd-loading-txt">{{ if $isEn }}Loading…{{ else }}正在加载…{{ end }}</div></div>
+    <div id="bkrd-err" hidden>
+      <div id="bkrd-err-msg"></div>
+      <button type="button" id="bkrd-err-back" class="bkrd-icbtn" style="width:auto;padding:0 20px;height:42px;border-radius:9999px;background:var(--m-primary,#2f5f86);color:var(--m-on-primary,#fff);font-size:15px">{{ if $isEn }}Back to library{{ else }}返回书库{{ end }}</button>
+    </div>
+    <div id="bkrd-epub"></div>
+    <div id="bkrd-pdf" data-btheme="light"></div>
+  </main>
+
+  <footer id="bkrd-bottom" class="bkrd-bar">
+    <button type="button" id="bkrd-prev" class="bkrd-icbtn" aria-label="{{ if $isEn }}Previous page{{ else }}上一页{{ end }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" width="22" height="22"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5"/></svg></button>
+    <input id="bkrd-slider" type="range" min="0" max="1000" value="0" step="1" aria-label="{{ if $isEn }}Progress{{ else }}进度{{ end }}">
+    <span id="bkrd-pct">0%</span>
+    <button type="button" id="bkrd-next" class="bkrd-icbtn" aria-label="{{ if $isEn }}Next page{{ else }}下一页{{ end }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" width="22" height="22"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5"/></svg></button>
+  </footer>
+
+  <button type="button" id="bkrd-scrim" hidden aria-label="{{ if $isEn }}Close{{ else }}关闭{{ end }}"></button>
+
+  <aside id="bkrd-toc" class="bkrd-drawer" aria-label="{{ if $isEn }}Contents{{ else }}目录{{ end }}">
+    <div class="bkrd-drawer-head">
+      <h2>{{ if $isEn }}Contents{{ else }}目录{{ end }}</h2>
+      <button type="button" class="bkrd-icbtn" data-close-panels aria-label="{{ if $isEn }}Close{{ else }}关闭{{ end }}">{{ partial "icon.html" "x-mark" }}</button>
+    </div>
+    <div class="bkrd-drawer-body" id="bkrd-toc-body"></div>
+  </aside>
+
+  <aside id="bkrd-settings" class="bkrd-drawer" aria-label="{{ if $isEn }}Settings{{ else }}设置{{ end }}">
+    <div class="bkrd-drawer-head">
+      <h2>{{ if $isEn }}Settings{{ else }}设置{{ end }}</h2>
+      <button type="button" class="bkrd-icbtn" data-close-panels aria-label="{{ if $isEn }}Close{{ else }}关闭{{ end }}">{{ partial "icon.html" "x-mark" }}</button>
+    </div>
+    <div class="bkrd-drawer-body">
+      <div class="bkrd-set" data-epub-only>
+        <span class="bkrd-set-label">{{ if $isEn }}Reading mode{{ else }}阅读模式{{ end }}</span>
+        <div class="bkrd-seg" id="bkrd-seg-flow">
+          <button type="button" data-flow="paginated">{{ if $isEn }}Paginated{{ else }}翻页{{ end }}</button>
+          <button type="button" data-flow="scrolled">{{ if $isEn }}Scrolled{{ else }}滚动{{ end }}</button>
+        </div>
+      </div>
+      <div class="bkrd-set">
+        <span class="bkrd-set-label">{{ if $isEn }}Theme{{ else }}主题{{ end }}</span>
+        <div class="bkrd-seg" id="bkrd-seg-theme">
+          <button type="button" data-theme="light">{{ if $isEn }}Light{{ else }}浅色{{ end }}</button>
+          <button type="button" data-theme="sepia">{{ if $isEn }}Sepia{{ else }}护眼{{ end }}</button>
+          <button type="button" data-theme="dark">{{ if $isEn }}Dark{{ else }}深色{{ end }}</button>
+        </div>
+      </div>
+      <div class="bkrd-set" data-epub-only>
+        <span class="bkrd-set-label">{{ if $isEn }}Font size{{ else }}字号{{ end }}</span>
+        <div class="bkrd-range-row">
+          <input type="range" id="bkrd-fontsize" min="14" max="26" step="1">
+          <span class="bkrd-range-val" id="bkrd-fontsize-v"></span>
+        </div>
+      </div>
+      <div class="bkrd-set" data-epub-only>
+        <span class="bkrd-set-label">{{ if $isEn }}Line height{{ else }}行距{{ end }}</span>
+        <div class="bkrd-range-row">
+          <input type="range" id="bkrd-lineheight" min="1.4" max="2.6" step="0.1">
+          <span class="bkrd-range-val" id="bkrd-lineheight-v"></span>
+        </div>
+      </div>
+      <div class="bkrd-set" data-epub-only>
+        <span class="bkrd-set-label">{{ if $isEn }}Margins{{ else }}页边距{{ end }}</span>
+        <div class="bkrd-range-row">
+          <input type="range" id="bkrd-margin" min="16" max="120" step="4">
+          <span class="bkrd-range-val" id="bkrd-margin-v"></span>
+        </div>
+      </div>
+      <div class="bkrd-set" data-pdf-only>
+        <span class="bkrd-set-label">{{ if $isEn }}Zoom{{ else }}缩放{{ end }}</span>
+        <div class="bkrd-seg" id="bkrd-seg-zoom">
+          <button type="button" data-zoom="width">{{ if $isEn }}Fit width{{ else }}适应宽度{{ end }}</button>
+          <button type="button" data-zoom="page">{{ if $isEn }}Fit page{{ else }}适应整页{{ end }}</button>
+          <button type="button" data-zoom="custom">{{ if $isEn }}Custom{{ else }}自定义{{ end }}</button>
+        </div>
+        <div class="bkrd-range-row" id="bkrd-zoomcustom-row" style="margin-top:12px">
+          <input type="range" id="bkrd-zoomcustom" min="30" max="400" step="5">
+          <span class="bkrd-range-val" id="bkrd-zoomcustom-v"></span>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <div id="bkrd-search" hidden>
+    <div id="bkrd-searchbar">
+      <button type="button" id="bkrd-search-back" class="bkrd-icbtn" aria-label="{{ if $isEn }}Back{{ else }}返回{{ end }}">{{ partial "icon.html" "arrow-left" }}</button>
+      <input id="bkrd-q" type="search" autocomplete="off" enterkeyhint="search" placeholder="{{ if $isEn }}Search in book…{{ else }}在书中搜索…{{ end }}">
+    </div>
+    <div id="bkrd-results"></div>
+  </div>
+</div>
+{{ end }}
+
+{{ define "pagejs" }}
+{{ $isEn := or (eq .Lang "en") (hasPrefix .RelPermalink "/en/") }}
+<script type="module">
+/* 阅读器：EPUB 用 foliate-js（本地 vendor），PDF 用 pdfjs-dist（本地 vendor）。 */
+const EN = {{ $isEn }};
+const STR = {
+  errNoId: ['缺少书目参数（?id=）', 'Missing book id (?id=)'],
+  errNotFound: ['找不到这本书', 'Book not found'],
+  errFile: ['文件加载失败', 'Failed to load file'],
+  errFormat: ['不支持的文件格式', 'Unsupported file format'],
+  searching: ['搜索中…', 'Searching…'],
+  noResult: ['没有找到匹配结果', 'No results found'],
+};
+const t = k => (STR[k] ? STR[k][EN ? 1 : 0] : k);
+
+const $ = s => document.querySelector(s);
+const root = $('#bkrd'), stage = $('#bkrd-stage');
+const titleEl = $('#bkrd-title'), slider = $('#bkrd-slider'), pctEl = $('#bkrd-pct');
+const epubHost = $('#bkrd-epub'), pdfHost = $('#bkrd-pdf');
+const scrim = $('#bkrd-scrim');
+const tocDrawer = $('#bkrd-toc'), setDrawer = $('#bkrd-settings'), searchPanel = $('#bkrd-search');
+const tocBody = $('#bkrd-toc-body');
+
+const bookId = new URLSearchParams(location.search).get('id') || '';
+const LS_PROG = 'bk-progress-' + bookId;
+const LS_SET = 'bk-settings';
+
+const settings = Object.assign(
+  { fontSize: 18, lineHeight: 1.8, margin: 48, theme: 'light', flow: 'paginated', pdfMode: 'width', pdfScale: 1 },
+  (() => { try { return JSON.parse(localStorage.getItem(LS_SET)) || {}; } catch (e) { return {}; } })()
+);
+const saveSettings = () => { try { localStorage.setItem(LS_SET, JSON.stringify(settings)); } catch (e) {} };
+
+let loggedIn = false, book = null, isPrivate = false, format = '';
+let epubView = null, pdfDoc = null, pdfState = null;
+let sliderDragging = false;
+
+/* ---------- 通用 UI ---------- */
+const showError = msg => {
+  $('#bkrd-loading').hidden = true;
+  $('#bkrd-err-msg').textContent = msg;
+  $('#bkrd-err').hidden = false;
+};
+const setTitle = s => { titleEl.textContent = s || ''; if (s) document.title = s; };
+const openPanel = el => { closePanels(true); el.classList.add('open'); el.hidden = false; scrim.hidden = false; };
+const closePanels = (keepScrim) => {
+  for (const el of [tocDrawer, setDrawer]) el.classList.remove('open');
+  searchPanel.hidden = true;
+  if (!keepScrim) scrim.hidden = true;
+};
+const toggleChrome = () => root.classList.toggle('bkrd-hide-chrome');
+const setPct = (text, sliderVal) => {
+  pctEl.textContent = text;
+  if (!sliderDragging && sliderVal != null) slider.value = sliderVal;
+};
+
+/* ---------- 数据流 ---------- */
+const getJSON = async url => {
+  const r = await fetch(url, { credentials: 'same-origin' });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+};
+const pickBooks = j => {
+  if (Array.isArray(j)) return j;
+  if (j && Array.isArray(j.books)) return j.books;
+  if (j && Array.isArray(j.items)) return j.items;
+  return [];
+};
+async function findBook(id) {
+  try {
+    const b = pickBooks(await getJSON('/api/books')).find(x => String(x.id) === id);
+    if (b) return { book: b, priv: false };
+  } catch (e) { /* 可能是 401，继续试私有 */ }
+  try {
+    const b = pickBooks(await getJSON('/api/private/books')).find(x => String(x.id) === id);
+    if (b) return { book: b, priv: true };
+  } catch (e) {}
+  return null;
+}
+const localProgress = () => {
+  try { return JSON.parse(localStorage.getItem(LS_PROG)); } catch (e) { return null; }
+};
+async function loadProgress() {
+  let p = localProgress();
+  if (loggedIn) {
+    try {
+      const r = await fetch('/api/private/progress?id=' + encodeURIComponent(bookId), { credentials: 'same-origin' });
+      if (r.ok) {
+        const j = await r.json();
+        const rem = (j && typeof j === 'object' && ('location' in j || 'progress' in j)) ? (j.progress || j) : null;
+        if (rem && rem.updated_at && (!p || !p.updated_at || rem.updated_at >= p.updated_at)) p = rem;
+      }
+    } catch (e) {}
+  }
+  return p;
+}
+let saveTimer = 0, pendingSave = null;
+function saveProgress(location, percent) {
+  const p = { location, percent: Math.round(percent * 10) / 10, updated_at: new Date().toISOString() };
+  try { localStorage.setItem(LS_PROG, JSON.stringify(p)); } catch (e) {}
+  if (!loggedIn) return;
+  pendingSave = p;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(flushProgress, 2000);
+}
+async function flushProgress() {
+  if (!pendingSave || !loggedIn) return;
+  const body = { id: bookId, location: pendingSave.location, percent: pendingSave.percent, updated_at: pendingSave.updated_at };
+  pendingSave = null;
+  try {
+    await fetch('/api/private/progress', { method: 'PUT', credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  } catch (e) {}
+}
+window.addEventListener('pagehide', flushProgress);
+
+/* ---------- EPUB ---------- */
+const THEMES = {
+  light: { bg: '#ffffff', fg: '#191c1e', link: '#2f5f86' },
+  sepia: { bg: '#f6eeda', fg: '#4b3d2c', link: '#8f5a35' },
+  dark:  { bg: '#141414', fg: '#d8d8d8', link: '#9ccbf3' },
+};
+function epubCSS() {
+  const th = THEMES[settings.theme] || THEMES.light;
+  return '@namespace epub "http://www.idpf.org/2007/ops";\n'
+    + 'html{font-size:' + settings.fontSize + 'px;background:' + th.bg + ';color:' + th.fg
+    + ';color-scheme:' + (settings.theme === 'dark' ? 'dark' : 'light') + '}\n'
+    + 'body{color:' + th.fg + '}\n'
+    + 'p,li,blockquote,dd{line-height:' + settings.lineHeight + ';text-align:justify;'
+    + '-webkit-hyphens:manual;hyphens:manual;hanging-punctuation:allow-end last;widows:2;orphans:2}\n'
+    + 'a:link{color:' + th.link + '}\n'
+    + 'img,svg,video{max-width:100%}\n'
+    + 'pre{white-space:pre-wrap !important}\n';
+}
+function applyEpubPrefs() {
+  const r = epubView && epubView.renderer;
+  if (!r) return;
+  if (r.setStyles) r.setStyles(epubCSS());
+  r.setAttribute('flow', settings.flow === 'scrolled' ? 'scrolled' : 'paginated');
+  r.setAttribute('margin', String(settings.margin));
+  stage.dataset.btheme = settings.theme;
+  epubHost.dataset.theme = settings.theme;
+}
+function onEpubTap(e) {
+  const tg = e.target;
+  if (tg && typeof tg.closest === 'function' && tg.closest('a[href]')) return; // 链接走 foliate 自己的导航
+  const w = (e.view && e.view.innerWidth) || 0;
+  if (!w || !epubView) return;
+  const x = e.clientX;
+  if (x < w * 0.32) epubView.goLeft();
+  else if (x > w * 0.68) epubView.goRight();
+  else toggleChrome();
+}
+function buildTOCList(items, go) {
+  const ul = document.createElement('ul');
+  ul.className = 'bkrd-toc-list';
+  for (const it of items || []) {
+    const li = document.createElement('li');
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'bkrd-toc-item';
+    b.textContent = it.label || '';
+    b.addEventListener('click', () => { go(it); closePanels(); });
+    li.appendChild(b);
+    if (it.subitems && it.subitems.length) li.appendChild(buildTOCList(it.subitems, go));
+    ul.appendChild(li);
+  }
+  return ul;
+}
+function setTOC(items, go) {
+  tocBody.innerHTML = '';
+  if (!items || !items.length) {
+    const d = document.createElement('div');
+    d.className = 'bkrd-toc-empty';
+    d.textContent = EN ? 'No contents' : '暂无目录';
+    tocBody.appendChild(d);
+    return;
+  }
+  tocBody.appendChild(buildTOCList(items, go));
+}
+async function openEPUB(buf, progress) {
+  await import('/js/vendor/foliate-js/view.js'); // 注册 <foliate-view>
+  const view = document.createElement('foliate-view');
+  view.className = 'bkrd-foliate';
+  epubHost.appendChild(view);
+  epubHost.classList.add('on');
+  epubView = view;
+  await view.open(new File([buf], 'book.epub', { type: 'application/epub+zip' }));
+  applyEpubPrefs();
+  view.addEventListener('relocate', e => {
+    const d = e.detail || {};
+    if (!d.cfi) return;
+    const frac = typeof d.fraction === 'number' ? d.fraction : 0;
+    const pct = Math.min(100, Math.max(0, frac * 100));
+    setPct(Math.round(pct) + '%', Math.round(pct * 10));
+    saveProgress(d.cfi, pct);
+  });
+  view.addEventListener('load', ev => {
+    const doc = ev.detail && ev.detail.doc;
+    if (doc) doc.addEventListener('click', onEpubTap);
+  });
+  setTOC(view.book.toc || [], item => view.goTo(item.href));
+  const loc = progress && typeof progress.location === 'string' && progress.location.indexOf('epubcfi(') === 0
+    ? progress.location : null;
+  try {
+    if (loc) await view.init({ lastLocation: loc });
+    else await view.init({ showTextStart: true });
+  } catch (e) {
+    await view.init({ showTextStart: true });
+  }
+  $('#bkrd-search-btn').classList.add('on');
+  slider.max = 1000;
+  wireSettingsEPUB();
+  wireEpubSearch();
+}
+function epubPrevNext(dir) {
+  if (!epubView) return;
+  if (dir < 0) epubView.goLeft(); else epubView.goRight();
+}
+
+/* ---------- EPUB 书内搜索 ---------- */
+let searchToken = 0;
+function wireEpubSearch() {
+  const q = $('#bkrd-q'), results = $('#bkrd-results');
+  let deb = 0;
+  const status = msg => { results.innerHTML = '<div class="bkrd-sr-status"></div>'; results.firstChild.textContent = msg; };
+  q.addEventListener('input', () => {
+    clearTimeout(deb);
+    deb = setTimeout(() => runEpubSearch(q.value.trim()), 400);
+  });
+  q.addEventListener('keydown', e => { if (e.key === 'Enter') { clearTimeout(deb); runEpubSearch(q.value.trim()); } });
+  $('#bkrd-search-back').addEventListener('click', () => { searchToken++; epubView.clearSearch(); closePanels(); });
+  async function runEpubSearch(query) {
+    const my = ++searchToken;
+    results.innerHTML = '';
+    if (!query || !epubView) return;
+    status(t('searching'));
+    let count = 0;
+    for await (const r of epubView.search({ query })) {
+      if (my !== searchToken) return;
+      if (r === 'done') break;
+      if (r.subitems) {
+        if (!count) results.innerHTML = '';
+        const g = document.createElement('div');
+        g.className = 'bkrd-sr-group';
+        g.textContent = r.label || '';
+        results.appendChild(g);
+        for (const sub of r.subitems) {
+          count++;
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'bkrd-sr-item';
+          const ex = sub.excerpt || {};
+          const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+          b.innerHTML = '…' + esc(ex.pre) + '<mark>' + esc(ex.match) + '</mark>' + esc(ex.post) + '…';
+          b.addEventListener('click', () => { searchToken++; epubView.goTo(sub.cfi); closePanels(); });
+          results.appendChild(b);
+        }
+      } else if (r.progress != null) {
+        status(t('searching') + ' ' + Math.round(r.progress * 100) + '%');
+      }
+    }
+    if (my !== searchToken) return;
+    if (!count) status(t('noResult'));
+    else results.querySelector('.bkrd-sr-status')?.remove();
+  }
+}
+
+/* ---------- PDF ---------- */
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+async function openPDF(buf, progress) {
+  const pdfjsLib = await import('/js/vendor/pdfjs/pdf.mjs');
+  pdfjsLib.GlobalWorkerOptions.workerSrc = '/js/vendor/pdfjs/pdf.worker.mjs';
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  pdfDoc = pdf;
+  const n = pdf.numPages;
+  pdfState = { pages: [], scale: 1, dpr: Math.min(2, window.devicePixelRatio || 1), cur: 1, pinch: null, tops: [] };
+  for (let i = 1; i <= n; i++) {
+    const page = await pdf.getPage(i);
+    const v = page.getViewport({ scale: 1 });
+    const wrap = document.createElement('div');
+    wrap.className = 'bkrd-pg';
+    const canvas = document.createElement('canvas');
+    const num = document.createElement('div');
+    num.className = 'bkrd-pgnum';
+    num.textContent = i + ' / ' + n;
+    wrap.append(canvas, num);
+    pdfHost.appendChild(wrap);
+    pdfState.pages.push({ num: i, w: v.width, h: v.height, el: wrap, canvas, renderKey: '' });
+    page.cleanup();
+  }
+  const trailer = document.createElement('div');
+  trailer.id = 'bkrd-pdf-trailer';
+  pdfHost.appendChild(trailer);
+  pdfState.trailer = trailer;
+  pdfHost.classList.add('on');
+  pdfHost.dataset.btheme = settings.theme;
+  computePdfScale();
+  layoutPdf();
+  try {
+    const outline = await pdf.getOutline();
+    if (outline && outline.length) {
+      const mapItems = items => (items || []).map(o => ({
+        label: o.title || '', dest: o.dest, subitems: mapItems(o.items),
+      }));
+      setTOC(mapItems(outline), async item => {
+        const p = await outlinePageNum(pdf, item);
+        if (p) gotoPdfPage(p);
+      });
+    }
+  } catch (e) {}
+  $('#bkrd-pagejump').classList.add('on');
+  $('#bkrd-pagetotal').textContent = '/ ' + n;
+  slider.max = n;
+  slider.min = 1;
+  slider.value = 1;
+  wireSettingsPDF();
+  wirePdfChrome();
+  let raf = 0;
+  pdfHost.addEventListener('scroll', () => {
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(onPdfScroll);
+  }, { passive: true });
+  wirePdfPinch();
+  const start = progress && typeof progress.location === 'number' ? clamp(Math.round(progress.location), 1, n) : 1;
+  requestAnimationFrame(() => { gotoPdfPage(start, true); onPdfScroll(); });
+}
+async function outlinePageNum(pdf, item) {
+  try {
+    if (!item.dest) return null;
+    // getOutline() 有时已把 dest 解析成数组 [pageRef, fit]，有时是命名字符串
+    let dest = item.dest;
+    if (typeof dest === 'string') dest = await pdf.getDestination(dest);
+    if (!dest || !dest[0]) return null;
+    const idx = await pdf.getPageIndex(dest[0]);
+    return idx + 1;
+  } catch (e) { return null; }
+}
+function pdfPageScale(pg) {
+  const cw = pdfHost.clientWidth, ch = pdfHost.clientHeight;
+  if (settings.pdfMode === 'page') return Math.min(cw / pg.w, ch / pg.h);
+  if (settings.pdfMode === 'custom') return settings.pdfScale;
+  return cw / pg.w; // width
+}
+function computePdfScale() {
+  if (!pdfState || !pdfState.pages.length) return;
+  pdfState.scale = pdfPageScale(pdfState.pages[0]);
+}
+function layoutPdf() {
+  if (!pdfState) return;
+  const cw = pdfHost.clientWidth;
+  pdfState.tops = [];
+  let y = 0;
+  for (const pg of pdfState.pages) {
+    const s = settings.pdfMode === 'custom' ? settings.pdfScale : pdfPageScale(pg);
+    pg.scale = s;
+    const w = Math.min(cw, Math.floor(pg.w * s));
+    const h = Math.floor(pg.h * s);
+    pg.el.style.width = w + 'px';
+    pg.el.style.height = h + 'px';
+    pdfState.tops.push(y);
+    y += h + 12;
+  }
+  // 尾部留白：保证最后一页也能滚动到顶部（否则跳到末页会停在倒数第二页）
+  const lastH = parseFloat(pdfState.pages[pdfState.pages.length - 1].el.style.height) || 0;
+  pdfState.trailer.style.height = Math.max(0, pdfHost.clientHeight - lastH) + 'px';
+  renderVisiblePdf();
+}
+let pdfRenderQueue = Promise.resolve();
+function renderPdfPage(i) {
+  const pg = pdfState.pages[i - 1];
+  if (!pg) return;
+  const key = pg.scale.toFixed(4) + '|' + pdfState.dpr;
+  if (pg.renderKey === key) return;
+  pg.renderKey = key; // 占位，避免重复入队
+  pdfRenderQueue = pdfRenderQueue.then(async () => {
+    try {
+      const page = await pdfDoc.getPage(i);
+      const vp = page.getViewport({ scale: pg.scale * pdfState.dpr });
+      const c = pg.canvas;
+      c.width = Math.floor(vp.width);
+      c.height = Math.floor(vp.height);
+      await page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
+      page.cleanup();
+    } catch (e) { pg.renderKey = ''; }
+  });
+}
+function visiblePdfRange() {
+  const st = pdfHost.scrollTop, vh = pdfHost.clientHeight;
+  const tops = pdfState.tops, n = tops.length;
+  let first = 0;
+  for (let i = 0; i < n; i++) {
+    const h = parseFloat(pdfState.pages[i].el.style.height) || 0;
+    if (tops[i] + h > st + 4) { first = i; break; }
+    first = i;
+  }
+  let last = first;
+  for (let i = first; i < n; i++) {
+    if (tops[i] < st + vh - 4) last = i; else break;
+  }
+  return [Math.max(0, first - 2), Math.min(n - 1, last + 2), first];
+}
+function renderVisiblePdf() {
+  if (!pdfState) return;
+  const [a, b] = visiblePdfRange();
+  for (let i = a; i <= b; i++) renderPdfPage(i + 1);
+}
+let pdfSaveT = 0;
+function onPdfScroll() {
+  if (!pdfState) return;
+  const [, , first] = visiblePdfRange();
+  const cur = first + 1, n = pdfState.pages.length;
+  pdfState.cur = cur;
+  const pct = (cur / n) * 100;
+  setPct(cur + ' / ' + n, cur);
+  $('#bkrd-pageinput').value = cur;
+  renderVisiblePdf();
+  clearTimeout(pdfSaveT);
+  pdfSaveT = setTimeout(() => saveProgress(cur, pct), 1200);
+}
+function gotoPdfPage(n, instant) {
+  if (!pdfState) return;
+  n = clamp(Math.round(n), 1, pdfState.pages.length);
+  const top = pdfState.tops[n - 1] || 0;
+  pdfHost.scrollTo({ top, behavior: instant ? 'auto' : 'smooth' });
+  if (instant) onPdfScroll();
+}
+function wirePdfPinch() {
+  const dist = e => Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+  let deb = 0;
+  pdfHost.addEventListener('touchstart', e => {
+    if (e.touches.length === 2) pdfState.pinch = { d: dist(e), s: settings.pdfMode === 'custom' ? settings.pdfScale : pdfState.scale };
+  }, { passive: true });
+  pdfHost.addEventListener('touchmove', e => {
+    if (e.touches.length === 2 && pdfState.pinch) {
+      e.preventDefault();
+      const ns = clamp(pdfState.pinch.s * dist(e) / pdfState.pinch.d, 0.3, 5);
+      settings.pdfMode = 'custom';
+      settings.pdfScale = Math.round(ns * 100) / 100;
+      saveSettings();
+      syncSettingsUI();
+      computePdfScale();
+      layoutPdf();
+      clearTimeout(deb);
+      deb = setTimeout(renderVisiblePdf, 160);
+    }
+  }, { passive: false });
+  pdfHost.addEventListener('touchend', () => { pdfState.pinch = null; }, { passive: true });
+}
+function wirePdfChrome() {
+  pdfHost.addEventListener('click', e => {
+    const r = pdfHost.getBoundingClientRect();
+    const x = e.clientX - r.left, w = r.width;
+    if (x < w * 0.25) gotoPdfPage(pdfState.cur - 1);
+    else if (x > w * 0.75) gotoPdfPage(pdfState.cur + 1);
+    else toggleChrome();
+  });
+  const pi = $('#bkrd-pageinput');
+  pi.addEventListener('keydown', e => {
+    if (e.key === 'Enter') gotoPdfPage(parseInt(pi.value, 10) || 1);
+  });
+  pi.addEventListener('change', () => gotoPdfPage(parseInt(pi.value, 10) || 1));
+}
+
+/* ---------- 设置面板 ---------- */
+function segWire(id, attr, cur, onPick) {
+  const seg = $(id);
+  const btns = [...seg.querySelectorAll('button')];
+  const paint = () => btns.forEach(b => b.setAttribute('aria-pressed', String(b.dataset[attr] === cur())));
+  btns.forEach(b => b.addEventListener('click', () => { onPick(b.dataset[attr]); paint(); saveSettings(); }));
+  paint();
+}
+function rangeWire(id, valId, fmt, get, set, after) {
+  const r = $(id), v = $(valId);
+  r.value = get();
+  v.textContent = fmt(get());
+  r.addEventListener('input', () => { set(parseFloat(r.value)); v.textContent = fmt(get()); saveSettings(); if (after) after(); });
+}
+function syncSettingsUI() {
+  for (const b of document.querySelectorAll('#bkrd-seg-flow button'))
+    b.setAttribute('aria-pressed', String(b.dataset.flow === settings.flow));
+  for (const b of document.querySelectorAll('#bkrd-seg-theme button'))
+    b.setAttribute('aria-pressed', String(b.dataset.theme === settings.theme));
+  for (const b of document.querySelectorAll('#bkrd-seg-zoom button'))
+    b.setAttribute('aria-pressed', String(b.dataset.zoom === settings.pdfMode));
+  const fs = $('#bkrd-fontsize'); if (fs) { fs.value = settings.fontSize; $('#bkrd-fontsize-v').textContent = settings.fontSize + 'px'; }
+  const lh = $('#bkrd-lineheight'); if (lh) { lh.value = settings.lineHeight; $('#bkrd-lineheight-v').textContent = Number(settings.lineHeight).toFixed(1); }
+  const mg = $('#bkrd-margin'); if (mg) { mg.value = settings.margin; $('#bkrd-margin-v').textContent = settings.margin + 'px'; }
+  const zc = $('#bkrd-zoomcustom'); if (zc) { zc.value = Math.round(settings.pdfScale * 100); $('#bkrd-zoomcustom-v').textContent = Math.round(settings.pdfScale * 100) + '%'; }
+}
+function wireSettingsEPUB() {
+  for (const el of document.querySelectorAll('[data-pdf-only]')) el.style.display = 'none';
+  for (const el of document.querySelectorAll('[data-epub-only]')) el.style.display = '';
+  segWire('#bkrd-seg-flow', 'flow', () => settings.flow, v => { settings.flow = v; applyEpubPrefs(); });
+  segWire('#bkrd-seg-theme', 'theme', () => settings.theme, v => { settings.theme = v; applyEpubPrefs(); });
+  rangeWire('#bkrd-fontsize', '#bkrd-fontsize-v', v => v + 'px', () => settings.fontSize, v => settings.fontSize = v, applyEpubPrefs);
+  rangeWire('#bkrd-lineheight', '#bkrd-lineheight-v', v => Number(v).toFixed(1), () => settings.lineHeight, v => settings.lineHeight = v, applyEpubPrefs);
+  rangeWire('#bkrd-margin', '#bkrd-margin-v', v => v + 'px', () => settings.margin, v => settings.margin = v, applyEpubPrefs);
+}
+function wireSettingsPDF() {
+  for (const el of document.querySelectorAll('[data-epub-only]')) el.style.display = 'none';
+  for (const el of document.querySelectorAll('[data-pdf-only]')) el.style.display = '';
+  segWire('#bkrd-seg-theme', 'theme', () => settings.theme, v => { settings.theme = v; pdfHost.dataset.btheme = v; });
+  segWire('#bkrd-seg-zoom', 'zoom', () => settings.pdfMode, v => {
+    settings.pdfMode = v;
+    computePdfScale(); layoutPdf();
+    requestAnimationFrame(() => { gotoPdfPage(pdfState.cur, true); });
+  });
+  rangeWire('#bkrd-zoomcustom', '#bkrd-zoomcustom-v', v => v + '%',
+    () => Math.round(settings.pdfScale * 100), v => { settings.pdfScale = v / 100; settings.pdfMode = 'custom'; },
+    () => { computePdfScale(); layoutPdf(); });
+  syncSettingsUI();
+}
+
+/* ---------- 顶栏 / 底栏 / 键盘 ---------- */
+function wireChrome() {
+  $('#bkrd-back').addEventListener('click', () => { flushProgress(); location.href = '/'; });
+  $('#bkrd-err-back').addEventListener('click', () => { location.href = '/'; });
+  $('#bkrd-tocbtn').addEventListener('click', () => openPanel(tocDrawer));
+  $('#bkrd-setbtn').addEventListener('click', () => { syncSettingsUI(); openPanel(setDrawer); });
+  $('#bkrd-search-btn').addEventListener('click', () => {
+    searchPanel.hidden = false; scrim.hidden = false;
+    setTimeout(() => $('#bkrd-q').focus(), 60);
+  });
+  scrim.addEventListener('click', () => closePanels());
+  for (const b of document.querySelectorAll('[data-close-panels]')) b.addEventListener('click', () => closePanels());
+  $('#bkrd-prev').addEventListener('click', () => {
+    if (format === 'epub') epubPrevNext(-1); else gotoPdfPage(pdfState.cur - 1);
+  });
+  $('#bkrd-next').addEventListener('click', () => {
+    if (format === 'epub') epubPrevNext(1); else gotoPdfPage(pdfState.cur + 1);
+  });
+  slider.addEventListener('pointerdown', () => sliderDragging = true);
+  window.addEventListener('pointerup', () => sliderDragging = false);
+  slider.addEventListener('input', () => {
+    const v = parseFloat(slider.value);
+    if (format === 'epub' && epubView) {
+      setPct(Math.round(v / 10) + '%', null); // 先按拖动位置显示，relocate 到达后再校准
+      epubView.goToFraction(v / 1000);
+    }
+    else if (format === 'pdf') gotoPdfPage(v);
+  });
+  document.addEventListener('keydown', e => {
+    if (e.target && e.target.matches && e.target.matches('input, textarea, select')) return;
+    if (e.key === 'ArrowLeft') { if (format === 'epub') epubPrevNext(-1); else if (pdfState) gotoPdfPage(pdfState.cur - 1); }
+    else if (e.key === 'ArrowRight') { if (format === 'epub') epubPrevNext(1); else if (pdfState) gotoPdfPage(pdfState.cur + 1); }
+    else if (e.key === 'Escape') closePanels();
+  });
+  window.addEventListener('resize', () => {
+    if (format === 'pdf' && pdfState) { computePdfScale(); layoutPdf(); }
+  });
+}
+
+/* ---------- 启动 ---------- */
+function detectFormat(buf) {
+  const f = String((book && book.format) || '').toLowerCase();
+  if (f.indexOf('epub') >= 0) return 'epub';
+  if (f.indexOf('pdf') >= 0) return 'pdf';
+  const b = new Uint8Array(buf.slice(0, 5));
+  if (b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46) return 'pdf';
+  if (b[0] === 0x50 && b[1] === 0x4b) return 'epub';
+  return '';
+}
+async function boot() {
+  wireChrome();
+  syncSettingsUI();
+  if (!bookId) { showError(t('errNoId')); return; }
+  try {
+    const r = await fetch('/api/private/me', { credentials: 'same-origin' });
+    if (r.ok) loggedIn = true;
+  } catch (e) {}
+  const found = await findBook(bookId);
+  if (!found) { showError(t('errNotFound')); return; }
+  book = found.book; isPrivate = found.priv;
+  setTitle(book.title || (EN ? 'Read' : '阅读'));
+  const progress = await loadProgress();
+  let buf;
+  try {
+    const base = isPrivate ? '/api/private/file?id=' : '/api/file?id=';
+    const r = await fetch(base + encodeURIComponent(bookId), { credentials: 'same-origin' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    buf = await r.arrayBuffer();
+  } catch (e) { showError(t('errFile')); return; }
+  format = detectFormat(buf);
+  $('#bkrd-loading').hidden = true;
+  if (format === 'epub') { try { await openEPUB(buf, progress); } catch (e) { console.error(e); showError(t('errFile')); } }
+  else if (format === 'pdf') { try { await openPDF(buf, progress); } catch (e) { console.error(e); showError(t('errFile')); } }
+  else showError(t('errFormat'));
+}
+boot();
+</script>
+{{ end }}

@@ -1,0 +1,674 @@
+{{ define "main" }}
+{{ $isEn := or (eq .Lang "en") (hasPrefix .RelPermalink "/en/") }}
+<main class="max-w-4xl mx-auto px-4 sm:px-6 pb-16">
+  {{ partial "subpage-head.html" (dict "title" (cond $isEn "Admin" "管理") "sub" "—" "isEn" $isEn) }}
+
+  {{/* 未登录提示（/api/admin/* 返回 401/403 时显示） */}}
+  <div id="adm-auth" class="hidden text-center py-20">
+    <p class="text-base font-bold mb-2">{{ if $isEn }}Sign-in required{{ else }}需要登录{{ end }}</p>
+    <p class="text-sm text-m-on-surface-variant">{{ if $isEn }}Please sign in via Cloudflare Access to manage the library.{{ else }}请先通过 Cloudflare Access 登录后再管理书库。{{ end }}</p>
+  </div>
+
+  <div id="adm-main" class="hidden">
+    {{/* 上传区 */}}
+    <section class="mb-10">
+      <h2 class="text-sm font-bold text-m-on-surface-variant mb-3 px-1">{{ if $isEn }}Add books{{ else }}上传新书{{ end }}</h2>
+      <div id="adm-drop" class="rounded-3xl border-2 border-dashed border-m-outline bg-m-container-lowest/60 p-8 text-center cursor-pointer transition-colors hover:border-m-primary" role="button" tabindex="0" aria-label="{{ if $isEn }}Select files{{ else }}选择文件{{ end }}">
+        <input type="file" id="adm-file" multiple accept=".epub,.pdf" class="hidden">
+        <p class="text-sm font-bold">{{ if $isEn }}Drag &amp; drop files here, or click to browse{{ else }}拖放文件到这里，或点击选择{{ end }}</p>
+        <p class="text-xs text-m-on-surface-variant mt-1.5">{{ if $isEn }}Only .epub / .pdf · max 500 MB per file{{ else }}仅接受 .epub / .pdf，单本上限 500MB{{ end }}</p>
+      </div>
+      <div id="adm-queue" class="space-y-3 mt-4"></div>
+    </section>
+
+    {{/* 管理列表 */}}
+    <section>
+      <div class="flex items-baseline justify-between mb-3 px-1">
+        <h2 class="text-sm font-bold text-m-on-surface-variant">{{ if $isEn }}Manage books{{ else }}书籍管理{{ end }}</h2>
+        <p id="adm-stats" class="text-xs text-m-on-surface-variant"></p>
+      </div>
+      <div id="adm-list" class="space-y-3"></div>
+      <div id="adm-list-empty" class="hidden text-center py-12 text-sm text-m-on-surface-variant">{{ if $isEn }}No books yet.{{ else }}还没有书。{{ end }}</div>
+    </section>
+  </div>
+  <input type="file" id="adm-cover-input" accept="image/*" class="hidden">
+</main>
+
+{{/* 编辑对话框 */}}
+<div id="adm-edit-wrap" class="fixed inset-0 z-[70] hidden items-center justify-center p-4" role="dialog" aria-modal="true">
+  <div id="adm-edit-bg" class="absolute inset-0 bg-black/45"></div>
+  <div class="relative w-full max-w-md rounded-3xl bg-m-container-lowest border border-m-outline/50 shadow-2xl max-h-[85vh] overflow-y-auto">
+    <div class="p-5">
+      <h3 class="text-base font-extrabold mb-4" id="adm-edit-title"></h3>
+      <div id="adm-edit-body" class="space-y-3"></div>
+      <div class="flex gap-2 mt-5">
+        <button type="button" id="adm-edit-save" class="flex-1 h-12 rounded-full bg-m-primary text-m-on-primary text-sm font-bold">{{ if $isEn }}Save{{ else }}保存{{ end }}</button>
+        <button type="button" id="adm-edit-close" class="h-12 px-6 rounded-full bg-m-container text-m-on-surface text-sm font-bold">{{ if $isEn }}Close{{ else }}关闭{{ end }}</button>
+      </div>
+    </div>
+  </div>
+</div>
+{{ end }}
+
+{{ define "pagejs" }}
+{{ $isEn := or (eq .Lang "en") (hasPrefix .RelPermalink "/en/") }}
+<script type="module">
+(function(){
+"use strict";
+var isEn = {{ if $isEn }}true{{ else }}false{{ end }};
+
+/* 单文件上限（可配置）；R2 multipart 切片大小固定 10MB */
+var MAX_MB = 500;
+var CHUNK = 10 * 1024 * 1024;
+
+var T = {
+  title: isEn ? 'Title' : '书名',
+  author: isEn ? 'Author' : '作者',
+  lang: isEn ? 'Language' : '语言',
+  tags: isEn ? 'Tags' : '标签',
+  tagsPh: isEn ? 'Comma separated' : '逗号分隔',
+  pub: isEn ? 'Public' : '公开',
+  priv: isEn ? 'Private' : '私有',
+  inShelf: isEn ? 'Feature in shelf' : '放进书单',
+  upload: isEn ? 'Upload' : '上传',
+  cancel: isEn ? 'Cancel' : '取消',
+  retry: isEn ? 'Retry' : '重试',
+  parsing: isEn ? 'Parsing…' : '解析中…',
+  ready: isEn ? 'Ready to upload' : '就绪，可上传',
+  uploading: function(p){ return (isEn ? 'Uploading ' : '上传中 ') + p + '%'; },
+  done: isEn ? 'Done' : '已完成',
+  exists: isEn ? 'Already exists — skipped' : '已存在，已跳过',
+  errMagic: isEn ? 'Invalid file header (not a real EPUB/PDF)' : '文件头校验失败（不是有效的 EPUB/PDF）',
+  errMime: isEn ? 'Not a valid EPUB (mimetype missing)' : '不是有效的 EPUB（缺少 mimetype）',
+  errExt: isEn ? 'Only .epub / .pdf accepted' : '仅接受 .epub / .pdf',
+  errSize: isEn ? 'File too large (max 500 MB)' : '文件过大（上限 500MB）',
+  errUpload: isEn ? 'Upload failed: ' : '上传失败：',
+  cancelled: isEn ? 'Cancelled' : '已取消',
+  stats: function(n, s){ return isEn ? (n + ' books · ' + s + ' used') : ('共 ' + n + ' 本 · 已用 ' + s); },
+  editInfo: isEn ? 'Edit info' : '编辑信息',
+  replaceCover: isEn ? 'Replace cover' : '换封面',
+  del: isEn ? 'Delete' : '删除',
+  edit: isEn ? 'Edit' : '编辑',
+  delConfirm: function(t){ return isEn ? ('Delete "' + t + '"?\nThis removes the file, cover and database record.') : ('确定删除《' + t + '》吗？\n将同时删除 R2 文件、封面和数据库记录。'); },
+  delFail: isEn ? 'Delete failed' : '删除失败',
+  saveFail: isEn ? 'Save failed' : '保存失败',
+  shelf: isEn ? 'Shelf' : '书单'
+};
+
+function esc(s){
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
+function fmtSize(b){
+  b = Number(b) || 0;
+  if(b < 1024) return b + ' B';
+  if(b < 1048576) return (b / 1024).toFixed(1) + ' KB';
+  if(b < 1073741824) return (b / 1048576).toFixed(1) + ' MB';
+  return (b / 1073741824).toFixed(2) + ' GB';
+}
+function fmtDate(s){
+  if(!s) return '—';
+  try{ return new Date(s).toLocaleDateString(isEn ? 'en-US' : 'zh-CN'); }
+  catch(e){ return '—'; }
+}
+function api(path, opts){
+  opts = opts || {};
+  opts.credentials = 'same-origin';
+  return fetch(path, opts);
+}
+function subEl(){ return document.querySelector('[data-subpage-head] .subpage-sub'); }
+
+var adminBooks = [];
+var queue = [];
+var uidSeq = 0;
+
+/* ============ 文件校验：魔数（前后端都验） ============ */
+async function checkMagic(file){
+  var ext = file.name.toLowerCase();
+  var head = new Uint8Array(await file.slice(0, 4).arrayBuffer());
+  var isZip = head[0] === 0x50 && head[1] === 0x4B && head[2] === 0x03 && head[3] === 0x04; /* PK\x03\x04 */
+  var isPdf = head[0] === 0x25 && head[1] === 0x50 && head[2] === 0x44 && head[3] === 0x46; /* %PDF */
+  if(ext.endsWith('.epub')){
+    if(!isZip) return {ok: false, why: 'magic'};
+    /* zip 内含 mimetype application/epub+zip：扫前 8KB 找明文串 */
+    var buf = new Uint8Array(await file.slice(0, 8192).arrayBuffer());
+    var s = new TextDecoder('latin1').decode(buf);
+    if(s.indexOf('application/epub+zip') === -1) return {ok: false, why: 'mimetype'};
+    return {ok: true, format: 'EPUB'};
+  }
+  if(ext.endsWith('.pdf')){
+    if(!isPdf) return {ok: false, why: 'magic'};
+    return {ok: true, format: 'PDF'};
+  }
+  return {ok: false, why: 'ext'};
+}
+
+/* ============ 元数据解析 ============ */
+function langStr(v){
+  if(!v) return '';
+  if(typeof v === 'string') return v;
+  if(typeof v === 'object') return v.und || Object.values(v)[0] || '';
+  return String(v);
+}
+async function toWebp600(blob){
+  try{
+    var bmp = await createImageBitmap(blob);
+    var w = 600, h = Math.max(1, Math.round(bmp.height * (600 / bmp.width)));
+    var cv = document.createElement('canvas');
+    cv.width = w; cv.height = h;
+    cv.getContext('2d').drawImage(bmp, 0, 0, w, h);
+    if(bmp.close) bmp.close();
+    return await new Promise(function(res){ cv.toBlob(res, 'image/webp', 0.85); });
+  }catch(e){ return blob; }
+}
+async function makeZipLoader(file){
+  var zip = await import('/js/vendor/foliate-js/vendor/zip.js');
+  zip.configure({useWebWorkers: false});
+  var reader = new zip.ZipReader(new zip.BlobReader(file));
+  var entries = await reader.getEntries();
+  var map = new Map(entries.map(function(e){ return [e.filename, e]; }));
+  var load = function(f){ return function(name){
+    var args = Array.prototype.slice.call(arguments, 1);
+    return map.has(name) ? f.apply(null, [map.get(name)].concat(args)) : null;
+  }; };
+  return {
+    loadText: load(function(entry){ return entry.getData(new zip.TextWriter()); }),
+    loadBlob: load(function(entry, type){ return entry.getData(new zip.BlobWriter(type)); }),
+    getSize: function(name){ var e = map.get(name); return e ? (e.uncompressedSize || 0) : 0; }
+  };
+}
+async function parseEpub(file){
+  var mod = await import('/js/vendor/foliate-js/epub.js');
+  var loader = await makeZipLoader(file);
+  var book = await new mod.EPUB(loader).init();
+  var md = book.metadata || {};
+  var title = langStr(md.title) || file.name.replace(/\.epub$/i, '');
+  /* tidy() 会把单元素数组压成标量：author 可能是字符串/对象/数组 */
+  var authorArr = md.author == null ? [] : (Array.isArray(md.author) ? md.author : [md.author]);
+  var author = authorArr.map(function(a){ return langStr(a && a.name !== undefined ? a.name : a); }).filter(Boolean).join(', ');
+  var langRaw = md.language;
+  var lang = Array.isArray(langRaw) ? (langRaw[0] || '') : (langRaw || '');
+  var coverBlob = null, pages = 0;
+  try{
+    var cb = await book.getCover();
+    if(cb) coverBlob = await toWebp600(cb);
+  }catch(e){}
+  try{ pages = (book.sections || []).length; }catch(e){}
+  try{ if(book.destroy) book.destroy(); }catch(e){}
+  return {title: title, author: author, lang: lang, coverBlob: coverBlob, pages: pages};
+}
+var pdfjsLib = null;
+async function parsePdf(file){
+  if(!pdfjsLib){
+    pdfjsLib = await import('/js/vendor/pdfjs/pdf.mjs');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = '/js/vendor/pdfjs/pdf.worker.mjs';
+  }
+  var doc = await pdfjsLib.getDocument({data: await file.arrayBuffer()}).promise;
+  var title = '', author = '';
+  try{
+    var m = await doc.getMetadata();
+    if(m && m.info){ title = m.info.Title || ''; author = m.info.Author || ''; }
+  }catch(e){}
+  var pages = doc.numPages || 0;
+  var coverBlob = null;
+  try{
+    var page = await doc.getPage(1);
+    var scale = 600 / page.getViewport({scale: 1}).width;
+    var vp = page.getViewport({scale: scale});
+    var cv = document.createElement('canvas');
+    cv.width = Math.ceil(vp.width); cv.height = Math.ceil(vp.height);
+    await page.render({canvasContext: cv.getContext('2d'), viewport: vp}).promise;
+    coverBlob = await new Promise(function(res){ cv.toBlob(res, 'image/webp', 0.85); });
+  }catch(e){}
+  try{ doc.destroy(); }catch(e){}
+  return {title: title || file.name.replace(/\.pdf$/i, ''), author: author, lang: '', coverBlob: coverBlob, pages: pages};
+}
+async function sha256hex(file){
+  var d = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+  return Array.prototype.map.call(new Uint8Array(d), function(x){ return x.toString(16).padStart(2, '0'); }).join('');
+}
+
+/* ============ 上传队列 ============ */
+var drop = document.getElementById('adm-drop');
+var fileInput = document.getElementById('adm-file');
+drop.addEventListener('click', function(){ fileInput.click(); });
+drop.addEventListener('keydown', function(e){ if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); fileInput.click(); } });
+['dragenter', 'dragover'].forEach(function(ev){ drop.addEventListener(ev, function(e){ e.preventDefault(); drop.classList.add('border-m-primary'); }); });
+['dragleave', 'drop'].forEach(function(ev){ drop.addEventListener(ev, function(e){ e.preventDefault(); drop.classList.remove('border-m-primary'); }); });
+drop.addEventListener('drop', function(e){
+  if(e.dataTransfer && e.dataTransfer.files) addFiles(Array.prototype.slice.call(e.dataTransfer.files));
+});
+fileInput.addEventListener('change', function(){
+  /* FileList 是 live 对象：先快照成数组再清空，否则循环会被截断 */
+  var fs = Array.prototype.slice.call(fileInput.files);
+  fileInput.value = '';
+  addFiles(fs);
+});
+
+async function addFiles(files){
+  for(var i = 0; i < files.length; i++){
+    await addFile(files[i]);
+  }
+}
+async function addFile(file){
+  var item = {
+    uid: 'q' + (++uidSeq), file: file, format: null,
+    title: '', author: '', lang: '', tags: '', visibility: 'private', inShelf: false,
+    sha256: '', coverBlob: null, coverURL: '', pages: 0,
+    status: 'parsing', progress: 0, err: '', existsInfo: null,
+    abort: null, uploadId: null, key: null, cancelled: false
+  };
+  queue.push(item); renderQueue();
+  try{
+    if(file.size > MAX_MB * 1024 * 1024){ item.status = 'error'; item.err = T.errSize; renderQueue(); return; }
+    var chk = await checkMagic(file);
+    if(!chk.ok){
+      item.status = 'error';
+      item.err = chk.why === 'ext' ? T.errExt : (chk.why === 'mimetype' ? T.errMime : T.errMagic);
+      renderQueue(); return;
+    }
+    item.format = chk.format;
+    var meta = chk.format === 'EPUB' ? await parseEpub(file) : await parsePdf(file);
+    item.title = meta.title; item.author = meta.author; item.lang = meta.lang;
+    item.coverBlob = meta.coverBlob; item.pages = meta.pages;
+    if(item.coverBlob) item.coverURL = URL.createObjectURL(item.coverBlob);
+    item.sha256 = await sha256hex(file);
+    item.status = 'ready';
+  }catch(e){
+    item.status = 'error'; item.err = (e && e.message) || String(e);
+  }
+  renderQueue();
+}
+
+function switchHTML(fid, label, checked){
+  return '<label class="flex items-center gap-2 cursor-pointer select-none text-sm text-m-on-surface">' +
+    '<input type="checkbox" data-f="' + fid + '"' + (checked ? ' checked' : '') + ' class="peer sr-only">' +
+    '<span class="w-10 h-6 rounded-full bg-m-container peer-checked:bg-m-primary relative transition-colors ' +
+    'after:content-[\'\'] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:after:translate-x-4"></span>' +
+    '<span>' + esc(label) + '</span></label>';
+}
+function statusText(item){
+  if(item.status === 'parsing') return '<span class="text-m-on-surface-variant">' + T.parsing + '</span>';
+  if(item.status === 'ready') return '<span class="text-m-tertiary">' + T.ready + '</span>';
+  if(item.status === 'uploading') return '<span class="text-m-primary">' + T.uploading(Math.round(item.progress * 100)) + '</span>';
+  if(item.status === 'done') return '<span class="text-m-tertiary font-bold">' + T.done + '</span>';
+  if(item.status === 'exists'){
+    var t = item.existsInfo && item.existsInfo.title ? '《' + esc(item.existsInfo.title) + '》' : '';
+    return '<span class="text-m-warm font-bold">' + T.exists + ' ' + t + '</span>';
+  }
+  if(item.status === 'cancelled') return '<span class="text-m-on-surface-variant">' + T.cancelled + '</span>';
+  if(item.status === 'error') return '<span class="text-red-500 font-semibold">' + T.errUpload + esc(item.err) + '</span>';
+  return '';
+}
+function renderQueue(){
+  var box = document.getElementById('adm-queue');
+  box.innerHTML = queue.map(function(item){
+    var cover = item.coverURL
+      ? '<img src="' + item.coverURL + '" alt="" class="w-full h-full object-cover">'
+      : '<div class="w-full h-full flex items-center justify-center bg-m-container text-m-on-surface-variant text-xl font-extrabold">' + esc(String(item.title || item.file.name).slice(0, 1)) + '</div>';
+    var canEdit = item.status === 'ready' || item.status === 'error' || item.status === 'parsing';
+    var field = function(fid, label, val, ph){
+      return '<label class="block min-w-0"><span class="text-[11px] font-bold text-m-on-surface-variant">' + esc(label) + '</span>' +
+        '<input data-f="' + fid + '" value="' + esc(val) + '" placeholder="' + esc(ph || '') + '"' + (canEdit ? '' : ' disabled') +
+        ' class="mt-1 w-full h-10 px-3 rounded-xl bg-m-container text-sm text-m-on-surface outline-none focus:ring-2 focus:ring-m-primary/50 disabled:opacity-60"></label>';
+    };
+    var actions = '';
+    if(item.status === 'ready' || item.status === 'error' || item.status === 'cancelled'){
+      actions = '<button type="button" data-qact="upload" class="h-9 px-4 rounded-full bg-m-primary text-m-on-primary text-xs font-bold">' + T.upload + '</button>';
+    }else if(item.status === 'uploading'){
+      actions = '<button type="button" data-qact="cancel" class="h-9 px-4 rounded-full bg-m-container text-m-on-surface text-xs font-bold">' + T.cancel + '</button>';
+    }
+    return '<div class="rounded-2xl bg-m-container-lowest border border-m-outline/40 p-4" data-q="' + item.uid + '">' +
+      '<div class="flex gap-3">' +
+        '<div class="w-14 h-[84px] rounded-lg overflow-hidden bg-m-container flex-shrink-0">' + cover + '</div>' +
+        '<div class="flex-1 min-w-0">' +
+          '<p class="text-sm font-bold truncate">' + esc(item.file.name) + '</p>' +
+          '<p class="text-xs text-m-on-surface-variant mt-0.5">' + esc(item.format || '…') + ' · ' + esc(fmtSize(item.file.size)) + '</p>' +
+          '<div class="mt-2 h-2 rounded-full bg-m-container overflow-hidden' + (item.status === 'uploading' ? '' : ' hidden') + '">' +
+            '<div id="bk-prog-' + item.uid + '" class="h-full rounded-full bg-m-primary" style="width:' + Math.round(item.progress * 100) + '%"></div></div>' +
+          '<p class="text-xs mt-1.5" data-status="1">' + statusText(item) + '</p>' +
+        '</div>' +
+        '<div class="flex flex-col gap-1.5 flex-shrink-0">' + actions + '</div>' +
+      '</div>' +
+      '<div class="grid grid-cols-2 gap-2 mt-3">' +
+        field('title', T.title, item.title) + field('author', T.author, item.author) +
+        field('lang', T.lang, item.lang) + field('tags', T.tags, item.tags, T.tagsPh) +
+      '</div>' +
+      '<div class="flex items-center gap-6 mt-3">' +
+        switchHTML('vis', item.visibility === 'public' ? T.pub : T.priv, item.visibility === 'public') +
+        switchHTML('inShelf', T.inShelf, item.inShelf) +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+function updateProg(item){
+  var el = document.getElementById('bk-prog-' + item.uid);
+  if(el) el.style.width = Math.round(item.progress * 100) + '%';
+  var card = document.querySelector('[data-q="' + item.uid + '"] [data-status]');
+  if(card) card.innerHTML = statusText(item);
+}
+document.getElementById('adm-queue').addEventListener('input', function(e){
+  var card = e.target.closest('[data-q]'); if(!card) return;
+  var item = queue.find(function(q){ return q.uid === card.getAttribute('data-q'); });
+  if(!item) return;
+  var f = e.target.getAttribute('data-f');
+  if(f === 'title') item.title = e.target.value;
+  else if(f === 'author') item.author = e.target.value;
+  else if(f === 'lang') item.lang = e.target.value;
+  else if(f === 'tags') item.tags = e.target.value;
+});
+document.getElementById('adm-queue').addEventListener('change', function(e){
+  var card = e.target.closest('[data-q]'); if(!card) return;
+  var item = queue.find(function(q){ return q.uid === card.getAttribute('data-q'); });
+  if(!item) return;
+  var f = e.target.getAttribute('data-f');
+  if(f === 'vis'){
+    item.visibility = e.target.checked ? 'public' : 'private';
+    var lbl = e.target.closest('label').querySelector('span:last-child');
+    if(lbl) lbl.textContent = e.target.checked ? T.pub : T.priv;
+  }else if(f === 'inShelf'){
+    item.inShelf = e.target.checked;
+  }
+});
+document.getElementById('adm-queue').addEventListener('click', function(e){
+  var btn = e.target.closest('[data-qact]'); if(!btn) return;
+  var card = btn.closest('[data-q]');
+  var item = queue.find(function(q){ return q.uid === card.getAttribute('data-q'); });
+  if(!item) return;
+  var act = btn.getAttribute('data-qact');
+  if(act === 'upload') uploadItem(item);
+  else if(act === 'cancel') cancelItem(item);
+});
+
+/* ============ R2 multipart 上传 ============ */
+async function uploadItem(item){
+  if(item.status === 'uploading') return;
+  item.cancelled = false;
+  item.status = 'uploading'; item.progress = 0; item.err = '';
+  item.abort = new AbortController();
+  var signal = item.abort.signal;
+  renderQueue();
+  var sleep = function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); };
+  try{
+    /* init（含 SHA-256 去重） */
+    var initR = await api('/api/admin/upload/init', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, signal: signal,
+      body: JSON.stringify({filename: item.file.name, size: item.file.size, sha256: item.sha256, format: item.format})
+    });
+    if(initR.status === 409){
+      var j409 = await initR.json().catch(function(){ return {}; });
+      item.status = 'exists'; item.existsInfo = j409.book || null;
+      renderQueue(); return;
+    }
+    if(!initR.ok) throw new Error('init HTTP ' + initR.status);
+    var init = await initR.json();
+    item.uploadId = init.uploadId; item.key = init.key;
+    /* 切片上传，每片失败重试 3 次 */
+    var total = item.file.size, n = Math.max(1, Math.ceil(total / CHUNK));
+    var parts = [];
+    for(var i = 0; i < n; i++){
+      var blob = item.file.slice(i * CHUNK, Math.min(total, (i + 1) * CHUNK));
+      var etag = null, lastErr = null;
+      for(var a = 0; a < 3; a++){
+        try{
+          var pr = await api('/api/admin/upload/part?uploadId=' + encodeURIComponent(item.uploadId) +
+            '&key=' + encodeURIComponent(item.key) + '&partNumber=' + (i + 1),
+            {method: 'POST', body: blob, signal: signal});
+          if(!pr.ok) throw new Error('part ' + (i + 1) + ' HTTP ' + pr.status);
+          var pj = await pr.json();
+          etag = pj.etag; lastErr = null; break;
+        }catch(e){
+          lastErr = e;
+          if(signal.aborted) throw e;
+          await sleep(800 * (a + 1));
+        }
+      }
+      if(etag == null) throw lastErr || new Error('part failed');
+      parts.push({partNumber: i + 1, etag: etag});
+      item.progress = ((i + 1) / n) * 0.9;
+      updateProg(item);
+    }
+    /* 封面（WebP 宽 600）：key 为 covers/<uuid>.webp，uuid 取自文件 key */
+    var coverKey = null;
+    if(item.coverBlob){
+      var _uuid = item.key.slice('books/'.length, item.key.lastIndexOf('.'));
+      var cr = await api('/api/admin/cover?key=' + encodeURIComponent('covers/' + _uuid + '.webp'),
+        {method: 'POST', body: item.coverBlob, headers: {'Content-Type': 'image/webp'}, signal: signal});
+      if(!cr.ok) throw new Error('cover HTTP ' + cr.status);
+      coverKey = (await cr.json()).key || null;
+    }
+    item.progress = 0.95; updateProg(item);
+    /* complete */
+    var meta = {
+      title: item.title, author: item.author, lang: item.lang,
+      tags: item.tags.split(/[,，]/).map(function(s){ return s.trim(); }).filter(Boolean),
+      visibility: item.visibility, in_shelf: item.inShelf ? 1 : 0, coverKey: coverKey
+    };
+    var cr2 = await api('/api/admin/upload/complete', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, signal: signal,
+      body: JSON.stringify({uploadId: item.uploadId, key: item.key, parts: parts, sha256: item.sha256, meta: meta})
+    });
+    if(!cr2.ok) throw new Error('complete HTTP ' + cr2.status);
+    var done = await cr2.json();
+    item.status = 'done'; item.progress = 1;
+    renderQueue();
+    /* 传完不刷新：直接 prepend 到管理列表 */
+    adminBooks.unshift({
+      id: done.id, title: item.title, author: item.author, lang: item.lang,
+      format: item.format, size: item.file.size, sha256: item.sha256,
+      cover_key: coverKey, pages: item.pages, tags: meta.tags,
+      visibility: item.visibility, in_shelf: item.inShelf ? 1 : 0,
+      created_at: new Date().toISOString(), updated_at: new Date().toISOString()
+    });
+    renderList(); renderStats();
+    var it = item;
+    setTimeout(function(){
+      queue = queue.filter(function(q){ return q !== it; });
+      renderQueue();
+    }, 2500);
+  }catch(e){
+    if(signal.aborted || item.cancelled){ item.status = 'cancelled'; }
+    else{ item.status = 'error'; item.err = (e && e.message) || String(e); }
+    renderQueue();
+  }
+}
+async function cancelItem(item){
+  item.cancelled = true;
+  if(item.abort) try{ item.abort.abort(); }catch(e){}
+  if(item.uploadId && item.key){
+    try{
+      await api('/api/admin/upload/abort', {method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({uploadId: item.uploadId, key: item.key})});
+    }catch(e){}
+  }
+  item.status = 'cancelled';
+  renderQueue();
+}
+
+/* ============ 管理列表 ============ */
+function coverURLAdmin(b){
+  return b.cover_key ? '/api/private/cover?key=' + encodeURIComponent(b.cover_key) : '';
+}
+function renderStats(){
+  var bytes = adminBooks.reduce(function(s, b){ return s + (Number(b.size) || 0); }, 0);
+  var txt = T.stats(adminBooks.length, fmtSize(bytes));
+  var sub = subEl(); if(sub) sub.textContent = txt;
+  var st = document.getElementById('adm-stats'); if(st) st.textContent = txt;
+}
+function renderList(){
+  var box = document.getElementById('adm-list');
+  var empty = document.getElementById('adm-list-empty');
+  if(!adminBooks.length){ box.innerHTML = ''; empty.classList.remove('hidden'); return; }
+  empty.classList.add('hidden');
+  box.innerHTML = adminBooks.map(function(b){
+    var cv = coverURLAdmin(b);
+    var cover = cv
+      ? '<img src="' + esc(cv) + '" alt="" loading="lazy" class="w-full h-full object-cover">'
+      : '<div class="w-full h-full flex items-center justify-center bg-m-container text-m-on-surface-variant text-xl font-extrabold">' + esc(String(b.title || '?').slice(0, 1)) + '</div>';
+    var visBadge = b.visibility === 'public'
+      ? '<span class="text-[11px] font-bold px-2 py-0.5 rounded-full bg-m-tertiary-container text-m-on-tertiary-container">' + T.pub + '</span>'
+      : '<span class="text-[11px] font-bold px-2 py-0.5 rounded-full bg-m-container text-m-on-surface-variant">' + T.priv + '</span>';
+    var shelfBadge = (b.in_shelf === 1 || b.in_shelf === true)
+      ? '<span class="text-[11px] font-bold px-2 py-0.5 rounded-full bg-m-warm-container text-m-on-warm-container">' + T.shelf + '</span>'
+      : '';
+    var btn = function(act, label, danger){
+      return '<button type="button" data-act="' + act + '" class="h-9 px-3 rounded-full text-xs font-bold ' +
+        (danger ? 'text-red-500 bg-red-500/10' : 'bg-m-container text-m-on-surface') + '">' + esc(label) + '</button>';
+    };
+    return '<div class="flex gap-3 p-3 rounded-2xl bg-m-container-lowest border border-m-outline/40" data-row="' + esc(b.id) + '">' +
+      '<div class="w-14 h-[84px] rounded-lg overflow-hidden bg-m-container flex-shrink-0">' + cover + '</div>' +
+      '<div class="flex-1 min-w-0">' +
+        '<p class="text-sm font-bold truncate">' + esc(b.title || '') + '</p>' +
+        '<p class="text-xs text-m-on-surface-variant truncate mt-0.5">' + esc(b.author || '') + '</p>' +
+        '<div class="flex items-center gap-1.5 flex-wrap mt-2">' + visBadge + shelfBadge + '</div>' +
+        '<p class="text-[11px] text-m-on-surface-variant mt-1.5">' + esc((b.format || '').toUpperCase()) + ' · ' + esc(fmtSize(b.size)) + ' · ' + esc(fmtDate(b.created_at)) + '</p>' +
+      '</div>' +
+      '<div class="flex flex-col gap-1.5 flex-shrink-0">' +
+        btn('edit', T.edit) + btn('cover', T.replaceCover) +
+        btn('toggle', b.visibility === 'public' ? T.priv : T.pub) + btn('del', T.del, true) +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+document.getElementById('adm-list').addEventListener('click', async function(e){
+  var btn = e.target.closest('[data-act]'); if(!btn) return;
+  var row = btn.closest('[data-row]');
+  var id = row.getAttribute('data-row');
+  var b = adminBooks.find(function(x){ return String(x.id) === String(id); });
+  if(!b) return;
+  var act = btn.getAttribute('data-act');
+  if(act === 'edit'){ openEdit(b); }
+  else if(act === 'toggle'){
+    var nv = b.visibility === 'public' ? 'private' : 'public';
+    var r = await api('/api/admin/book?id=' + encodeURIComponent(b.id),
+      {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({visibility: nv})});
+    if(r.ok){ b.visibility = nv; b.updated_at = new Date().toISOString(); renderList(); }
+    else{ alert(T.saveFail); }
+  }
+  else if(act === 'cover'){
+    coverTarget = b;
+    document.getElementById('adm-cover-input').click();
+  }
+  else if(act === 'del'){
+    if(!confirm(T.delConfirm(b.title || ''))) return;
+    var r2 = await api('/api/admin/book?id=' + encodeURIComponent(b.id), {method: 'DELETE'});
+    if(r2.ok){
+      adminBooks = adminBooks.filter(function(x){ return String(x.id) !== String(id); });
+      renderList(); renderStats();
+    }else{ alert(T.delFail); }
+  }
+});
+
+/* 换封面：选图 → 压 WebP 600 → POST cover → PUT */
+var coverTarget = null;
+document.getElementById('adm-cover-input').addEventListener('change', async function(e){
+  var f = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if(!f || !coverTarget) return;
+  var b = coverTarget; coverTarget = null;
+  try{
+    var webp = await toWebp600(f);
+    /* key 用书现有的 cover_key（无则按 covers/<bookid>.webp 构造，book id 即 uuid），后端返回新 coverKey 后 PUT 更新 */
+    var key = b.cover_key || ('covers/' + b.id + '.webp');
+    var r = await api('/api/admin/cover?key=' + encodeURIComponent(key),
+      {method: 'POST', body: webp, headers: {'Content-Type': 'image/webp'}});
+    if(!r.ok) throw new Error('cover HTTP ' + r.status);
+    var ck = (await r.json()).key;
+    var r2 = await api('/api/admin/book?id=' + encodeURIComponent(b.id),
+      {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({coverKey: ck})});
+    if(!r2.ok) throw new Error('put HTTP ' + r2.status);
+    b.cover_key = ck; b.updated_at = new Date().toISOString();
+    renderList();
+  }catch(err){ alert(T.saveFail + ': ' + ((err && err.message) || err)); }
+});
+
+/* ============ 编辑对话框 ============ */
+var editWrap = document.getElementById('adm-edit-wrap');
+var editBody = document.getElementById('adm-edit-body');
+var editBook = null;
+function openEdit(b){
+  editBook = b;
+  document.getElementById('adm-edit-title').textContent = T.editInfo + ' · ' + (b.title || '');
+  var field = function(fid, label, val, ph){
+    return '<label class="block"><span class="text-[11px] font-bold text-m-on-surface-variant">' + esc(label) + '</span>' +
+      '<input data-f="' + fid + '" value="' + esc(val) + '" placeholder="' + esc(ph || '') + '"' +
+      ' class="mt-1 w-full h-11 px-3 rounded-xl bg-m-container text-sm text-m-on-surface outline-none focus:ring-2 focus:ring-m-primary/50"></label>';
+  };
+  editBody.innerHTML =
+    field('title', T.title, b.title || '') +
+    field('author', T.author, b.author || '') +
+    '<div class="grid grid-cols-2 gap-3">' + field('lang', T.lang, b.lang || '') + field('tags', T.tags, (b.tags || []).join(', '), T.tagsPh) + '</div>' +
+    '<div class="flex items-center gap-6 pt-1">' +
+      switchHTML('vis', b.visibility === 'public' ? T.pub : T.priv, b.visibility === 'public') +
+      switchHTML('inShelf', T.inShelf, b.in_shelf === 1 || b.in_shelf === true) +
+    '</div>';
+  editWrap.classList.remove('hidden'); editWrap.classList.add('flex');
+  document.body.style.overflow = 'hidden';
+}
+function closeEdit(){
+  editWrap.classList.add('hidden'); editWrap.classList.remove('flex');
+  document.body.style.overflow = '';
+  editBook = null;
+  if(location.hash.indexOf('#book-') === 0) history.replaceState(null, '', location.pathname);
+}
+document.getElementById('adm-edit-close').addEventListener('click', closeEdit);
+document.getElementById('adm-edit-bg').addEventListener('click', closeEdit);
+document.addEventListener('keydown', function(e){ if(e.key === 'Escape') closeEdit(); });
+editBody.addEventListener('change', function(e){
+  var f = e.target.getAttribute('data-f');
+  if(f === 'vis'){
+    var lbl = e.target.closest('label').querySelector('span:last-child');
+    if(lbl) lbl.textContent = e.target.checked ? T.pub : T.priv;
+  }
+});
+document.getElementById('adm-edit-save').addEventListener('click', async function(){
+  if(!editBook) return;
+  var v = function(fid){ var el = editBody.querySelector('[data-f="' + fid + '"]'); return el ? el.value : ''; };
+  var visEl = editBody.querySelector('[data-f="vis"]');
+  var shelfEl = editBody.querySelector('[data-f="inShelf"]');
+  var body = {
+    title: v('title'), author: v('author'), lang: v('lang'),
+    tags: v('tags').split(/[,，]/).map(function(s){ return s.trim(); }).filter(Boolean),
+    visibility: visEl && visEl.checked ? 'public' : 'private',
+    in_shelf: shelfEl && shelfEl.checked ? 1 : 0
+  };
+  var r = await api('/api/admin/book?id=' + encodeURIComponent(editBook.id),
+    {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+  if(r.ok){
+    editBook.title = body.title; editBook.author = body.author; editBook.lang = body.lang;
+    editBook.tags = body.tags; editBook.visibility = body.visibility;
+    editBook.in_shelf = body.in_shelf; editBook.updated_at = new Date().toISOString();
+    renderList(); closeEdit();
+  }else{
+    alert(T.saveFail);
+  }
+});
+
+/* ============ 启动 ============ */
+async function boot(){
+  var auth = document.getElementById('adm-auth');
+  var main = document.getElementById('adm-main');
+  try{
+    var r = await api('/api/admin/books');
+    if(r.status === 401 || r.status === 403){ auth.classList.remove('hidden'); return; }
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+    var j = await r.json();
+    adminBooks = (j && j.books) || [];
+    auth.classList.add('hidden'); main.classList.remove('hidden');
+    renderStats(); renderList();
+    /* 书架页「编辑」按钮跳过来的深链：#book-<id> */
+    if(location.hash.indexOf('#book-') === 0){
+      var id = decodeURIComponent(location.hash.slice(6));
+      var b = adminBooks.find(function(x){ return String(x.id) === String(id); });
+      if(b) openEdit(b);
+    }
+  }catch(e){
+    auth.classList.remove('hidden');
+  }
+}
+boot();
+})();
+</script>
+{{ end }}

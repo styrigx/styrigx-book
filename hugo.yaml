@@ -1,0 +1,25 @@
+title: '书库'
+baseURL: 'https://book.styrigx.com/'
+defaultContentLanguage: zh
+defaultContentLanguageInSubdir: false
+hasCJKLanguage: true
+languages:
+  zh:
+    languageName: 中文
+    weight: 1
+  en:
+    languageName: English
+    weight: 2
+theme: []
+
+enableRobotsTXT: true
+enableEmoji: true
+
+markup:
+  goldmark:
+    renderer:
+      unsafe: true
+
+params:
+  description: 'Sloan Gray 的个人电子书库'
+  version: '1.0'

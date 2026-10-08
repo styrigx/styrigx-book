@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+{{ $isEn := or (eq .Lang "en") (hasPrefix .RelPermalink "/en/") }}
+<html lang="{{ if $isEn }}en{{ else }}zh{{ end }}" class="scroll-smooth">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f5f8fa">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#10151a">
+<title>{{ if .IsHome }}{{ if $isEn }}Library{{ else }}书库{{ end }}{{ else }}{{ .Title }} | {{ if $isEn }}Library{{ else }}书库{{ end }}{{ end }}</title>
+<meta name="description" content="{{ if $isEn }}Sloan Gray's personal ebook library{{ else }}{{ .Site.Params.description }}{{ end }}">
+<link rel="preload" href="/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
+<style>
+@font-face{font-family:'Inter';font-style:normal;font-weight:400 800;font-display:optional;src:url('/fonts/inter-latin.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}
+@font-face{font-family:'Inter Fallback';src:local('Arial');size-adjust:107%;ascent-override:90%;descent-override:23%;line-gap-override:0%;}
+:root{--nav-h:56px}
+</style>
+<script>
+/* 主题预读：渲染前应用，避免闪烁（sgx-theme-mode: system/light/dark） */
+(function(){
+  try{
+    var d=document.documentElement;
+    var m=null;try{m=localStorage.getItem('sgx-theme-mode')}catch(e){}
+    var wantDark=m==='dark'||((!m||m==='system')&&matchMedia('(prefers-color-scheme: dark)').matches);
+    if(wantDark){d.classList.add('dark')}else{d.classList.remove('dark')}
+  }catch(e){}
+})();
+</script>
+<script>
+/* 布局模式：<980 手机 / ≥980 DeX（沿用主站断点） */
+function __layoutMode(){
+  var m=null;
+  try{m=localStorage.getItem('sgx-layout')}catch(e){}
+  if(m==='phone'||m==='dex')return m;
+  var w=window.innerWidth||1280;
+  return w<980?'phone':'dex';
+}
+function __applyLayout(){
+  var d=document.documentElement,m=__layoutMode();
+  d.classList.remove('layout-phone','layout-dex');
+  d.classList.add('layout-'+m);
+  if(window.__setHeadH)window.__setHeadH();
+}
+__applyLayout();
+window.__setHeadH=function(){
+  if(!document.documentElement.classList.contains('layout-phone'))return;
+  var h=window.innerHeight||0;
+  if(h>0)document.documentElement.style.setProperty('--head-h',Math.round(h*0.42)+'px');
+};
+window.__setHeadH();
+(function(){
+  var lastO=window.innerWidth>window.innerHeight?'l':'p';
+  function maybeUpd(){
+    var o=window.innerWidth>window.innerHeight?'l':'p';
+    if(o!==lastO){lastO=o;window.__setHeadH()}
+  }
+  window.addEventListener('orientationchange',function(){setTimeout(function(){lastO=window.innerWidth>window.innerHeight?'l':'p';window.__setHeadH()},300)});
+  window.addEventListener('resize',maybeUpd);
+})();
+</script>
+<link rel="stylesheet" href="{{ (resources.Get "css/main.css" | minify | fingerprint).RelPermalink }}">
+</head>
+<body class="bg-m-surface text-m-on-surface font-sans antialiased" style="background-image:var(--m-wallpaper);background-attachment:fixed">
+{{/* 极简顶栏：左 ← Styrigx（回主站），中 书库/Library */}}
+<header id="site-nav" class="fixed top-0 inset-x-0 z-50 h-14 flex items-center px-4 backdrop-blur-xl bg-m-surface/70 border-b border-m-outline/40">
+  <a href="https://styrigx.com" class="flex items-center gap-1.5 text-sm font-semibold text-m-primary hover:opacity-80">
+    <span aria-hidden="true">←</span><span>Styrigx</span>
+  </a>
+  <span class="absolute left-1/2 -translate-x-1/2 text-[15px] font-bold">{{ if $isEn }}Library{{ else }}书库{{ end }}</span>
+</header>
+{{ block "main" . }}{{ end }}
+<footer class="text-center text-xs text-m-on-surface-variant py-10 px-4">
+  <p>Styrigx · {{ if $isEn }}Library{{ else }}书库{{ end }} · book.styrigx.com</p>
+</footer>
+<script>
+/* 子页面返回键：有历史则回退，否则回书架首页 */
+document.addEventListener('click',function(e){
+  var b=e.target.closest('[data-go-back]');
+  if(!b)return;
+  if(window.history.length>1){history.back()}
+  else{location.href='{{ if $isEn }}/en/{{ else }}/{{ end }}'}
+});
+/* 子页面标题区滚动行为：滚过标题区后显示居中小标题 + 悬浮返回键 */
+(function(){
+  var head=document.querySelector('[data-subpage-head]');
+  if(!head)return;
+  var mini=document.querySelector('.subpage-mini-title');
+  var flt=document.querySelector('.subpage-back-float');
+  function onScroll(){
+    var past=window.scrollY>head.offsetHeight*0.55;
+    if(mini)mini.classList.toggle('show',past);
+    if(flt)flt.classList.toggle('show',past);
+    head.classList.toggle('head-past',past);
+    document.body.classList.toggle('subpage-scrolled',past);
+  }
+  window.addEventListener('scroll',onScroll,{passive:true});
+  onScroll();
+})();
+</script>
+{{ block "pagejs" . }}{{ end }}
+</body>
+</html>
