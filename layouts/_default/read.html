@@ -471,8 +471,8 @@ function wireEpubSearch() {
 /* ---------- PDF ---------- */
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 async function openPDF(buf, progress) {
-  const pdfjsLib = await import('/js/vendor/pdfjs/pdf.mjs');
-  pdfjsLib.GlobalWorkerOptions.workerSrc = '/js/vendor/pdfjs/pdf.worker.mjs';
+  const pdfjsLib = await import('/js/vendor/pdfjs/pdf.min.mjs');
+  pdfjsLib.GlobalWorkerOptions.workerSrc = '/js/vendor/pdfjs/pdf.worker.min.mjs';
   const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
   pdfDoc = pdf;
   const n = pdf.numPages;

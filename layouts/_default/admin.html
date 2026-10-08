@@ -208,8 +208,8 @@ async function parseEpub(file){
 var pdfjsLib = null;
 async function parsePdf(file){
   if(!pdfjsLib){
-    pdfjsLib = await import('/js/vendor/pdfjs/pdf.mjs');
-    pdfjsLib.GlobalWorkerOptions.workerSrc = '/js/vendor/pdfjs/pdf.worker.mjs';
+    pdfjsLib = await import('/js/vendor/pdfjs/pdf.min.mjs');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = '/js/vendor/pdfjs/pdf.worker.min.mjs';
   }
   var doc = await pdfjsLib.getDocument({data: await file.arrayBuffer()}).promise;
   var title = '', author = '';
