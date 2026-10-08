@@ -3,7 +3,7 @@
 <main class="max-w-6xl mx-auto px-4 sm:px-6 pb-16">
   {{ partial "subpage-head.html" (dict "title" (cond $isEn "Library" "书库") "sub" (cond $isEn "Loading…" "加载中…") "isEn" $isEn) }}
 
-  {{/* 2.3.12/1.1：搜索改为 One UI 8.5 窄胶囊 + 独立搜索页 */}}
+  {{/* 1.0.1：搜索框移到底部悬浮胶囊，过滤逻辑与 1.0 一致 */}}
 
   {{/* 继续阅读：localStorage bk-progress-<id> */}}
   <section id="bk-continue-sec" class="mb-8 hidden">
@@ -55,6 +55,15 @@
     <div class="sheet-handle" id="sheet-handle"></div>
     <div id="sheet-body" class="overflow-y-auto px-5 pb-8 pt-1"></div>
   </div>
+</div>
+
+{{/* 底部搜索胶囊（1.0.1）：只保留胶囊 + 键盘贴合，无独立搜索页、无历史/筛选 */}}
+<div id="bk-pill" class="sgx-pill" role="button" tabindex="0" aria-label="{{ if $isEn }}Search title / author{{ else }}搜索书名 / 作者{{ end }}">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+  <span class="sgx-pill-label">{{ if $isEn }}Search{{ else }}搜索{{ end }}</span>
+  <input id="bk-pill-input" class="sgx-pill-input" type="search" autocomplete="off" enterkeyhint="search"
+    placeholder="{{ if $isEn }}Search title / author{{ else }}搜索书名 / 作者{{ end }}"
+    aria-label="{{ if $isEn }}Search title / author{{ else }}搜索书名 / 作者{{ end }}" tabindex="-1">
 </div>
 {{ end }}
 
@@ -294,6 +303,7 @@ function renderGrid(){
   }
   empty.classList.add('hidden');
   grid.classList.remove('hidden');
+  grid.classList.remove('sgx-fade'); void grid.offsetWidth; grid.classList.add('sgx-fade'); /* 1.0.1：结果淡入 */
   grid.innerHTML = list.map(function(b){
     var p = progressOf(b.id);
     var badges = '<span class="absolute left-1.5 top-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-black/55 text-white">' + esc((b.format || '').toUpperCase()) + '</span>';
@@ -319,24 +329,6 @@ document.getElementById('bk-sort').addEventListener('change', function(e){
 });
 document.getElementById('bk-retry').addEventListener('click', function(){ checkLogin().then(loadBooks); });
 
-/* ---- 2.3.12/1.1：搜索接入 One UI 8.5 搜索页 ---- */
-window.__sgx85DoSearch=function(pg,q,esc){
-  if(pg!=='book')return '';
-  var ql=q.toLowerCase();
-  var hits=(books||[]).filter(function(b){
-    return ((b.title||'')+' '+(b.author||'')).toLowerCase().indexOf(ql)>=0;
-  });
-  if(!hits.length)return '<p class="py-10 text-center text-sm text-m-on-surface-variant">'+esc('{{ if $isEn }}No results{{ else }}无结果{{ end }}')+'</p>';
-  return hits.slice(0,20).map(function(b){
-    return '<button type="button" class="sgx85-row" style="border-radius:1.25rem;margin-bottom:8px;background:var(--m-container-lowest);width:100%;text-align:left" data-book="'+esc(b.id||'')+'">'
-      +'<span class="flex-1 min-w-0"><span class="sgx85-row-title">'+esc(b.title||'')+'</span>'
-      +'<span class="sgx85-row-desc" style="display:block">'+esc(b.author||'')+'</span></span></button>';
-  }).join('');
-};
-document.addEventListener('click',function(e){
-  var b=e.target.closest('#sgx85-results-book .sgx85-row');
-  if(b){document.querySelector('#sgx85-search-book [data-close]').click();setTimeout(function(){openSheet(b.getAttribute('data-book'))},200)}
-});
 document.addEventListener('visibilitychange', function(){ if(!document.hidden) checkLogin(); });
 
 /* ---- 详情 bottom sheet ---- */
@@ -395,15 +387,69 @@ document.addEventListener('keydown', function(e){ if(e.key === 'Escape') closeSh
 document.addEventListener('visibilitychange', function(){ if(!document.hidden) checkLogin(); });
 window.addEventListener('bk-login-change', checkLogin);
 
+/* ---- 底部搜索胶囊（1.0.1）：展开 + visualViewport 键盘贴合 ---- */
+(function(){
+  var pill = document.getElementById('bk-pill');
+  var input = document.getElementById('bk-pill-input');
+  if(!pill || !input) return;
+  document.body.classList.add('sgx85-has-pill'); /* 底部留白：最后一项能完整滚出来 */
+  var opened = false;
+  var vv = window.visualViewport;
+  var lastKB = 0;
+  function kbH(){
+    if(!vv) return 0;
+    return Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+  }
+  function stick(){
+    var kb = kbH();
+    pill.style.transform = kb > 0 ? ('translateY(' + (-kb) + 'px)') : '';
+  }
+  function onVV(){ if(opened) stick(); }
+  function open(){
+    if(opened) return; opened = true;
+    pill.classList.add('open');
+    input.tabIndex = 0;
+    if(vv){ vv.addEventListener('resize', onVV); vv.addEventListener('scroll', onVV); }
+    stick();
+    setTimeout(function(){ try{ input.focus({preventScroll:true}); }catch(e){ input.focus(); } }, 60);
+  }
+  function close(){
+    if(!opened) return; opened = false;
+    pill.classList.remove('open');
+    pill.style.transform = '';
+    input.tabIndex = -1;
+    if(vv){ vv.removeEventListener('resize', onVV); vv.removeEventListener('scroll', onVV); }
+    if(document.activeElement === input) input.blur();
+  }
+  pill.addEventListener('click', function(){ if(!opened) open(); });
+  pill.addEventListener('keydown', function(e){
+    if(!opened && (e.key === 'Enter' || e.key === ' ')){ e.preventDefault(); open(); }
+  });
+  input.addEventListener('keydown', function(e){
+    if(e.key === 'Escape'){ e.stopPropagation(); close(); }
+  });
+  document.addEventListener('click', function(e){
+    if(opened && !pill.contains(e.target)) close();
+  });
+  if(vv) vv.addEventListener('resize', function(){
+    if(!opened) return;
+    var kb = kbH();
+    if(lastKB > 0 && kb === 0){
+      setTimeout(function(){ if(document.activeElement !== input) close(); }, 150);
+    }
+    lastKB = kb;
+  });
+  /* 1.0 的搜索逻辑：150ms 防抖，按书名/作者过滤网格 */
+  var searchTimer = null;
+  input.addEventListener('input', function(){
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(function(){ query = input.value; renderGrid(); }, 150);
+  });
+})();
+
 /* ---- 启动 ---- */
 checkLogin().then(loadBooks);
 })();
 </script>
 
-<!-- One UI 8.5 搜索（1.1）：A 窄胶囊 + B 独立搜索页 -->
-{{ partial "sgx-search85.html" (dict "page" "book" "isEn" $isEn
-  "placeholder" (cond $isEn "Search title / author" "搜索书名 / 作者")
-  "filterTitle" (cond $isEn "Filter" "筛选条件")
-  "filterChips" (slice (dict "id" "all" "label" (cond $isEn "All" "全部") "on" true))
-  "recentKey" "sgx85-recent-book") }}
 {{ end }}

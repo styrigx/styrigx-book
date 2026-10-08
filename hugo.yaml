@@ -22,4 +22,4 @@ markup:
 
 params:
   description: 'Sloan Gray 的个人电子书库'
-  version: '1.2'
+  version: '1.0.1'
