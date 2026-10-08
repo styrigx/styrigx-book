@@ -3,16 +3,7 @@
 <main class="max-w-6xl mx-auto px-4 sm:px-6 pb-16">
   {{ partial "subpage-head.html" (dict "title" (cond $isEn "Library" "书库") "sub" (cond $isEn "Loading…" "加载中…") "isEn" $isEn) }}
 
-  {{/* 搜索条：书名 / 作者本地过滤 */}}
-  <div class="mx-auto w-full max-w-md mb-6" role="search">
-    <div class="flex items-center gap-2 h-12 px-4 rounded-full bg-m-container-lowest border border-m-outline/50 shadow-sm focus-within:border-m-primary">
-      {{ partial "icon.html" "search" }}
-      <input id="bk-search" type="search" autocomplete="off" enterkeyhint="search"
-        placeholder="{{ if $isEn }}Search title / author{{ else }}搜索书名 / 作者{{ end }}"
-        aria-label="{{ if $isEn }}Search title / author{{ else }}搜索书名 / 作者{{ end }}"
-        class="flex-1 min-w-0 bg-transparent outline-none text-sm text-m-on-surface placeholder:text-m-on-surface-variant/60">
-    </div>
-  </div>
+  {{/* 2.3.12/1.1：搜索改为 One UI 8.5 窄胶囊 + 独立搜索页 */}}
 
   {{/* 继续阅读：localStorage bk-progress-<id> */}}
   <section id="bk-continue-sec" class="mb-8 hidden">
@@ -326,12 +317,27 @@ document.getElementById('bk-grid').addEventListener('click', function(e){
 document.getElementById('bk-sort').addEventListener('change', function(e){
   sortMode = e.target.value; renderGrid();
 });
-var searchTimer = null;
-document.getElementById('bk-search').addEventListener('input', function(e){
-  clearTimeout(searchTimer);
-  searchTimer = setTimeout(function(){ query = e.target.value; renderGrid(); }, 150);
-});
 document.getElementById('bk-retry').addEventListener('click', function(){ checkLogin().then(loadBooks); });
+
+/* ---- 2.3.12/1.1：搜索接入 One UI 8.5 搜索页 ---- */
+window.__sgx85DoSearch=function(pg,q,esc){
+  if(pg!=='book')return '';
+  var ql=q.toLowerCase();
+  var hits=(books||[]).filter(function(b){
+    return ((b.title||'')+' '+(b.author||'')).toLowerCase().indexOf(ql)>=0;
+  });
+  if(!hits.length)return '<p class="py-10 text-center text-sm text-m-on-surface-variant">'+esc('{{ if $isEn }}No results{{ else }}无结果{{ end }}')+'</p>';
+  return hits.slice(0,20).map(function(b){
+    return '<button type="button" class="sgx85-row" style="border-radius:1.25rem;margin-bottom:8px;background:var(--m-container-lowest);width:100%;text-align:left" data-book="'+esc(b.id||'')+'">'
+      +'<span class="flex-1 min-w-0"><span class="sgx85-row-title">'+esc(b.title||'')+'</span>'
+      +'<span class="sgx85-row-desc" style="display:block">'+esc(b.author||'')+'</span></span></button>';
+  }).join('');
+};
+document.addEventListener('click',function(e){
+  var b=e.target.closest('#sgx85-results-book .sgx85-row');
+  if(b){document.querySelector('#sgx85-search-book [data-close]').click();setTimeout(function(){openSheet(b.getAttribute('data-book'))},200)}
+});
+document.addEventListener('visibilitychange', function(){ if(!document.hidden) checkLogin(); });
 
 /* ---- 详情 bottom sheet ---- */
 var sheetWrap = document.getElementById('sheet-wrap');
@@ -393,4 +399,11 @@ window.addEventListener('bk-login-change', checkLogin);
 checkLogin().then(loadBooks);
 })();
 </script>
+
+<!-- One UI 8.5 搜索（1.1）：A 窄胶囊 + B 独立搜索页 -->
+{{ partial "sgx-search85.html" (dict "page" "book" "isEn" $isEn
+  "placeholder" (cond $isEn "Search title / author" "搜索书名 / 作者")
+  "filterTitle" (cond $isEn "Filter" "筛选条件")
+  "filterChips" (printf `<button type="button" data-f="all" class="sgx85-chip on"><span>%s</span></button>` (cond $isEn "All" "全部"))
+  "recentKey" "sgx85-recent-book") }}
 {{ end }}
