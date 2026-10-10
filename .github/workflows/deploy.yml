@@ -36,8 +36,8 @@ jobs:
       - name: Build CSS
         run: npx tailwindcss -i assets/css/input.css -o assets/css/main.css --minify
 
-      - name: Run middleware tests
-        run: node tests/pages-dev-301.test.mjs
+      - name: Run tests
+        run: npm test
 
       - name: Build site
         run: hugo --minify

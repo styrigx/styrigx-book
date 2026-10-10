@@ -1,10 +1,10 @@
 // GET /api/private/books — 全部图书（含 private），需 Access JWT
 import { json, rowToBook, methodNotAllowed } from '../_lib.js';
-import { requireAccess } from '../_access.js';
+import { requireOwner } from '../_auth.js';
 
 export async function onRequest(context) {
   if (context.request.method !== 'GET') return methodNotAllowed('GET');
-  const { response } = await requireAccess(context);
+  const { response } = await requireOwner(context);
   if (response) return response;
 
   const { results } = await context.env.DB.prepare(

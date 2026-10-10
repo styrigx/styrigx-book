@@ -11,19 +11,17 @@ JSON 响应 `Content-Type: application/json`；错误格式 `{error:'...'}`；�
 | R2 | `BOOKS` | bucket `styrigx-books`，不公开，全部经 Function 转发 |
 | D1 | `DB` | 数据库 `styrigx-books`，建表见仓库根 `schema.sql`，增量迁移见 `migrations/`（`NNNN_*.sql`） |
 | 变量 | `MAX_UPLOAD_MB` | 单文件上传上限（MB），默认 500 |
-| 变量 | `ACCESS_TEAM_DOMAIN` | 如 `styrigx.cloudflareaccess.com`，用于 Access JWT 校验；未配置时 private/admin 接口 500 |
+| 变量 | `STORAGE_ENABLED` | 严格为 `true` 且绑定了 `BOOKS` 时才启用存储 |
+| 变量 | `SGX_SITE` | 固定 `book`，启用主站会话锁屏 |
+| 变量 | `SGX_ED25519_PUBLIC` | Ed25519 公钥 PEM，用于验签主站 `sgx-verified` cookie |
 
-Cloudflare Access 侧：在后台给 `/admin/*`、`/api/admin/*`、`/api/private/*` 配 Access 应用/策略；
-Function 内再校验请求头 `Cf-Access-Jwt-Assertion`（见 `functions/api/_access.js`）。
+鉴权（2.0）：`/api/admin/*` 与 `/api/private/*` 只认主站签发的四段式 `sgx-verified` cookie（`role.epoch.exp.sig`），用 `SGX_ED25519_PUBLIC` 验签；要求 `role=owner`。未登录或 role 不符一律 401。Cloudflare Access 已移除。
 
-## Access JWT 校验（`_access.js`）
+## 主站 Cookie 校验（`_auth.js`）
 
-- 无 `Cf-Access-Jwt-Assertion` 头 → 401 `{error:'unauthorized'}`。
-- 从 `https://<ACCESS_TEAM_DOMAIN>/cdn-cgi/access/certs` 取 JWKS（模块级缓存 10 分钟），
-  按 `kid` 取 JWK，`crypto.subtle.importKey('jwk', …)` + `verify`（RS256 / RSASSA-PKCS1-v1_5 + SHA-256）。
-- 校验签名 + `exp` 未过期。**aud 不强校验**：Access JWT 的 aud 是应用的 audience tag，
-  audience 限定应在 Access policy 层面完成（policy 只放行本应用）；如需更严可对比 `claims.aud`。
-- 成功返回 claims（含 `email`）。
+- 无 `sgx-verified` cookie 或验签失败 → 401 `{error:'unauthorized'}`。
+- 只认四段式 `role.epoch.exp.sig`；role 必须为 `owner`（admin/private 接口）；exp 过期则无效。
+- Ed25519 验签，签载荷为 `role.epoch.exp`。
 
 ## R2 key 规范
 
@@ -39,6 +37,7 @@ Function 内再校验请求头 `Cf-Access-Jwt-Assertion`（见 `functions/api/_a
 | GET | `/api/cover?key=` | key 须匹配 `covers/[a-f0-9-]+\.webp` 且对应 public 书；否则 403 → `image/webp` |
 | GET | `/api/shelf` | 主站书单：`in_shelf=1` 的书 → `{books:[{id,title,author,format,cover_url,added_at}]}`；public 书额外带 `read_url: https://book.styrigx.com/read/?id=<id>`，private 书**不带** read_url、不暴露任何文件地址。响应头 `Access-Control-Allow-Origin: https://styrigx.com`、`Cache-Control: public, max-age=300`；OPTIONS → 204（同样 CORS 头） |
 | GET | `/api/shelf/cover/:id` | 书单封面：`id=:id AND in_shelf=1`（private 书封面的唯一公开出口，严格校验）；无封面/不存在 → 404 → `image/webp`。同样 CORS + `Cache-Control: public, max-age=300` |
+| GET | `/api/session-check` | 锁屏会话确认：sgx-verified cookie 四段式 `role.epoch.exp.sig` 验签为 owner → 200 `{ok:true}`，否则 401 `{ok:false}`（book 主人专属，visitor 也 401）；一律 `Cache-Control: no-store`。middleware 白名单放行，由接口自己返回 401（不 302），供前端切回标签页 / bfcache 恢复时确认会话 |
 
 Book 对象字段：`id,title,author,lang,format,size,sha256,cover_key,pages,tags(JSON 数组),visibility,in_shelf,created_at,updated_at`
 （`r2_key` 内部字段不对外暴露）。

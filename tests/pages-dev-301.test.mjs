@@ -64,4 +64,62 @@ test('pages.dev 请求在锁屏逻辑之前被 301（即使未登录）', async 
   assert.ok(!nextCalled, '不应继续走锁屏逻辑');
 });
 
+console.log('锁屏覆盖 /api/file:');
+test('未解锁访问 /api/file?id= 被 302 到主站锁屏（非白名单）', async () => {
+  let nextCalled = false;
+  const res = await onRequest({
+    request: {
+      url: 'https://book.styrigx.com/api/file?id=abc123',
+      headers: new Headers(),
+    },
+    env: { SGX_SITE: 'book', SGX_ED25519_PUBLIC: 'test-key' },
+    next: async () => { nextCalled = true; },
+  });
+  assert.ok(res, '应返回 Response');
+  assert.equal(res.status, 302);
+  assert.ok(res.headers.get('Location').includes('styrigx.com'), '应跳回主站锁屏');
+  assert.ok(!nextCalled, '不应放行到文件接口');
+});
+
 console.log(`\n${passed} passed`);
+
+console.log('锁屏覆盖 /api/file:');
+test('未解锁访问 /api/file?id= 被 302 到主站锁屏（非白名单）', async () => {
+  let nextCalled = false;
+  const res = await onRequest({
+    request: {
+      url: 'https://book.styrigx.com/api/file?id=abc123',
+      headers: new Headers(),
+    },
+    env: { SGX_SITE: 'book', SGX_ED25519_PUBLIC: 'test-key' },
+    next: async () => { nextCalled = true; },
+  });
+  assert.ok(res, '应返回 Response');
+  assert.equal(res.status, 302);
+  assert.ok(res.headers.get('Location').includes('styrigx.com'), '应跳回主站锁屏');
+  assert.ok(!nextCalled, '不应放行到文件接口');
+});
+
+console.log('跨站契约（主站四段式 cookie）:');
+// 用主站 signSessionCookie 同格式生成的测试向量（Ed25519，payload "owner.123.9999999999999"）
+const TEST_PUB = 'MCowBQYDK2VwAyEAWv7c7llhIjEYmCcPZEIBfiWnGDkFKjaukkT7KuRxX/g=';
+const TEST_COOKIE_4SEG = 'owner.123.9999999999999.3Jn5hXQurylZTTxNARqfpHuWqFIl_fLdjuLCCDExzMpww26iSMPaws-BeumGjYr7ZPqH3KaGR2oxRBRX-VRuBQ';
+const TEST_COOKIE_3SEG = '123.9999999999999.<redacted>';
+
+test('四段式 cookie 被 _auth.js 接受（owner）', async () => {
+  const { verifyOwnerCookie } = await import('../functions/api/_auth.js');
+  const role = await verifyOwnerCookie(
+    { headers: new Headers({ Cookie: 'sgx-verified=' + TEST_COOKIE_4SEG }) },
+    { SGX_ED25519_PUBLIC: TEST_PUB }
+  );
+  assert.equal(role, 'owner');
+});
+
+test('三段式 cookie 被 _auth.js 拒绝', async () => {
+  const { verifyOwnerCookie } = await import('../functions/api/_auth.js');
+  const role = await verifyOwnerCookie(
+    { headers: new Headers({ Cookie: 'sgx-verified=' + TEST_COOKIE_3SEG }) },
+    { SGX_ED25519_PUBLIC: TEST_PUB }
+  );
+  assert.equal(role, null);
+});

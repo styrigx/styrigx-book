@@ -1,10 +1,10 @@
 // GET /api/private/cover?key= — 按 key 取 R2 封面（只校验 key 格式），需 Access JWT
 import { err, serveR2File, methodNotAllowed, COVER_KEY_RE } from '../_lib.js';
-import { requireAccess } from '../_access.js';
+import { requireOwner } from '../_auth.js';
 
 export async function onRequest(context) {
   if (context.request.method !== 'GET') return methodNotAllowed('GET');
-  const { response } = await requireAccess(context);
+  const { response } = await requireOwner(context);
   if (response) return response;
 
   const key = new URL(context.request.url).searchParams.get('key');

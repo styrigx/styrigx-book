@@ -99,6 +99,8 @@ document.addEventListener('click',function(e){
   onScroll();
 })();
 </script>
+{{/* SGX 锁屏同步：切回前台 / bfcache 恢复时向服务端确认会话（各页面 pagejs 之前加载） */}}
+<script src="/js/sgx-lock-sync.js"></script>
 {{ block "pagejs" . }}{{ end }}
 </body>
 </html>
