@@ -68,16 +68,19 @@ function lockRedirect(request) {
   return Response.redirect(target, 302);
 }
 
-function getCookie(request, name) {
+/* 取出所有同名 cookie 的值（旧版可能留下一个只绑主机的同名 cookie，
+   浏览器会把两个都发过来；逐个验签，任一通过即有效） */
+function getCookies(request, name) {
   const header = request.headers.get('cookie') || '';
+  const out = [];
   for (const part of header.split(';')) {
     const idx = part.indexOf('=');
     if (idx === -1) continue;
     if (part.slice(0, idx).trim() === name) {
-      return decodeURIComponent(part.slice(idx + 1).trim());
+      out.push(decodeURIComponent(part.slice(idx + 1).trim()));
     }
   }
-  return '';
+  return out;
 }
 
 function b64urlToBytes(s) {
@@ -189,8 +192,10 @@ export async function onRequest(context) {
 
   if (isWhitelisted(path)) return next();
 
-  const cookie = getCookie(request, COOKIE_NAME);
-  if (await verifyCookie(cookie, env)) return next();
+  const cookies = getCookies(request, COOKIE_NAME);
+  for (const c of cookies) {
+    if (await verifyCookie(c, env)) return next();
+  }
 
   return lockRedirect(request);
 }
