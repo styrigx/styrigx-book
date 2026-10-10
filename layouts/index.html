@@ -178,7 +178,9 @@ async function loadBooks(){
   empty.classList.add('hidden'); err.classList.add('hidden');
   var sub = subEl(); if(sub) sub.textContent = T.loading;
   try{
-    var r = await fetch(loggedIn ? '/api/private/books' : '/api/books', {credentials: 'same-origin'});
+    /* 数据接口 401 视为已锁定：sgxLockSync.apiFetch 会 reload 走锁屏流程，
+       这里直接 return，不展示「加载失败」；网络错误才走错误态 */
+    var r = await sgxLockSync.apiFetch(loggedIn ? '/api/private/books' : '/api/books');
     if(!r.ok) throw new Error('HTTP ' + r.status);
     var j = await r.json();
     books = (j && j.books) || [];
@@ -187,6 +189,7 @@ async function loadBooks(){
     if(sub) sub.textContent = T.count(books.length);
     renderChips(); renderContinue(); renderGrid();
   }catch(e){
+    if(e && e.sgxLocked) return; /* 已触发 reload，页面即将跳转锁屏 */
     loading.classList.add('hidden');
     err.classList.remove('hidden');
     document.getElementById('bk-error-msg').textContent = T.loadFail;
