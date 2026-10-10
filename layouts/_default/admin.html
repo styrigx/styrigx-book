@@ -114,6 +114,9 @@ function fmtSize(b){
   if(b < 1073741824) return (b / 1048576).toFixed(1) + ' MB';
   return (b / 1073741824).toFixed(2) + ' GB';
 }
+function fmtSpeed(bps){
+  return fmtSize(bps) + '/s';
+}
 function fmtDate(s){
   if(!s) return '—';
   try{ return new Date(s).toLocaleDateString(isEn ? 'en-US' : 'zh-CN'); }
@@ -298,7 +301,11 @@ function switchHTML(fid, label, checked){
 function statusText(item){
   if(item.status === 'parsing') return '<span class="text-m-on-surface-variant">' + T.parsing + '</span>';
   if(item.status === 'ready') return '<span class="text-m-tertiary">' + T.ready + '</span>';
-  if(item.status === 'uploading') return '<span class="text-m-primary">' + T.uploading(Math.round(item.progress * 100)) + '</span>';
+  if(item.status === 'uploading'){
+    var pct = Math.round(item.progress * 100);
+    var spd = item.speed > 0 ? ' · ' + fmtSpeed(item.speed) : '';
+    return '<span class="text-m-primary">' + T.uploading(pct) + spd + '</span>';
+  }
   if(item.status === 'done') return '<span class="text-m-tertiary font-bold">' + T.done + '</span>';
   if(item.status === 'exists'){
     var t = item.existsInfo && item.existsInfo.title ? '《' + esc(item.existsInfo.title) + '》' : '';
@@ -414,6 +421,8 @@ async function uploadItem(item){
     /* 切片上传，每片失败重试 3 次 */
     var total = item.file.size, n = Math.max(1, Math.ceil(total / CHUNK));
     var parts = [];
+    var uploadedBytes = 0, lastTime = Date.now(), lastBytes = 0;
+    item.speed = 0;
     for(var i = 0; i < n; i++){
       var blob = item.file.slice(i * CHUNK, Math.min(total, (i + 1) * CHUNK));
       var etag = null, lastErr = null;
@@ -433,6 +442,12 @@ async function uploadItem(item){
       }
       if(etag == null) throw lastErr || new Error('part failed');
       parts.push({partNumber: i + 1, etag: etag});
+      uploadedBytes += blob.size;
+      var now = Date.now(), dt = (now - lastTime) / 1000;
+      if(dt >= 1){
+        item.speed = (uploadedBytes - lastBytes) / dt;
+        lastTime = now; lastBytes = uploadedBytes;
+      }
       item.progress = ((i + 1) / n) * 0.9;
       updateProg(item);
     }

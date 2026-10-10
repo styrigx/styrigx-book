@@ -98,6 +98,8 @@ var T = {
   noResult: isEn ? 'No books match your search.' : '没有匹配的书。',
   noBookLogin: isEn ? 'Sign in to see your private books.' : '登录后可查看私有书籍。',
   noBookAdmin: isEn ? 'Go to Admin to upload your first book.' : '去后台上传第一本书吧。',
+  noBookAdminLink: isEn ? 'No books yet. <a href="' + adminBase + '" class="text-m-primary font-bold">Upload your first book</a>' : '还没有书。<a href="' + adminBase + '" class="text-m-primary font-bold">去上传第一本书</a>',
+  noBookVisitor: isEn ? 'No public books yet.' : '暂时没有公开的书。',
   unknownAuthor: isEn ? 'Unknown author' : '未知作者',
   read: isEn ? 'Read' : '阅读',
   edit: isEn ? 'Edit' : '编辑',
@@ -189,6 +191,12 @@ async function checkLogin(){
     await loadBooks();
   }
 }
+function updateSortOptions(){
+  var sel = document.getElementById('bk-sort');
+  var readOpt = sel.querySelector('option[value="read"]');
+  if(readOpt) readOpt.style.display = loggedIn ? '' : 'none';
+  if(!loggedIn && sortMode === 'read'){ sortMode = 'added'; sel.value = 'added'; }
+}
 async function loadBooks(){
   var loading = document.getElementById('bk-loading');
   var grid = document.getElementById('bk-grid');
@@ -223,6 +231,8 @@ function renderContinue(){
   if(!isOwner){ sec.classList.add('hidden'); return; }
   loadProgress();
   var sec = document.getElementById('bk-continue-sec');
+  if(!loggedIn){ sec.classList.add('hidden'); return; }
+  loadProgress();
   var box = document.getElementById('bk-continue');
   var items = Object.keys(progressMap).map(function(id){
     var v = progressMap[id];
