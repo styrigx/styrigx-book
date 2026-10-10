@@ -4,14 +4,14 @@
 // in_shelf: 1=上架到主站书单，默认 0。
 // 成功 → {id}
 import { json, err, methodNotAllowed, BOOK_KEY_RE, COVER_KEY_RE, storageEnabled, storageDisabledResponse } from '../../_lib.js';
-import { requireAccess } from '../../_access.js';
+import { requireOwner } from '../../_auth.js';
 
 const SHA256_RE = /^[a-fA-F0-9]{64}$/;
 
 export async function onRequest(context) {
   const { request, env } = context;
   if (request.method !== 'POST') return methodNotAllowed('POST');
-  const { response } = await requireAccess(context);
+  const { response } = await requireOwner(context);
   if (response) return response;
   if (!storageEnabled(env)) return storageDisabledResponse();
 

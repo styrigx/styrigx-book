@@ -86,7 +86,6 @@ var T = {
   noBookAdmin: isEn ? 'Go to Admin to upload your first book.' : '去后台上传第一本书吧。',
   unknownAuthor: isEn ? 'Unknown author' : '未知作者',
   read: isEn ? 'Read' : '阅读',
-  download: isEn ? 'Download' : '下载',
   edit: isEn ? 'Edit' : '编辑',
   pages: isEn ? 'pages' : '页',
   size: isEn ? 'Size' : '大小',
@@ -129,9 +128,6 @@ var progressMap = {};    /* id -> {p, t, title, author, cover} */
 function coverURL(b){
   if(!b || !b.cover_key) return '';
   return (loggedIn ? '/api/private/cover?key=' : '/api/cover?key=') + encodeURIComponent(b.cover_key);
-}
-function fileURL(b){
-  return (loggedIn ? '/api/private/file?id=' : '/api/file?id=') + encodeURIComponent(b.id);
 }
 
 /* ---- 阅读进度（localStorage bk-progress-<id>） ---- */
@@ -349,7 +345,7 @@ function openSheet(id){
   var btns = '<div class="flex gap-2 mt-5">' +
     '<a href="' + readBase + '?id=' + encodeURIComponent(b.id) + '" class="flex-1 h-12 inline-flex items-center justify-center rounded-full bg-m-primary text-m-on-primary text-sm font-bold">' + T.read + '</a>';
   if(loggedIn){
-    btns += '<a href="' + esc(fileURL(b)) + '" download class="h-12 px-5 inline-flex items-center justify-center rounded-full bg-m-container text-m-on-surface text-sm font-bold">' + T.download + '</a>' +
+    btns +=
       '<a href="' + adminBase + '#book-' + encodeURIComponent(b.id) + '" class="h-12 px-5 inline-flex items-center justify-center rounded-full bg-m-container text-m-on-surface text-sm font-bold">' + T.edit + '</a>';
   }
   btns += '</div>';

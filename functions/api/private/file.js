@@ -1,10 +1,10 @@
 // GET /api/private/file?id= — 按 id 取 R2 文件（不查 visibility），支持 Range，需 Access JWT
 import { err, contentTypeForFormat, serveR2File, methodNotAllowed } from '../_lib.js';
-import { requireAccess } from '../_access.js';
+import { requireOwner } from '../_auth.js';
 
 export async function onRequest(context) {
   if (context.request.method !== 'GET') return methodNotAllowed('GET');
-  const { response } = await requireAccess(context);
+  const { response } = await requireOwner(context);
   if (response) return response;
 
   const id = new URL(context.request.url).searchParams.get('id');
