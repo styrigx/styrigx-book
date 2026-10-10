@@ -118,6 +118,33 @@ function getCookies(request, name) {
   return out;
 }
 
+async function fetchLatestEpoch() {
+  const now = Date.now();
+  if (epochCache.value !== null && now - epochCache.at < EPOCH_TTL_MS) {
+    return epochCache.value;
+  }
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 5000);
+    const res = await fetch(EPOCH_URL, {
+      signal: ctrl.signal,
+      headers: { accept: 'application/json' },
+    });
+    clearTimeout(timer);
+    if (!res.ok) throw new Error('epoch http ' + res.status);
+    const data = await res.json();
+    if (typeof data.epoch !== 'number' || !Number.isFinite(data.epoch)) {
+      throw new Error('epoch bad payload');
+    }
+    epochCache = { value: data.epoch, at: now };
+    return data.epoch;
+  } catch (e) {
+    /* 失败且有缓存：用旧缓存；无缓存：返回 null（fail closed 由调用方处理） */
+    if (epochCache.value !== null) return epochCache.value;
+    return null;
+  }
+}
+
 async function verifyOneCookie(cookieValue, env) {
   const role = await verifyCookieSig(cookieValue, env.SGX_ED25519_PUBLIC);
   if (!role) return null;
