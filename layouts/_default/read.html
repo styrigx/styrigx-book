@@ -769,7 +769,10 @@ async function boot() {
   if (!bookId) { showError(t('errNoId')); return; }
   try {
     const r = await fetch('/api/private/me', { credentials: 'same-origin' });
-    if (r.ok) loggedIn = true;
+    if (r.ok) {
+      const j = await r.json();
+      if (j && j.role === 'owner') loggedIn = true;
+    }
   } catch (e) {}
   const found = await findBook(bookId);
   if (!found) { showError(t('errNotFound')); return; }
