@@ -258,7 +258,8 @@ const setPct = (text, sliderVal) => {
 
 /* ---------- 数据流 ---------- */
 const getJSON = async url => {
-  const r = await fetch(url, { credentials: 'same-origin' });
+  /* 数据接口 401 视为已锁定：apiFetch 会 reload 走锁屏流程并抛 sgxLocked */
+  const r = await sgxLockSync.apiFetch(url);
   if (!r.ok) throw new Error('HTTP ' + r.status);
   return r.json();
 };
@@ -272,11 +273,11 @@ async function findBook(id) {
   try {
     const b = pickBooks(await getJSON('/api/books')).find(x => String(x.id) === id);
     if (b) return { book: b, priv: false };
-  } catch (e) { /* 可能是 401，继续试私有 */ }
+  } catch (e) { if (e && e.sgxLocked) throw e; /* 可能是 401，继续试私有 */ }
   try {
     const b = pickBooks(await getJSON('/api/private/books')).find(x => String(x.id) === id);
     if (b) return { book: b, priv: true };
-  } catch (e) {}
+  } catch (e) { if (e && e.sgxLocked) throw e; }
   return null;
 }
 const localProgress = () => {
@@ -286,7 +287,7 @@ async function loadProgress() {
   let p = localProgress();
   if (loggedIn) {
     try {
-      const r = await fetch('/api/private/progress?id=' + encodeURIComponent(bookId), { credentials: 'same-origin' });
+      const r = await sgxLockSync.apiFetch('/api/private/progress?id=' + encodeURIComponent(bookId));
       if (r.ok) {
         const j = await r.json();
         const rem = (j && typeof j === 'object' && ('location' in j || 'progress' in j)) ? (j.progress || j) : null;
@@ -310,7 +311,7 @@ async function flushProgress() {
   const body = { id: bookId, location: pendingSave.location, percent: pendingSave.percent, updated_at: pendingSave.updated_at };
   pendingSave = null;
   try {
-    await fetch('/api/private/progress', { method: 'PUT', credentials: 'same-origin',
+    await sgxLockSync.apiFetch('/api/private/progress', { method: 'PUT',
       headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
   } catch (e) {}
 }
@@ -771,7 +772,9 @@ async function boot() {
     const r = await fetch('/api/private/me', { credentials: 'same-origin' });
     if (r.ok) loggedIn = true;
   } catch (e) {}
-  const found = await findBook(bookId);
+  let found = null;
+  try { found = await findBook(bookId); }
+  catch (e) { if (e && e.sgxLocked) return; throw e; } /* 已锁定：reload 后由 middleware 302 到锁屏 */
   if (!found) { showError(t('errNotFound')); return; }
   book = found.book; isPrivate = found.priv;
   setTitle(book.title || (EN ? 'Read' : '阅读'));
@@ -779,10 +782,10 @@ async function boot() {
   let buf;
   try {
     const base = isPrivate ? '/api/private/file?id=' : '/api/file?id=';
-    const r = await fetch(base + encodeURIComponent(bookId), { credentials: 'same-origin' });
+    const r = await sgxLockSync.apiFetch(base + encodeURIComponent(bookId));
     if (!r.ok) throw new Error('HTTP ' + r.status);
     buf = await r.arrayBuffer();
-  } catch (e) { showError(t('errFile')); return; }
+  } catch (e) { if (e && e.sgxLocked) return; showError(t('errFile')); return; }
   format = detectFormat(buf);
   $('#bkrd-loading').hidden = true;
   if (format === 'epub') { try { await openEPUB(buf, progress); } catch (e) { console.error(e); showError(t('errFile')); } }

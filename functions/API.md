@@ -37,6 +37,7 @@ JSON 响应 `Content-Type: application/json`；错误格式 `{error:'...'}`；�
 | GET | `/api/cover?key=` | key 须匹配 `covers/[a-f0-9-]+\.webp` 且对应 public 书；否则 403 → `image/webp` |
 | GET | `/api/shelf` | 主站书单：`in_shelf=1` 的书 → `{books:[{id,title,author,format,cover_url,added_at}]}`；public 书额外带 `read_url: https://book.styrigx.com/read/?id=<id>`，private 书**不带** read_url、不暴露任何文件地址。响应头 `Access-Control-Allow-Origin: https://styrigx.com`、`Cache-Control: public, max-age=300`；OPTIONS → 204（同样 CORS 头） |
 | GET | `/api/shelf/cover/:id` | 书单封面：`id=:id AND in_shelf=1`（private 书封面的唯一公开出口，严格校验）；无封面/不存在 → 404 → `image/webp`。同样 CORS + `Cache-Control: public, max-age=300` |
+| GET | `/api/session-check` | 锁屏会话确认：sgx-verified cookie 四段式 `role.epoch.exp.sig` 验签为 owner → 200 `{ok:true}`，否则 401 `{ok:false}`（book 主人专属，visitor 也 401）；一律 `Cache-Control: no-store`。middleware 白名单放行，由接口自己返回 401（不 302），供前端切回标签页 / bfcache 恢复时确认会话 |
 
 Book 对象字段：`id,title,author,lang,format,size,sha256,cover_key,pages,tags(JSON 数组),visibility,in_shelf,created_at,updated_at`
 （`r2_key` 内部字段不对外暴露）。

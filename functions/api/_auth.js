@@ -30,7 +30,7 @@ async function getPublicKey(spkiB64) {
   const der = b64ToBytes(spkiB64.replace(/\s/g, ''));
   pubKeyCache = await crypto.subtle.importKey(
     'spki',
-    der,
+    der.buffer,
     { name: 'Ed25519' },
     false,
     ['verify']
