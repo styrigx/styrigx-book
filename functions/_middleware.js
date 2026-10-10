@@ -1,5 +1,9 @@
 // 2.4.1 三站真实锁屏 — 书库侧 middleware（Cloudflare Pages Functions）
 //
+// pages.dev 301（链首）：host 精确为 styrigx-book.pages.dev 时 301 到
+// https://book.styrigx.com（保留 path + query，Cache-Control: no-store）；
+// hash/分支预览别名放行，不跳转。
+//
 // SGX_SITE=book 时：
 //   - 检查 sgx-verified cookie（格式 epoch.exp.sig，sig = Ed25519 私钥对 "epoch.exp"
 //     的签名，base64url），用 SGX_ED25519_PUBLIC（PEM/SPKI 公钥）验签；
@@ -22,6 +26,25 @@ const LOCK_URL = 'https://styrigx.com/?lock=1';
 const EPOCH_URL = 'https://styrigx.com/api/session-epoch';
 const EPOCH_TTL_MS = 60 * 1000;
 const COOKIE_NAME = 'sgx-verified';
+
+/* pages.dev 生产别名 301 到正式域名（middleware 链首） */
+const PAGES_DEV_HOST = 'styrigx-book.pages.dev';
+const CANONICAL_ORIGIN = 'https://book.styrigx.com';
+
+/* 只精确匹配生产别名 styrigx-book.pages.dev；
+   hash/分支预览别名（如 xxx.styrigx-book.pages.dev）放行，不跳转 */
+export function pagesDevRedirect(request) {
+  const url = new URL(request.url);
+  if (url.hostname !== PAGES_DEV_HOST) return null;
+  const target = CANONICAL_ORIGIN + url.pathname + url.search;
+  return new Response(null, {
+    status: 301,
+    headers: {
+      'Location': target,
+      'Cache-Control': 'no-store',
+    },
+  });
+}
 
 /* 内存缓存：最新 epoch + 抓取时间（worker 实例内共享） */
 let epochCache = { value: null, at: 0 };
@@ -183,6 +206,10 @@ async function verifyCookie(cookieValue, env) {
 
 export async function onRequest(context) {
   const { request, env, next } = context;
+
+  /* pages.dev 生产别名 301（链首，不受锁屏影响） */
+  const redirect = pagesDevRedirect(request);
+  if (redirect) return redirect;
 
   /* 只在 SGX_SITE=book 时启用锁屏；未配置时保持原样（不锁死） */
   if (env.SGX_SITE !== 'book') return next();
