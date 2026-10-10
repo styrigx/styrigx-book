@@ -31,7 +31,8 @@
 const LOCK_URL = 'https://styrigx.com/?lock=1';
 const EPOCH_URL = 'https://styrigx.com/api/session-epoch';
 const EPOCH_TTL_MS = 60 * 1000;
-const COOKIE_NAME = 'sgx-verified';
+
+import { verifySessionCookie as verifyCookieSig, getCookieValue, COOKIE_NAME, parseSessionCookie } from './_sgx-cookie.js';
 
 /* pages.dev 生产别名 301 到正式域名（middleware 链首） */
 const PAGES_DEV_HOST = 'styrigx-book.pages.dev';
@@ -117,119 +118,17 @@ function getCookies(request, name) {
   return out;
 }
 
-function b64urlToBytes(s) {
-  s = s.replace(/-/g, '+').replace(/_/g, '/');
-  const pad = s.length % 4;
-  if (pad) s += '='.repeat(4 - pad);
-  const bin = atob(s);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return bytes;
-}
-
-function pemToDer(pem) {
-  const b64 = pem
-    .replace(/-----BEGIN [^-]+-----/g, '')
-    .replace(/-----END [^-]+-----/g, '')
-    .replace(/\s+/g, '');
-  /* PEM 内是标准 base64（非 base64url） */
-  const bin = atob(b64);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return bytes.buffer;
-}
-
-let publicKeyPromise = null;
-function getPublicKey(pem) {
-  if (!publicKeyPromise) {
-    publicKeyPromise = crypto.subtle.importKey(
-      'spki',
-      pemToDer(pem),
-      { name: 'Ed25519' },
-      false,
-      ['verify'],
-    );
-  }
-  return publicKeyPromise;
-}
-
-async function fetchLatestEpoch() {
-  const now = Date.now();
-  if (epochCache.value !== null && now - epochCache.at < EPOCH_TTL_MS) {
-    return epochCache.value;
-  }
-  try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 5000);
-    const res = await fetch(EPOCH_URL, {
-      signal: ctrl.signal,
-      headers: { accept: 'application/json' },
-    });
-    clearTimeout(timer);
-    if (!res.ok) throw new Error('epoch http ' + res.status);
-    const data = await res.json();
-    if (typeof data.epoch !== 'number' || !Number.isFinite(data.epoch)) {
-      throw new Error('epoch bad payload');
-    }
-    epochCache = { value: data.epoch, at: now };
-    return data.epoch;
-  } catch (e) {
-    /* 失败且有缓存：用旧缓存；无缓存：返回 null（fail closed 由调用方处理） */
-    if (epochCache.value !== null) return epochCache.value;
-    return null;
-  }
-}
-
-/* 会话角色：owner（密码/通行密钥，12h）| visitor（Turnstile，1h，无主人权限） */
-const SESSION_ROLES = new Set(['owner', 'visitor']);
-
-/* 解析会话 cookie：四段式 role.epoch.exp.sig。
-   旧三段式（无 role）一律视为无效，不留兼容层。 */
-function parseSessionCookie(value) {
-  if (!value) return null;
-  const parts = value.split('.');
-  if (parts.length !== 4) return null;
-  const [role, epochStr, expStr, sigB64] = parts;
-  if (!SESSION_ROLES.has(role)) return null;
-  const epoch = Number(epochStr);
-  const exp = Number(expStr);
-  if (!Number.isFinite(epoch) || !Number.isFinite(exp)) return null;
-  if (exp <= Date.now()) return null;
-  let sig;
-  try {
-    sig = b64urlToBytes(sigB64);
-  } catch (e) {
-    return null;
-  }
-  if (sig.length !== 64) return null;
-  return { role, epochStr, expStr, epoch, sig };
-}
-
-/* 验签单个 cookie：成功返回 role（'owner' | 'visitor'），失败返回 null。
-   签名 payload 为 "role.epoch.exp"（与主站 functions/_kernel/session.js 对应）。 */
 async function verifyOneCookie(cookieValue, env) {
-  if (!env.SGX_ED25519_PUBLIC) return null;
-  const parsed = parseSessionCookie(cookieValue);
-  if (!parsed) return null;
-  let ok;
-  try {
-    const key = await getPublicKey(env.SGX_ED25519_PUBLIC);
-    ok = await crypto.subtle.verify(
-      { name: 'Ed25519' },
-      key,
-      parsed.sig,
-      new TextEncoder().encode(parsed.role + '.' + parsed.epochStr + '.' + parsed.expStr),
-    );
-  } catch (e) {
-    return null;
-  }
-  if (!ok) return null;
+  const role = await verifyCookieSig(cookieValue, env.SGX_ED25519_PUBLIC);
+  if (!role) return null;
   const latest = await fetchLatestEpoch();
   /* Fail closed：拿不到最新 epoch 则拒绝 */
   if (latest === null) return null;
-  if (parsed.epoch < latest) return null;
-  return parsed.role;
+  const parsed = parseSessionCookie(cookieValue);
+  if (!parsed || parsed.epoch < latest) return null;
+  return role;
 }
+
 
 /* 供 functions/api/session-check.js 复用：任一同名 sgx-verified cookie 验签为 owner 即有效。
    book 主人专属：visitor 不算有效会话（session-check 返回 401，前端 reload 后
