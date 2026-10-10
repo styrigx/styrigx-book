@@ -1,12 +1,12 @@
 // GET /api/admin/books — 全部图书 + 统计，需 Access JWT
 // → {books, total, bytes}（bytes = SUM(size)）
 import { json, rowToBook, methodNotAllowed } from '../_lib.js';
-import { requireAccess } from '../_access.js';
+import { requireOwner } from '../_auth.js';
 
 export async function onRequest(context) {
   const { request, env } = context;
   if (request.method !== 'GET') return methodNotAllowed('GET');
-  const { response } = await requireAccess(context);
+  const { response } = await requireOwner(context);
   if (response) return response;
 
   const { results } = await env.DB.prepare(

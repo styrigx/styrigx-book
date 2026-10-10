@@ -11,19 +11,17 @@ JSON 响应 `Content-Type: application/json`；错误格式 `{error:'...'}`；�
 | R2 | `BOOKS` | bucket `styrigx-books`，不公开，全部经 Function 转发 |
 | D1 | `DB` | 数据库 `styrigx-books`，建表见仓库根 `schema.sql`，增量迁移见 `migrations/`（`NNNN_*.sql`） |
 | 变量 | `MAX_UPLOAD_MB` | 单文件上传上限（MB），默认 500 |
-| 变量 | `ACCESS_TEAM_DOMAIN` | 如 `styrigx.cloudflareaccess.com`，用于 Access JWT 校验；未配置时 private/admin 接口 500 |
+| 变量 | `STORAGE_ENABLED` | 严格为 `true` 且绑定了 `BOOKS` 时才启用存储 |
+| 变量 | `SGX_SITE` | 固定 `book`，启用主站会话锁屏 |
+| 变量 | `SGX_ED25519_PUBLIC` | Ed25519 公钥 PEM，用于验签主站 `sgx-verified` cookie |
 
-Cloudflare Access 侧：在后台给 `/admin/*`、`/api/admin/*`、`/api/private/*` 配 Access 应用/策略；
-Function 内再校验请求头 `Cf-Access-Jwt-Assertion`（见 `functions/api/_access.js`）。
+鉴权（2.0）：`/api/admin/*` 与 `/api/private/*` 只认主站签发的四段式 `sgx-verified` cookie（`role.epoch.exp.sig`），用 `SGX_ED25519_PUBLIC` 验签；要求 `role=owner`。未登录或 role 不符一律 401。Cloudflare Access 已移除。
 
-## Access JWT 校验（`_access.js`）
+## 主站 Cookie 校验（`_auth.js`）
 
-- 无 `Cf-Access-Jwt-Assertion` 头 → 401 `{error:'unauthorized'}`。
-- 从 `https://<ACCESS_TEAM_DOMAIN>/cdn-cgi/access/certs` 取 JWKS（模块级缓存 10 分钟），
-  按 `kid` 取 JWK，`crypto.subtle.importKey('jwk', …)` + `verify`（RS256 / RSASSA-PKCS1-v1_5 + SHA-256）。
-- 校验签名 + `exp` 未过期。**aud 不强校验**：Access JWT 的 aud 是应用的 audience tag，
-  audience 限定应在 Access policy 层面完成（policy 只放行本应用）；如需更严可对比 `claims.aud`。
-- 成功返回 claims（含 `email`）。
+- 无 `sgx-verified` cookie 或验签失败 → 401 `{error:'unauthorized'}`。
+- 只认四段式 `role.epoch.exp.sig`；role 必须为 `owner`（admin/private 接口）；exp 过期则无效。
+- Ed25519 验签，签载荷为 `role.epoch.exp`。
 
 ## R2 key 规范
 

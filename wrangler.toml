@@ -1,0 +1,38 @@
+# styrigx-book — Cloudflare Pages 配置（代码管理绑定与非密钥变量）
+# 顶层 = production；[env.preview] 需重写全部绑定（不继承）。
+# 私钥/密钥一律不进此文件，由控制台以 Secret 类型管理。
+
+name = "styrigx-book"
+pages_build_output_dir = "public"
+compatibility_date = "2026-10-08"
+
+[vars]
+SGX_SITE = "book"
+SGX_ED25519_PUBLIC = "MCowBQYDK2VwAyEATpeuRiz6J463BL6Ye+5XpHAzdypy8hZKMJ41P1ainF8="
+MAX_UPLOAD_MB = "500"
+STORAGE_ENABLED = "true"
+
+[[r2_buckets]]
+binding = "BOOKS"
+bucket_name = "styrigx-books"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "styrigx-books"
+
+[env.preview]
+[env.preview.vars]
+SGX_SITE = "book"
+SGX_ED25519_PUBLIC = "MCowBQYDK2VwAyEATpeuRiz6J463BL6Ye+5XpHAzdypy8hZKMJ41P1ainF8="
+MAX_UPLOAD_MB = "500"
+STORAGE_ENABLED = "true"
+
+[[env.preview.r2_buckets]]
+binding = "BOOKS"
+bucket_name = "styrigx-books-preview"
+
+# 注意：preview 的 D1 暂时仍指向正式库 styrigx-books（与线上共用），
+# 独立 preview D1 另行迁移。本配置保持现状，避免意外切换。
+[[env.preview.d1_databases]]
+binding = "DB"
+database_name = "styrigx-books"
