@@ -84,6 +84,8 @@ body>footer{display:none!important}
 /* PDF 页码跳转 */
 #bkrd-pagejump{display:none;align-items:center;gap:4px;margin-right:4px;font-size:14px;color:var(--m-on-surface-variant,#41484e)}
 #bkrd-pagejump.on{display:flex}
+#bkrd-pdfzoom{display:none;align-items:center;gap:2px;margin-right:4px}
+#bkrd-pdfzoom.on{display:flex}
 #bkrd-pageinput{width:56px;height:36px;text-align:center;font-size:15px;border:1px solid var(--m-outline,#c2c8cf);border-radius:10px;background:var(--m-container-lowest,#fff);color:var(--m-on-surface,#161b20);outline:none;font-variant-numeric:tabular-nums}
 #bkrd-search-btn{display:none}
 #bkrd-search-btn.on{display:inline-flex}
@@ -97,6 +99,11 @@ body>footer{display:none!important}
   <header id="bkrd-top" class="bkrd-bar">
     <button type="button" id="bkrd-back" class="bkrd-icbtn" aria-label="{{ if $isEn }}Back{{ else }}返回{{ end }}">{{ partial "icon.html" "arrow-left" }}</button>
     <h1 id="bkrd-title"></h1>
+    <span id="bkrd-pdfzoom" hidden>
+      <button type="button" id="bkrd-zout" class="bkrd-icbtn" aria-label="{{ if $isEn }}Zoom out{{ else }}缩小{{ end }}">−</button>
+      <button type="button" id="bkrd-zin" class="bkrd-icbtn" aria-label="{{ if $isEn }}Zoom in{{ else }}放大{{ end }}">+</button>
+      <button type="button" id="bkrd-zfit" class="bkrd-icbtn" style="width:auto;padding:0 12px;font-size:13px;font-weight:600" aria-label="{{ if $isEn }}Fit width{{ else }}适应宽度{{ end }}">{{ if $isEn }}Fit{{ else }}适应{{ end }}</button>
+    </span>
     <span id="bkrd-pagejump">
       <input id="bkrd-pageinput" type="number" min="1" value="1" inputmode="numeric" aria-label="{{ if $isEn }}Page number{{ else }}页码{{ end }}">
       <span id="bkrd-pagetotal"></span>
@@ -177,6 +184,7 @@ body>footer{display:none!important}
       </div>
       <div class="bkrd-set" data-pdf-only>
         <span class="bkrd-set-label">{{ if $isEn }}Zoom{{ else }}缩放{{ end }}</span>
+        <p class="text-xs text-m-on-surface-variant mb-2">{{ if $isEn }}Font size and line spacing do not apply to PDF.{{ else }}字号、行距对 PDF 无效，请用缩放调整。{{ end }}</p>
         <div class="bkrd-seg" id="bkrd-seg-zoom">
           <button type="button" data-zoom="width">{{ if $isEn }}Fit width{{ else }}适应宽度{{ end }}</button>
           <button type="button" data-zoom="page">{{ if $isEn }}Fit page{{ else }}适应整页{{ end }}</button>
@@ -512,6 +520,7 @@ async function openPDF(buf, progress) {
     }
   } catch (e) {}
   $('#bkrd-pagejump').classList.add('on');
+  $('#bkrd-pdfzoom').classList.add('on');
   $('#bkrd-pagetotal').textContent = '/ ' + n;
   slider.max = n;
   slider.min = 1;
@@ -720,6 +729,22 @@ function wireChrome() {
   $('#bkrd-err-back').addEventListener('click', () => { location.href = '/'; });
   $('#bkrd-tocbtn').addEventListener('click', () => openPanel(tocDrawer));
   $('#bkrd-setbtn').addEventListener('click', () => { syncSettingsUI(); openPanel(setDrawer); });
+  /* PDF 工具栏缩放（仅 PDF 模式可见） */
+  const zin = $('#bkrd-zin'), zout = $('#bkrd-zout'), zfit = $('#bkrd-zfit');
+  if (zin) zin.addEventListener('click', () => {
+    settings.pdfMode = 'custom';
+    settings.pdfScale = Math.min(4, Math.round((settings.pdfScale + 0.25) * 100) / 100);
+    saveSettings(); computePdfScale(); layoutPdf(); syncSettingsUI();
+  });
+  if (zout) zout.addEventListener('click', () => {
+    settings.pdfMode = 'custom';
+    settings.pdfScale = Math.max(0.3, Math.round((settings.pdfScale - 0.25) * 100) / 100);
+    saveSettings(); computePdfScale(); layoutPdf(); syncSettingsUI();
+  });
+  if (zfit) zfit.addEventListener('click', () => {
+    settings.pdfMode = 'width';
+    saveSettings(); computePdfScale(); layoutPdf(); syncSettingsUI();
+  });
   $('#bkrd-search-btn').addEventListener('click', () => {
     searchPanel.hidden = false; scrim.hidden = false;
     setTimeout(() => $('#bkrd-q').focus(), 60);
