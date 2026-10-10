@@ -3,10 +3,10 @@
 <main class="max-w-4xl mx-auto px-4 sm:px-6 pb-16">
   {{ partial "subpage-head.html" (dict "title" (cond $isEn "Admin" "管理") "sub" "—" "isEn" $isEn) }}
 
-  {{/* 未登录提示（/api/admin/* 返回 401/403 时显示） */}}
+  {{/* 未登录提示（/api/private/me 未返回 role=owner 时显示） */}}
   <div id="adm-auth" class="hidden text-center py-20">
     <p class="text-base font-bold mb-2">{{ if $isEn }}Sign-in required{{ else }}需要登录{{ end }}</p>
-    <p class="text-sm text-m-on-surface-variant">{{ if $isEn }}Please sign in via Cloudflare Access to manage the library.{{ else }}请先通过 Cloudflare Access 登录后再管理书库。{{ end }}</p>
+    <p class="text-sm text-m-on-surface-variant">{{ if $isEn }}Please unlock from the main site first.{{ else }}请先从主站解锁后再管理书库。{{ end }}</p>
   </div>
 
   {{/* 存储未开放提示（STORAGE_ENABLED=false 时显示） */}}

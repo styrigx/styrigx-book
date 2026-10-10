@@ -1,7 +1,7 @@
 {{ define "main" }}
 {{ $isEn := or (eq .Lang "en") (hasPrefix .RelPermalink "/en/") }}
 <main class="max-w-6xl mx-auto px-4 sm:px-6 pb-16">
-  {{ partial "subpage-head.html" (dict "title" (cond $isEn "Library" "书库") "sub" (cond $isEn "Loading…" "加载中…") "isEn" $isEn) }}
+  {{ partial "subpage-head.html" (dict "title" (cond $isEn "Bookshelf" "书架") "sub" (cond $isEn "Loading…" "加载中…") "isEn" $isEn) }}
 
   {{/* 1.0.1：搜索框移到底部悬浮胶囊，过滤逻辑与 1.0 一致 */}}
 
@@ -17,7 +17,7 @@
     <select id="bk-sort" aria-label="{{ if $isEn }}Sort{{ else }}排序{{ end }}"
       class="flex-shrink-0 h-11 px-3 rounded-full bg-m-container text-m-on-surface-variant text-[13px] font-semibold outline-none border border-transparent">
       <option value="added">{{ if $isEn }}Recently added{{ else }}最近添加{{ end }}</option>
-      <option value="read">{{ if $isEn }}Recently read{{ else }}最近阅读{{ end }}</option>
+      <option value="read" data-owner-only>{{ if $isEn }}Recently read{{ else }}最近阅读{{ end }}</option>
       <option value="title">{{ if $isEn }}Title{{ else }}书名{{ end }}</option>
     </select>
   </div>
@@ -35,8 +35,9 @@
   {{/* 空态 */}}
   <div id="bk-empty" class="hidden text-center py-20">
     <div class="w-16 h-16 mx-auto mb-4 opacity-60">{{ partial "icon.html" (dict "name" "book" "uid" "empty") }}</div>
-    <p class="text-base font-bold mb-1">{{ if $isEn }}Library coming soon{{ else }}书库正在整理{{ end }}</p>
-    <p id="bk-empty-sub" class="text-sm text-m-on-surface-variant">{{ if $isEn }}We're getting the shelves ready.{{ else }}书架正在整理中，敬请期待。{{ end }}</p>
+    <p class="text-base font-bold mb-1" id="bk-empty-title">{{ if $isEn }}No books yet{{ else }}书架空空如也{{ end }}</p>
+    <p id="bk-empty-sub" class="text-sm text-m-on-surface-variant"></p>
+    <a id="bk-empty-cta" href="{{ if $isEn }}/en/admin/{{ else }}/admin/{{ end }}" class="hidden mt-5 inline-flex h-11 px-6 items-center justify-center rounded-full bg-m-primary text-m-on-primary text-sm font-bold">{{ if $isEn }}Add your first book{{ else }}添加第一本书{{ end }}</a>
   </div>
 
   {{/* 错误态 */}}
@@ -54,6 +55,19 @@
   <div id="sheet-panel">
     <div class="sheet-handle" id="sheet-handle"></div>
     <div id="sheet-body" class="overflow-y-auto px-5 pb-8 pt-1"></div>
+  </div>
+</div>
+
+{{/* 删除二次确认（One UI 样式） */}}
+<div id="del-wrap" class="fixed inset-0 z-[70] hidden items-center justify-center p-6" role="alertdialog" aria-modal="true">
+  <div class="absolute inset-0 bg-black/50" data-del-cancel></div>
+  <div class="relative w-full max-w-sm rounded-[1.75rem] bg-m-surface p-6 shadow-xl">
+    <h3 id="del-title" class="text-lg font-extrabold text-m-on-surface"></h3>
+    <p id="del-body" class="text-sm text-m-on-surface-variant mt-2 leading-relaxed"></p>
+    <div class="flex gap-2 mt-6">
+      <button type="button" data-del-cancel class="flex-1 h-12 rounded-full bg-m-container text-m-on-surface text-sm font-bold"></button>
+      <button type="button" id="del-confirm" class="flex-1 h-12 rounded-full bg-m-rose text-m-on-rose text-sm font-bold"></button>
+    </div>
   </div>
 </div>
 
@@ -86,8 +100,12 @@ var T = {
   noBookAdmin: isEn ? 'Go to Admin to upload your first book.' : '去后台上传第一本书吧。',
   unknownAuthor: isEn ? 'Unknown author' : '未知作者',
   read: isEn ? 'Read' : '阅读',
-  download: isEn ? 'Download' : '下载',
   edit: isEn ? 'Edit' : '编辑',
+  del: isEn ? 'Delete' : '删除',
+  delTitle: isEn ? 'Delete book?' : '删除书籍？',
+  delBody: isEn ? 'This will delete the book file and reading progress. This cannot be undone.' : '将同时删除书籍文件和阅读进度，此操作不可撤销。',
+  cancel: isEn ? 'Cancel' : '取消',
+  confirmDel: isEn ? 'Delete' : '删除',
   pages: isEn ? 'pages' : '页',
   size: isEn ? 'Size' : '大小',
   tags: isEn ? 'Tags' : '标签',
@@ -117,8 +135,8 @@ function fmtDate(s){
 }
 function fmtPct(p){ return Math.round((Number(p) || 0) * 100) + '%'; }
 
-/* ---- 状态 ---- */
-var loggedIn = false;
+/* ---- 状态（fail closed：只有 /api/private/me 明确返回 role=owner 才视为 owner） ---- */
+var isOwner = false;
 var books = [];
 var bookById = {};
 var filter = 'all';      /* all | EPUB | PDF | tag:<name> */
@@ -128,10 +146,7 @@ var progressMap = {};    /* id -> {p, t, title, author, cover} */
 
 function coverURL(b){
   if(!b || !b.cover_key) return '';
-  return (loggedIn ? '/api/private/cover?key=' : '/api/cover?key=') + encodeURIComponent(b.cover_key);
-}
-function fileURL(b){
-  return (loggedIn ? '/api/private/file?id=' : '/api/file?id=') + encodeURIComponent(b.id);
+  return (isOwner ? '/api/private/cover?key=' : '/api/cover?key=') + encodeURIComponent(b.cover_key);
 }
 
 /* ---- 阅读进度（localStorage bk-progress-<id>） ---- */
@@ -159,13 +174,18 @@ function progressOf(id){
 /* ---- 数据 ---- */
 function subEl(){ return document.querySelector('[data-subpage-head] .subpage-sub'); }
 async function checkLogin(){
-  var ok = false;
+  var owner = false;
   try{
     var r = await fetch('/api/private/me', {credentials: 'same-origin'});
-    ok = r.ok;
-  }catch(e){}
-  if(ok !== loggedIn){
-    loggedIn = ok;
+    if(r.ok){
+      var j = await r.json();
+      owner = !!(j && j.role === 'owner');
+    }
+  }catch(e){
+    owner = false;
+  }
+  if(owner !== isOwner){
+    isOwner = owner;
     await loadBooks();
   }
 }
@@ -178,7 +198,7 @@ async function loadBooks(){
   empty.classList.add('hidden'); err.classList.add('hidden');
   var sub = subEl(); if(sub) sub.textContent = T.loading;
   try{
-    var r = await fetch(loggedIn ? '/api/private/books' : '/api/books', {credentials: 'same-origin'});
+    var r = await fetch(isOwner ? '/api/private/books' : '/api/books', {credentials: 'same-origin'});
     if(!r.ok) throw new Error('HTTP ' + r.status);
     var j = await r.json();
     books = (j && j.books) || [];
@@ -194,8 +214,10 @@ async function loadBooks(){
   }
 }
 
-/* ---- 继续阅读 ---- */
+/* ---- 继续阅读（仅 owner；visitor 不显示阅读记录） ---- */
 function renderContinue(){
+  var sec = document.getElementById('bk-continue-sec');
+  if(!isOwner){ sec.classList.add('hidden'); return; }
   loadProgress();
   var sec = document.getElementById('bk-continue-sec');
   var box = document.getElementById('bk-continue');
@@ -242,6 +264,11 @@ function renderChips(){
     return '<button type="button" role="tab" aria-selected="' + (filter === c.k) + '" data-filter="' + esc(c.k) + '"' +
       ' class="brw-cat flex-shrink-0' + (filter === c.k ? ' on' : '') + '">' + esc(c.label) + '</button>';
   }).join('');
+  /* visitor 隐藏"最近阅读"排序 */
+  var sortSel = document.getElementById('bk-sort');
+  var readOpt = sortSel.querySelector('option[data-owner-only]');
+  if(readOpt) readOpt.style.display = isOwner ? '' : 'none';
+  if(!isOwner && sortMode === 'read'){ sortMode = 'added'; sortSel.value = 'added'; }
 }
 document.getElementById('bk-chips').addEventListener('click', function(e){
   var b = e.target.closest('[data-filter]');
@@ -297,15 +324,24 @@ function renderGrid(){
     grid.classList.add('hidden');
     empty.classList.remove('hidden');
     var sub = document.getElementById('bk-empty-sub');
-    if(query.trim() || filter !== 'all'){ sub.textContent = T.noResult; }
-    /* 无搜索/筛选时的默认文案（HTML 里已写好「书库正在整理」）保持不动 */
+    var cta = document.getElementById('bk-empty-cta');
+    if(query.trim() || filter !== 'all'){
+      sub.textContent = T.noResult;
+      cta.classList.add('hidden');
+    }else if(isOwner){
+      sub.textContent = isEn ? 'Upload your first book to get started.' : '上传第一本书，开始你的收藏。';
+      cta.classList.remove('hidden');
+    }else{
+      sub.textContent = isEn ? 'No public books yet.' : '暂时没有公开的书。';
+      cta.classList.add('hidden');
+    }
     return;
   }
   empty.classList.add('hidden');
   grid.classList.remove('hidden');
   grid.classList.remove('sgx-fade'); void grid.offsetWidth; grid.classList.add('sgx-fade'); /* 1.0.1：结果淡入 */
   grid.innerHTML = list.map(function(b){
-    var p = progressOf(b.id);
+    var p = isOwner ? progressOf(b.id) : 0;
     var badges = '<span class="absolute left-1.5 top-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-black/55 text-white">' + esc((b.format || '').toUpperCase()) + '</span>';
     if(p > 0){
       badges += '<span class="absolute right-1.5 top-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-m-primary/90 text-m-on-primary">' + fmtPct(p) + '</span>';
@@ -336,7 +372,7 @@ var sheetWrap = document.getElementById('sheet-wrap');
 function openSheet(id){
   var b = bookById[id];
   if(!b) return;
-  var p = progressOf(id);
+  var p = isOwner ? progressOf(id) : 0;
   var metaRows = [];
   if(b.pages) metaRows.push('<div class="flex justify-between py-2.5 border-b border-m-outline/40"><span class="text-sm text-m-on-surface-variant">' + T.pages + '</span><span class="text-sm font-semibold">' + esc(b.pages) + '</span></div>');
   metaRows.push('<div class="flex justify-between py-2.5 border-b border-m-outline/40"><span class="text-sm text-m-on-surface-variant">' + T.size + '</span><span class="text-sm font-semibold">' + esc(fmtSize(b.size)) + '</span></div>');
@@ -348,9 +384,9 @@ function openSheet(id){
     : '';
   var btns = '<div class="flex gap-2 mt-5">' +
     '<a href="' + readBase + '?id=' + encodeURIComponent(b.id) + '" class="flex-1 h-12 inline-flex items-center justify-center rounded-full bg-m-primary text-m-on-primary text-sm font-bold">' + T.read + '</a>';
-  if(loggedIn){
-    btns += '<a href="' + esc(fileURL(b)) + '" download class="h-12 px-5 inline-flex items-center justify-center rounded-full bg-m-container text-m-on-surface text-sm font-bold">' + T.download + '</a>' +
-      '<a href="' + adminBase + '#book-' + encodeURIComponent(b.id) + '" class="h-12 px-5 inline-flex items-center justify-center rounded-full bg-m-container text-m-on-surface text-sm font-bold">' + T.edit + '</a>';
+  if(isOwner){
+    btns += '<a href="' + adminBase + '#book-' + encodeURIComponent(b.id) + '" class="h-12 px-5 inline-flex items-center justify-center rounded-full bg-m-container text-m-on-surface text-sm font-bold">' + T.edit + '</a>' +
+      '<button type="button" data-del-book="' + esc(b.id) + '" class="h-12 px-5 inline-flex items-center justify-center rounded-full bg-m-rose-container text-m-on-rose-container text-sm font-bold">' + T.del + '</button>';
   }
   btns += '</div>';
   document.getElementById('sheet-body').innerHTML =
@@ -381,7 +417,56 @@ function closeSheet(){
 }
 document.getElementById('sheet-bg').addEventListener('click', closeSheet);
 document.getElementById('sheet-handle').addEventListener('click', closeSheet);
-document.addEventListener('keydown', function(e){ if(e.key === 'Escape') closeSheet(); });
+document.addEventListener('keydown', function(e){ if(e.key === 'Escape'){ closeSheet(); closeDelDialog(); } });
+
+/* ---- 删除二次确认 ---- */
+var delWrap = document.getElementById('del-wrap');
+var delBookId = null;
+function openDelDialog(id){
+  var b = bookById[id];
+  if(!b || !isOwner) return;
+  delBookId = id;
+  document.getElementById('del-title').textContent = T.delTitle;
+  document.getElementById('del-body').textContent = T.delBody;
+  delWrap.querySelector('[data-del-cancel]').textContent = T.cancel;
+  document.getElementById('del-confirm').textContent = T.confirmDel;
+  delWrap.classList.remove('hidden');
+  delWrap.classList.add('flex');
+  document.body.style.overflow = 'hidden';
+}
+function closeDelDialog(){
+  delBookId = null;
+  delWrap.classList.add('hidden');
+  delWrap.classList.remove('flex');
+  if(!sheetWrap.classList.contains('open')) document.body.style.overflow = '';
+}
+delWrap.addEventListener('click', function(e){
+  if(e.target.closest('[data-del-cancel]')) closeDelDialog();
+});
+document.getElementById('del-confirm').addEventListener('click', async function(){
+  if(!delBookId || !isOwner) return;
+  var id = delBookId;
+  try{
+    var r = await fetch('/api/admin/book?id=' + encodeURIComponent(id), {
+      method: 'DELETE',
+      credentials: 'same-origin'
+    });
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+    delete bookById[id];
+    books = books.filter(function(b){ return b.id !== id; });
+    try{ localStorage.removeItem('bk-progress-' + id); }catch(e){}
+    closeDelDialog();
+    closeSheet();
+    renderChips(); renderContinue(); renderGrid();
+  }catch(e){
+    closeDelDialog();
+  }
+});
+/* 详情弹层内的删除按钮（事件委托） */
+document.getElementById('sheet-body').addEventListener('click', function(e){
+  var b = e.target.closest('[data-del-book]');
+  if(b) openDelDialog(b.getAttribute('data-del-book'));
+});
 
 /* ---- 登录状态变化时刷新 ---- */
 document.addEventListener('visibilitychange', function(){ if(!document.hidden) checkLogin(); });
