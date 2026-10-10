@@ -64,4 +64,21 @@ test('pages.dev 请求在锁屏逻辑之前被 301（即使未登录）', async 
   assert.ok(!nextCalled, '不应继续走锁屏逻辑');
 });
 
+console.log('锁屏覆盖 /api/file:');
+test('未解锁访问 /api/file?id= 被 302 到主站锁屏（非白名单）', async () => {
+  let nextCalled = false;
+  const res = await onRequest({
+    request: {
+      url: 'https://book.styrigx.com/api/file?id=abc123',
+      headers: new Headers(),
+    },
+    env: { SGX_SITE: 'book', SGX_ED25519_PUBLIC: 'test-key' },
+    next: async () => { nextCalled = true; },
+  });
+  assert.ok(res, '应返回 Response');
+  assert.equal(res.status, 302);
+  assert.ok(res.headers.get('Location').includes('styrigx.com'), '应跳回主站锁屏');
+  assert.ok(!nextCalled, '不应放行到文件接口');
+});
+
 console.log(`\n${passed} passed`);
