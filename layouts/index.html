@@ -84,9 +84,10 @@ var T = {
   noResult: isEn ? 'No books match your search.' : '没有匹配的书。',
   noBookLogin: isEn ? 'Sign in to see your private books.' : '登录后可查看私有书籍。',
   noBookAdmin: isEn ? 'Go to Admin to upload your first book.' : '去后台上传第一本书吧。',
+  noBookAdminLink: isEn ? 'No books yet. <a href="' + adminBase + '" class="text-m-primary font-bold">Upload your first book</a>' : '还没有书。<a href="' + adminBase + '" class="text-m-primary font-bold">去上传第一本书</a>',
+  noBookVisitor: isEn ? 'No public books yet.' : '暂时没有公开的书。',
   unknownAuthor: isEn ? 'Unknown author' : '未知作者',
   read: isEn ? 'Read' : '阅读',
-  download: isEn ? 'Download' : '下载',
   edit: isEn ? 'Edit' : '编辑',
   pages: isEn ? 'pages' : '页',
   size: isEn ? 'Size' : '大小',
@@ -130,9 +131,6 @@ function coverURL(b){
   if(!b || !b.cover_key) return '';
   return (loggedIn ? '/api/private/cover?key=' : '/api/cover?key=') + encodeURIComponent(b.cover_key);
 }
-function fileURL(b){
-  return (loggedIn ? '/api/private/file?id=' : '/api/file?id=') + encodeURIComponent(b.id);
-}
 
 /* ---- 阅读进度（localStorage bk-progress-<id>） ---- */
 function loadProgress(){
@@ -162,12 +160,22 @@ async function checkLogin(){
   var ok = false;
   try{
     var r = await fetch('/api/private/me', {credentials: 'same-origin'});
-    ok = r.ok;
+    if(r.ok){
+      var d = await r.json();
+      ok = d && d.role === 'owner';
+    }
   }catch(e){}
   if(ok !== loggedIn){
     loggedIn = ok;
+    updateSortOptions();
     await loadBooks();
   }
+}
+function updateSortOptions(){
+  var sel = document.getElementById('bk-sort');
+  var readOpt = sel.querySelector('option[value="read"]');
+  if(readOpt) readOpt.style.display = loggedIn ? '' : 'none';
+  if(!loggedIn && sortMode === 'read'){ sortMode = 'added'; sel.value = 'added'; }
 }
 async function loadBooks(){
   var loading = document.getElementById('bk-loading');
@@ -194,10 +202,11 @@ async function loadBooks(){
   }
 }
 
-/* ---- 继续阅读 ---- */
+/* ---- 继续阅读（仅 owner 可见，visitor 不显示阅读记录） ---- */
 function renderContinue(){
-  loadProgress();
   var sec = document.getElementById('bk-continue-sec');
+  if(!loggedIn){ sec.classList.add('hidden'); return; }
+  loadProgress();
   var box = document.getElementById('bk-continue');
   var items = Object.keys(progressMap).map(function(id){
     var v = progressMap[id];
@@ -298,14 +307,15 @@ function renderGrid(){
     empty.classList.remove('hidden');
     var sub = document.getElementById('bk-empty-sub');
     if(query.trim() || filter !== 'all'){ sub.textContent = T.noResult; }
-    /* 无搜索/筛选时的默认文案（HTML 里已写好「书库正在整理」）保持不动 */
+    else if(loggedIn){ sub.innerHTML = T.noBookAdminLink; }
+    else{ sub.textContent = T.noBookVisitor; }
     return;
   }
   empty.classList.add('hidden');
   grid.classList.remove('hidden');
   grid.classList.remove('sgx-fade'); void grid.offsetWidth; grid.classList.add('sgx-fade'); /* 1.0.1：结果淡入 */
   grid.innerHTML = list.map(function(b){
-    var p = progressOf(b.id);
+    var p = loggedIn ? progressOf(b.id) : 0;
     var badges = '<span class="absolute left-1.5 top-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-black/55 text-white">' + esc((b.format || '').toUpperCase()) + '</span>';
     if(p > 0){
       badges += '<span class="absolute right-1.5 top-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-m-primary/90 text-m-on-primary">' + fmtPct(p) + '</span>';
@@ -349,8 +359,7 @@ function openSheet(id){
   var btns = '<div class="flex gap-2 mt-5">' +
     '<a href="' + readBase + '?id=' + encodeURIComponent(b.id) + '" class="flex-1 h-12 inline-flex items-center justify-center rounded-full bg-m-primary text-m-on-primary text-sm font-bold">' + T.read + '</a>';
   if(loggedIn){
-    btns += '<a href="' + esc(fileURL(b)) + '" download class="h-12 px-5 inline-flex items-center justify-center rounded-full bg-m-container text-m-on-surface text-sm font-bold">' + T.download + '</a>' +
-      '<a href="' + adminBase + '#book-' + encodeURIComponent(b.id) + '" class="h-12 px-5 inline-flex items-center justify-center rounded-full bg-m-container text-m-on-surface text-sm font-bold">' + T.edit + '</a>';
+    btns += '<a href="' + adminBase + '#book-' + encodeURIComponent(b.id) + '" class="h-12 px-5 inline-flex items-center justify-center rounded-full bg-m-container text-m-on-surface text-sm font-bold">' + T.edit + '</a>';
   }
   btns += '</div>';
   document.getElementById('sheet-body').innerHTML =
