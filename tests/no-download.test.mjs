@@ -1,81 +1,121 @@
-// 无下载技术约束测试（book 2.0）
-// 确保页面和 JS 里无任何下载按钮、下载链接、原始文件名暴露。
+// 无下载约束测试：确认 layouts/ 输出中无任何下载按钮、下载链接或文件名暴露
 // 运行：node tests/no-download.test.mjs
+//
+// 技术约束（book 2.0）：
+// - 无 <a download> 指向 /api/file 或 /api/private/file
+// - 无 fileURL() 之类的下载链接构造
+// - 无原始文件名暴露给前端下载
 
-import { readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
 import assert from 'node:assert/strict';
+import { execSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(__dirname, '..');
 
 let passed = 0;
+let failed = 0;
 function test(name, fn) {
   try {
     fn();
     passed++;
     console.log(`  ✓ ${name}`);
   } catch (e) {
+    failed++;
     console.error(`  ✗ ${name}: ${e.message}`);
     process.exitCode = 1;
   }
 }
 
-const layoutsDir = new URL('../layouts/', import.meta.url).pathname;
-
-function getHtmlFiles(dir, files = []) {
-  for (const f of readdirSync(dir, { withFileTypes: true })) {
-    const p = join(dir, f.name);
-    if (f.isDirectory()) getHtmlFiles(p, files);
-    else if (f.name.endsWith('.html')) files.push(p);
+function readLayouts() {
+  const files = [];
+  function walk(dir) {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (e.name.endsWith('.html')) files.push(p);
+    }
   }
-  return files;
+  walk(path.join(repoRoot, 'layouts'));
+  return files.map(f => ({ file: path.relative(repoRoot, f), content: fs.readFileSync(f, 'utf8') }));
 }
 
-const htmlFiles = getHtmlFiles(layoutsDir);
+console.log('no-download:');
 
-console.log('无下载约束:');
-test('无 download 属性指向文件接口', () => {
-  for (const f of htmlFiles) {
-    const content = readFileSync(f, 'utf8');
-    // 查找 download 属性
-    const matches = content.match(/<a[^>]*\sdownload[^>]*>/gi) || [];
-    for (const m of matches) {
-      // 如果 href 指向 /api/file 或 /api/private/file，则失败
-      if (m.includes('/api/file') || m.includes('/api/private/file')) {
-        throw new Error(`${f}: 发现下载链接 ${m.slice(0, 80)}`);
+test('layouts/ 无 download 属性的 <a> 标签', () => {
+  const files = readLayouts();
+  const hits = [];
+  // 匹配 <a ... download ...>（download 作为独立属性）
+  const re = /<a\b[^>]*\bdownload\b[^>]*>/gi;
+  for (const { file, content } of files) {
+    const m = content.match(re);
+    if (m) hits.push(`${file}: ${m.length} 处`);
+  }
+  assert.equal(hits.length, 0, '发现 download 属性：' + hits.join('; '));
+});
+
+test('layouts/ 无指向 /api/file 或 /api/private/file 的 href 构造', () => {
+  const files = readLayouts();
+  const hits = [];
+  const re = /\/api\/(private\/)?file\?/g;
+  for (const { file, content } of files) {
+    // 允许 read.html 阅读器内部使用（那是阅读器加载文件，不是下载）
+    // 但不允许出现在 index.html（书架/详情弹层）
+    if (file.includes('index.html') && re.test(content)) {
+      hits.push(file);
+    }
+    re.lastIndex = 0;
+  }
+  assert.equal(hits.length, 0, 'index.html 中发现文件接口引用：' + hits.join(', '));
+});
+
+test('layouts/index.html 无 fileURL / T.download 残留', () => {
+  const p = path.join(repoRoot, 'layouts', 'index.html');
+  const content = fs.readFileSync(p, 'utf8');
+  assert.ok(!content.includes('fileURL'), '发现 fileURL 残留');
+  assert.ok(!content.includes('T.download'), '发现 T.download 残留');
+  assert.ok(!/download\s*:\s*isEn/.test(content), '发现 download 文案残留');
+});
+
+test('hugo 构建产物（public/）无 download 属性指向文件接口', () => {
+  // 如果 public/ 不存在（未构建），跳过
+  const pubDir = path.join(repoRoot, 'public');
+  if (!fs.existsSync(pubDir)) {
+    console.log('    (跳过：public/ 未构建)');
+    return;
+  }
+  const hits = [];
+  function walk(dir) {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) { walk(p); continue; }
+      if (!e.name.endsWith('.html')) continue;
+      const c = fs.readFileSync(p, 'utf8');
+      // 找 <a ... download ... href=".../api/(private/)?file..."> 或反之
+      const re = /<a\b[^>]*>/gi;
+      let m;
+      while ((m = re.exec(c)) !== null) {
+        const tag = m[0];
+        if (/\bdownload\b/i.test(tag) && /\/api\/(private\/)?file/i.test(tag)) {
+          hits.push(path.relative(pubDir, p));
+          break;
+        }
       }
     }
   }
+  walk(pubDir);
+  assert.equal(hits.length, 0, '构建产物中发现下载链接：' + hits.join(', '));
 });
 
-test('无 fileURL 函数（下载链接生成器）', () => {
-  for (const f of htmlFiles) {
-    const content = readFileSync(f, 'utf8');
-    if (/function\s+fileURL\s*\(/.test(content)) {
-      throw new Error(`${f}: 发现 fileURL 函数`);
-    }
-  }
+test('阅读器响应用 inline 而不是 attachment（文件在浏览器内查看，不触发下载）', () => {
+  // 检查 functions/api/_lib.js 的 serveR2File
+  // 确保 Content-Disposition 是 inline 而不是 attachment
+  const p = path.join(repoRoot, 'functions/api/_lib.js');
+  const c = fs.readFileSync(p, 'utf8');
+  assert.ok(!/attachment/i.test(c), 'serveR2File 不应使用 attachment');
+  assert.ok(/Content-Disposition.*inline/i.test(c), 'serveR2File 应使用 Content-Disposition: inline');
 });
 
-test('无 T.download 文案', () => {
-  for (const f of htmlFiles) {
-    const content = readFileSync(f, 'utf8');
-    if (/download:\s*isEn\s*\?\s*['"]Download['"]/.test(content)) {
-      throw new Error(`${f}: 发现 T.download 文案`);
-    }
-  }
-});
-
-test('阅读器使用 inline 而非 attachment', () => {
-  // 检查 functions/api/_lib.js 的 serveR2File 使用 inline
-  const libPath = new URL('../functions/api/_lib.js', import.meta.url).pathname;
-  try {
-    const content = readFileSync(libPath, 'utf8');
-    if (content.includes('attachment')) {
-      throw new Error('发现 Content-Disposition: attachment');
-    }
-  } catch (e) {
-    if (e.code !== 'ENOENT') throw e;
-    // 文件不存在时跳过（仅前端测试环境）
-  }
-});
-
-console.log(`\n${passed} passed`);
+console.log(`\n${passed} passed${failed ? `, ${failed} failed` : ''}`);
