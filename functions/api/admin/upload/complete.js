@@ -4,19 +4,14 @@
 // in_shelf: 1=上架到主站书单，默认 0。
 // 成功 → {id}
 import { json, err, methodNotAllowed, BOOK_KEY_RE, COVER_KEY_RE, storageEnabled, storageDisabledResponse } from '../../_lib.js';
-import { requireOwner, requireAppToken } from '../../_auth.js';
+import { requireOwner } from '../../_auth.js';
+import { verifyUploadSession, clearUploadSession } from './_sessions.js';
 
 const SHA256_RE = /^[a-fA-F0-9]{64}$/;
 
 export async function onRequest(context) {
   const { request, env } = context;
   if (request.method !== 'POST') return methodNotAllowed('POST');
-  const { response } = await requireOwner(context);
-  if (response) return response;
-  const { response: appResp } = await requireAppToken(context);
-  if (appResp) return appResp;
-  if (!storageEnabled(env)) return storageDisabledResponse();
-
   let body;
   try {
     body = await request.json();
@@ -26,6 +21,13 @@ export async function onRequest(context) {
   const { uploadId, key, parts, sha256, meta = {}, coverKey = null } = body || {};
   if (!uploadId) return err('missing uploadId', 400);
   if (!key || !BOOK_KEY_RE.test(key)) return err('invalid key', 400);
+
+  const { response } = await requireOwner(context);
+  if (response) return response;
+  // 只验 owner + 上传会话（init 时已验过通行证）
+  const { response: sessResp } = await verifyUploadSession(context, uploadId, key);
+  if (sessResp) return sessResp;
+  if (!storageEnabled(env)) return storageDisabledResponse();
   if (!Array.isArray(parts) || parts.length === 0) return err('invalid parts', 400);
   for (const p of parts) {
     if (!p || !Number.isInteger(p.partNumber) || p.partNumber < 1 || typeof p.etag !== 'string' || !p.etag) {
@@ -52,6 +54,7 @@ export async function onRequest(context) {
     } catch {
       // 忽略
     }
+    await clearUploadSession(env, uploadId);
     return json({ exists: true, book: { id: dup.id } }, 409);
   }
 
@@ -102,5 +105,6 @@ export async function onRequest(context) {
   } catch (e) {
     return err('db insert failed: ' + (e && e.message ? e.message : 'unknown'), 500);
   }
+  await clearUploadSession(env, uploadId);
   return json({ id });
 }

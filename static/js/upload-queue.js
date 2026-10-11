@@ -1,19 +1,54 @@
 /* Shared upload queue (extracted from admin.html). Init with SgxUploadQueue.init(prefix, {isEn, onBookAdded}) */
 window.SgxUploadQueue = window.SgxUploadQueue || {};
+
+/* ---- 通行证 403 分类（顶层：FAB 预检与队列共用） ----
+   只有 error 为 app-token-required / app-token-invalid 时才跳主站复验；
+   其他 403（visitor / 会话失效 / 上传会话无效）走原有逻辑，不跳。 */
+window.SgxUploadQueue.appVerifyUrl = function(){
+  return 'https://styrigx.com/app-verify/?aud=book&scope=upload&return=' + encodeURIComponent(window.location.href);
+};
+window.SgxUploadQueue.appTokenErrorCode = async function(res){
+  if(!res || res.status !== 403) return null;
+  try{
+    var j = await res.clone().json();
+    var e = j && j.error;
+    if(e === 'app-token-required' || e === 'app-token-invalid') return e;
+  }catch(x){}
+  return null;
+};
+/* 上传队列开始前（选文件之前）预检：通行证无效返回 false，调用方直接跳复验 */
+window.SgxUploadQueue.appCheck = async function(){
+  try{
+    var r = await fetch('/api/admin/app-check', {credentials: 'same-origin'});
+    if(r.status !== 403) return true;
+    var code = await window.SgxUploadQueue.appTokenErrorCode(r);
+    return !code; // 通行证问题 → false；其他 403 不拦截
+  }catch(e){ return true; }
+};
+
 window.SgxUploadQueue.init = function(prefix, opts){
 "use strict";
 var isEn = !!opts.isEn;
 
-/* 403 → 跳主站复验（sgx-app 缺失/无效） */
-function checkAppAuth(res){
-  if(res && res.status === 403){
-    var ret = encodeURIComponent(window.location.href);
-    window.location.href = 'https://styrigx.com/app-verify/?aud=book&scope=upload&return=' + ret;
+/* 上传中途被拒：先提示「需要重新验证，已完成的不受影响」，用户点确认后再跳，不直接 location.href */
+async function confirmReauth(){
+  var msg = isEn ? 'Re-verification needed. Completed uploads are not affected. Go to verify now?'
+                 : '需要重新验证，已完成的不受影响，现在去验证吗？';
+  if(window.confirm(msg)){
+    window.location.href = window.SgxUploadQueue.appVerifyUrl();
     return true;
   }
   return false;
 }
-var isEn = !!opts.isEn;
+/* 旧 checkAppAuth 保留给管理页 helpers：分类后跳转（兼容原有调用） */
+async function checkAppAuth(res){
+  var code = await window.SgxUploadQueue.appTokenErrorCode(res);
+  if(code){
+    window.location.href = window.SgxUploadQueue.appVerifyUrl();
+    return true;
+  }
+  return false;
+}
 
 /* 单文件上限（可配置）；R2 multipart 切片大小固定 10MB */
 var MAX_MB = 500;
@@ -41,6 +76,7 @@ var T = {
   errExt: isEn ? 'Only .epub / .pdf accepted' : '仅接受 .epub / .pdf',
   errSize: isEn ? 'File too large (max 500 MB)' : '文件过大（上限 500MB）',
   errUpload: isEn ? 'Upload failed: ' : '上传失败：',
+  needReauth: isEn ? 'Re-verification needed' : '需要重新验证',
   cancelled: isEn ? 'Cancelled' : '已取消',
   stats: function(n, s){ return isEn ? (n + ' books · ' + s + ' used') : ('共 ' + n + ' 本 · 已用 ' + s); },
   editInfo: isEn ? 'Edit info' : '编辑信息',
@@ -366,6 +402,14 @@ async function uploadItem(item){
       item.status = 'exists'; item.existsInfo = j409.book || null;
       renderQueue(); return;
     }
+    if(initR.status === 403){
+      // 通行证问题 → 先提示再跳；其他 403 走原有错误逻辑
+      if(await window.SgxUploadQueue.appTokenErrorCode(initR)){
+        await confirmReauth();
+        item.status = 'error'; item.err = T.needReauth; renderQueue(); return;
+      }
+      throw new Error('init HTTP 403');
+    }
     if(!initR.ok) throw new Error('init HTTP ' + initR.status);
     var init = await initR.json();
     item.uploadId = init.uploadId; item.key = init.key;
@@ -382,6 +426,14 @@ async function uploadItem(item){
           var pr = await api('/api/admin/upload/part?uploadId=' + encodeURIComponent(item.uploadId) +
             '&key=' + encodeURIComponent(item.key) + '&partNumber=' + (i + 1),
             {method: 'POST', body: blob, signal: signal});
+          if(pr.status === 403){
+            // 通行证问题不重试：先提示，用户确认后再跳
+            if(await window.SgxUploadQueue.appTokenErrorCode(pr)){
+              await confirmReauth();
+              throw new Error(T.needReauth);
+            }
+            throw new Error('part ' + (i + 1) + ' HTTP 403');
+          }
           if(!pr.ok) throw new Error('part ' + (i + 1) + ' HTTP ' + pr.status);
           var pj = await pr.json();
           etag = pj.etag; lastErr = null; break;
@@ -408,6 +460,10 @@ async function uploadItem(item){
       var _uuid = item.key.slice('books/'.length, item.key.lastIndexOf('.'));
       var cr = await api('/api/admin/cover?key=' + encodeURIComponent('covers/' + _uuid + '.webp'),
         {method: 'POST', body: item.coverBlob, headers: {'Content-Type': 'image/webp'}, signal: signal});
+      if(cr.status === 403 && await window.SgxUploadQueue.appTokenErrorCode(cr)){
+        await confirmReauth();
+        throw new Error(T.needReauth);
+      }
       if(!cr.ok) throw new Error('cover HTTP ' + cr.status);
       coverKey = (await cr.json()).key || null;
     }
@@ -422,6 +478,10 @@ async function uploadItem(item){
       method: 'POST', headers: {'Content-Type': 'application/json'}, signal: signal,
       body: JSON.stringify({uploadId: item.uploadId, key: item.key, parts: parts, sha256: item.sha256, meta: meta})
     });
+    if(cr2.status === 403 && await window.SgxUploadQueue.appTokenErrorCode(cr2)){
+      await confirmReauth();
+      throw new Error(T.needReauth);
+    }
     if(!cr2.ok) throw new Error('complete HTTP ' + cr2.status);
     var done = await cr2.json();
     item.status = 'done'; item.progress = 1;

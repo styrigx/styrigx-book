@@ -5,7 +5,7 @@
 
 import { err } from './_lib.js';
 import { verifySessionCookieStrict, getCookieValue, fetchSessionEpoch } from '../_sgx-cookie.js';
-import { getAppCookieValue, verifyAppToken } from '../_app-token.js';
+import { getAppCookieValue, parseAppToken, verifyAppToken } from '../_app-token.js';
 
 /**
  * 验签四段式 cookie，返回 role（'owner' | 'visitor'），无效返回 null。
@@ -53,5 +53,6 @@ export async function requireAppToken(context) {
   if (!ok) {
     return { response: err('app-token-invalid', 403) };
   }
-  return { response: null };
+  // 成功时附带解析后的 token（调用方取 epoch 建上传会话；verifyAppToken 已全量校验过）
+  return { response: null, app: parseAppToken(val) };
 }

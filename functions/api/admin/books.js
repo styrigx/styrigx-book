@@ -8,8 +8,6 @@ export async function onRequest(context) {
   if (request.method !== 'GET') return methodNotAllowed('GET');
   const { response } = await requireOwner(context);
   if (response) return response;
-  const { response: appResp } = await requireAppToken(context);
-  if (appResp) return appResp;
 
   const { results } = await env.DB.prepare(
     'SELECT id,title,author,lang,format,size,sha256,cover_key,pages,tags,visibility,in_shelf,created_at,updated_at FROM books ORDER BY created_at DESC'

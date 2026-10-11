@@ -3,6 +3,7 @@
 // sha256 已存在 → 409 {exists:true, book:{id,title}}；否则 → {uploadId, key}
 import { json, err, methodNotAllowed, BOOK_KEY_RE, storageEnabled, storageDisabledResponse } from '../../_lib.js';
 import { requireOwner, requireAppToken } from '../../_auth.js';
+import { recordUploadSession } from './_sessions.js';
 
 const SHA256_RE = /^[a-fA-F0-9]{64}$/;
 
@@ -11,7 +12,7 @@ export async function onRequest(context) {
   if (request.method !== 'POST') return methodNotAllowed('POST');
   const { response } = await requireOwner(context);
   if (response) return response;
-  const { response: appResp } = await requireAppToken(context);
+  const { response: appResp, app } = await requireAppToken(context);
   if (appResp) return appResp;
   if (!storageEnabled(env)) return storageDisabledResponse();
 
@@ -36,5 +37,8 @@ export async function onRequest(context) {
   const key = `books/${crypto.randomUUID()}.${format}`;
   if (!BOOK_KEY_RE.test(key)) return err('internal key error', 500); // 不应发生
   const mpu = await env.BOOKS.createMultipartUpload(key);
+  // 记录上传会话（绑定通行证 epoch）：后续 part/complete/abort 只验 owner + 会话，
+  // sgx-app（10 分钟）中途过期不影响大文件分片。
+  await recordUploadSession(env, mpu.uploadId, mpu.key, app.epoch);
   return json({ uploadId: mpu.uploadId, key: mpu.key });
 }

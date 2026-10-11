@@ -42,7 +42,15 @@ var bg = document.getElementById('bk-upload-bg');
 var closeBtn = document.getElementById('bk-upload-close');
 var initialized = false;
 
-function openSheet(){
+async function openSheet(){
+  /* 预检通行证：无效时在选文件之前就跳主站复验，而不是传到一半再跳 */
+  try{
+    var ok = await window.SgxUploadQueue.appCheck();
+    if(!ok){
+      window.location.href = window.SgxUploadQueue.appVerifyUrl();
+      return;
+    }
+  }catch(e){ /* 预检失败不阻塞打开，上传时再处理 */ }
   if(!initialized){
     window.SgxUploadQueue.init('shelf', {
       isEn: isEn,

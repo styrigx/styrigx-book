@@ -10,6 +10,11 @@ import { generateKeyPairSync, sign } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { parseAppToken, verifyAppToken, getAppCookieValue } from '../functions/_app-token.js';
 import { requireAppToken } from '../functions/api/_auth.js';
+import { recordUploadSession, verifyUploadSession } from '../functions/api/admin/upload/_sessions.js';
+import { onRequest as initReq } from '../functions/api/admin/upload/init.js';
+import { onRequest as partReq } from '../functions/api/admin/upload/part.js';
+import { onRequest as completeReq } from '../functions/api/admin/upload/complete.js';
+import { onRequest as abortReq } from '../functions/api/admin/upload/abort.js';
 
 let passed = 0;
 function test(name, fn) {
@@ -133,7 +138,231 @@ await test('requireAppToken：过期 token → 403', async () => {
   assert.equal(response.status, 403);
 });
 
+/* ===== 上传会话：init 绑定通行证 epoch，part/complete/abort 只验 owner + 会话 ===== */
+
+/* mock D1（upload_sessions + books 去重查询） */
+function mockDB() {
+  const sessions = new Map();
+  return {
+    _sessions: sessions,
+    prepare(sql) {
+      return {
+        _p: [],
+        bind(...p) { this._p = p; return this; },
+        async first() {
+          if (sql.includes('FROM upload_sessions WHERE upload_id')) {
+            return sessions.get(this._p[0]) || null;
+          }
+          return null; // books 去重查询：无重复
+        },
+        async run() {
+          if (sql.includes('INSERT OR REPLACE INTO upload_sessions')) {
+            const [upload_id, r2_key, app_epoch, created_at] = this._p;
+            sessions.set(upload_id, { r2_key, app_epoch, created_at });
+          } else if (sql.includes('DELETE FROM upload_sessions')) {
+            sessions.delete(this._p[0]);
+          }
+          return {};
+        },
+      };
+    },
+  };
+}
+
+const mockR2 = {
+  async createMultipartUpload(key) { return { uploadId: 'mpu-1', key }; },
+  async uploadPart() { return { etag: 'etag-1' }; },
+  async abortMultipartUpload() {},
+  async completeMultipartUpload() {},
+  async head() { return { size: 123 }; },
+};
+
+/* owner 会话 cookie（sgx-verified = owner.epoch.exp.sig，自签测试密钥） */
+const { publicKey: lockPub, privateKey: lockPriv } = generateKeyPairSync('ed25519');
+const LOCK_PUB_B64 = lockPub.export({ type: 'spki', format: 'der' }).toString('base64');
+function makeSessionCookie() {
+  const payload = `owner.${CURRENT_EPOCH}.${Date.now() + 3600000}`;
+  return payload + '.' + b64url(sign(null, Buffer.from(payload), lockPriv));
+}
+
+function uploadCtx({ appCookie = 'USE_DEFAULT', db = null, url = null, body = null } = {}) {
+  const _db = db || mockDB();
+  const cookies = [`sgx-verified=${makeSessionCookie()}`];
+  const appVal = appCookie === 'USE_DEFAULT' ? makeToken() : appCookie;
+  if (appVal) cookies.push(`sgx-app=${appVal}`);
+  return {
+    ctx: {
+      request: {
+        method: 'POST',
+        url: url || 'https://book.styrigx.com/api/admin/upload/init',
+        headers: { get: (n) => (n.toLowerCase() === 'cookie' ? cookies.join('; ') : null) },
+        json: async () => body,
+        arrayBuffer: async () => new Uint8Array([0x25, 0x50, 0x44, 0x46, 0, 0, 0, 0]).buffer, // %PDF 魔数
+      },
+      env: {
+        SGX_APP_PUBLIC: PUB_B64,
+        SGX_LOCK_PUBLIC: LOCK_PUB_B64,
+        DB: _db,
+        BOOKS: mockR2,
+        STORAGE_ENABLED: 'true',
+        MAX_UPLOAD_MB: '500',
+      },
+    },
+    db: _db,
+  };
+}
+
+const INIT_BODY = { filename: 'a.epub', size: 100, sha256: 'a'.repeat(64), format: 'epub' };
+
+await test('init：缺通行证 → 403 app-token-required', async () => {
+  const { ctx } = uploadCtx({ appCookie: null, body: INIT_BODY });
+  const res = await initReq(ctx);
+  assert.equal(res.status, 403);
+  assert.equal((await res.json()).error, 'app-token-required');
+});
+
+await test('init：通行证无效 → 403 app-token-invalid', async () => {
+  const { ctx } = uploadCtx({ appCookie: 'bad.token', body: INIT_BODY });
+  const res = await initReq(ctx);
+  assert.equal(res.status, 403);
+  assert.equal((await res.json()).error, 'app-token-invalid');
+});
+
+await test('init 成功后记录上传会话（绑定 epoch）', async () => {
+  const { ctx, db } = uploadCtx({ body: INIT_BODY });
+  const res = await initReq(ctx);
+  assert.equal(res.status, 200);
+  const j = await res.json();
+  assert.equal(j.uploadId, 'mpu-1');
+  const sess = db._sessions.get('mpu-1');
+  assert.ok(sess, '会话应已记录');
+  assert.equal(sess.app_epoch, CURRENT_EPOCH);
+  assert.equal(sess.r2_key, j.key);
+});
+
+await test('part：通行证过期后，已 init 的 uploadId 仍然放行', async () => {
+  const { db } = uploadCtx({ body: INIT_BODY });
+  await recordUploadSession({ DB: db }, 'mpu-1', 'books/12345678-1234-1234-1234-123456789abc.pdf', CURRENT_EPOCH);
+  const expired = makeToken({ exp: Date.now() - 1000 });
+  const { ctx } = uploadCtx({
+    appCookie: expired,
+    db,
+    url: 'https://book.styrigx.com/api/admin/upload/part?uploadId=mpu-1&key=books/12345678-1234-1234-1234-123456789abc.pdf&partNumber=1',
+  });
+  const res = await partReq(ctx);
+  assert.equal(res.status, 200, '过期通行证不应阻断已建会话的分片');
+  assert.equal((await res.json()).etag, 'etag-1');
+});
+
+await test('part：伪造 uploadId → 403', async () => {
+  const { ctx } = uploadCtx({
+    url: 'https://book.styrigx.com/api/admin/upload/part?uploadId=fake&key=books/12345678-1234-1234-1234-123456789abc.pdf&partNumber=1',
+  });
+  const res = await partReq(ctx);
+  assert.equal(res.status, 403);
+});
+
+await test('part：uploadId 与 key 不匹配 → 403', async () => {
+  const { ctx, db } = uploadCtx({
+    url: 'https://book.styrigx.com/api/admin/upload/part?uploadId=mpu-1&key=books/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa.pdf&partNumber=1',
+  });
+  await recordUploadSession({ DB: db }, 'mpu-1', 'books/12345678-1234-1234-1234-123456789abc.pdf', CURRENT_EPOCH);
+  const res = await partReq(ctx);
+  assert.equal(res.status, 403);
+});
+
+await test('part：会话超过 2 小时 → 403', async () => {
+  const { ctx, db } = uploadCtx({
+    url: 'https://book.styrigx.com/api/admin/upload/part?uploadId=mpu-1&key=books/12345678-1234-1234-1234-123456789abc.pdf&partNumber=1',
+  });
+  const threeHoursAgo = Date.now() - 3 * 60 * 60 * 1000;
+  db._sessions.set('mpu-1', { r2_key: 'books/12345678-1234-1234-1234-123456789abc.pdf', app_epoch: CURRENT_EPOCH, created_at: threeHoursAgo });
+  const res = await partReq(ctx);
+  assert.equal(res.status, 403);
+  assert.equal((await res.json()).error, 'upload-session-expired');
+  assert.equal(db._sessions.has('mpu-1'), false, '过期会话应被清理');
+});
+
+await test('part：epoch 变更后 → 403', async () => {
+  const { ctx, db } = uploadCtx({
+    url: 'https://book.styrigx.com/api/admin/upload/part?uploadId=mpu-1&key=books/12345678-1234-1234-1234-123456789abc.pdf&partNumber=1',
+  });
+  // 会话建于 epoch 6（模拟「锁定所有设备」后），当前 epoch 仍为 5
+  await recordUploadSession({ DB: db }, 'mpu-1', 'books/12345678-1234-1234-1234-123456789abc.pdf', CURRENT_EPOCH + 1);
+  const res = await partReq(ctx);
+  assert.equal(res.status, 403);
+});
+
+await test('complete：有效会话放行并清理', async () => {
+  const { ctx, db } = uploadCtx({
+    body: {
+      uploadId: 'mpu-1', key: 'books/12345678-1234-1234-1234-123456789abc.pdf',
+      parts: [{ partNumber: 1, etag: 'etag-1' }],
+      sha256: 'b'.repeat(64),
+      meta: { title: 'T', author: 'A' },
+    },
+  });
+  await recordUploadSession({ DB: db }, 'mpu-1', 'books/12345678-1234-1234-1234-123456789abc.pdf', CURRENT_EPOCH);
+  const res = await completeReq(ctx);
+  assert.equal(res.status, 200);
+  assert.ok((await res.json()).id);
+  assert.equal(db._sessions.has('mpu-1'), false, '完成后会话应清理');
+});
+
+await test('abort：有效会话放行并清理', async () => {
+  const { ctx, db } = uploadCtx({ body: { uploadId: 'mpu-1', key: 'books/12345678-1234-1234-1234-123456789abc.pdf' } });
+  await recordUploadSession({ DB: db }, 'mpu-1', 'books/12345678-1234-1234-1234-123456789abc.pdf', CURRENT_EPOCH);
+  const res = await abortReq(ctx);
+  assert.equal(res.status, 200);
+  assert.equal(db._sessions.has('mpu-1'), false);
+});
+
+await test('verifyUploadSession：DB 异常时 fail closed', async () => {
+  const badEnv = {
+    DB: { prepare() { throw new Error('db down'); } },
+    env2: null,
+  };
+  const { response } = await verifyUploadSession({ env: badEnv }, 'x', 'y');
+  assert.ok(response);
+  assert.equal(response.status, 403);
+});
+
 globalThis.fetch = realFetch;
+
+/* ===== 前端：403 分类（只对 app-token-* 跳复验）===== */
+await test('前端：app-token-required / app-token-invalid 识别为跳转', async () => {
+  const src = readFileSync(new URL('../static/js/upload-queue.js', import.meta.url), 'utf8');
+  globalThis.window = globalThis;
+  eval(src);
+  const { appTokenErrorCode, appVerifyUrl } = globalThis.SgxUploadQueue;
+  const fakeRes = (status, error) => ({
+    status,
+    clone: () => ({ json: async () => ({ error }) }),
+  });
+  assert.equal(await appTokenErrorCode(fakeRes(403, 'app-token-required')), 'app-token-required');
+  assert.equal(await appTokenErrorCode(fakeRes(403, 'app-token-invalid')), 'app-token-invalid');
+  // 其他 403 不跳转
+  assert.equal(await appTokenErrorCode(fakeRes(403, 'forbidden')), null);
+  assert.equal(await appTokenErrorCode(fakeRes(403, 'upload-session-expired')), null);
+  assert.equal(await appTokenErrorCode(fakeRes(403, 'upload-session-invalid')), null);
+  // 非 403 不跳转
+  assert.equal(await appTokenErrorCode(fakeRes(401, 'unauthorized')), null);
+  assert.equal(await appTokenErrorCode(fakeRes(200, null)), null);
+  // 复验 URL 格式
+  globalThis.location = { href: 'https://book.styrigx.com/shelf' };
+  const u = appVerifyUrl();
+  assert.ok(u.startsWith('https://styrigx.com/app-verify/?aud=book&scope=upload&return='));
+  assert.ok(u.includes(encodeURIComponent('https://book.styrigx.com/shelf')));
+  delete globalThis.window;
+  delete globalThis.location;
+});
+
+await test('前端：上传中途被拒用 confirm 而非直接跳转', () => {
+  const src = readFileSync(new URL('../static/js/upload-queue.js', import.meta.url), 'utf8');
+  assert.ok(src.includes('window.confirm('), '中途被拒应先弹确认框');
+  // 确认框文案
+  assert.ok(src.includes('已完成的不受影响'));
+});
 
 /* 前端：visitor 不渲染 FAB 入口 */
 import { readFileSync } from 'node:fs';

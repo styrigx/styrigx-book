@@ -3,7 +3,8 @@
 // PDF 须为 %PDF，EPUB 须为 PK\x03\x04；不符 → 400 并 abort 整个上传。
 // 成功 → {etag}
 import { json, err, methodNotAllowed, BOOK_KEY_RE, storageEnabled, storageDisabledResponse } from '../../_lib.js';
-import { requireOwner, requireAppToken } from '../../_auth.js';
+import { requireOwner } from '../../_auth.js';
+import { verifyUploadSession, clearUploadSession } from './_sessions.js';
 
 function checkMagic(buf, format) {
   if (buf.byteLength < 4) return false;
@@ -17,12 +18,6 @@ function checkMagic(buf, format) {
 export async function onRequest(context) {
   const { request, env } = context;
   if (request.method !== 'POST') return methodNotAllowed('POST');
-  const { response } = await requireOwner(context);
-  if (response) return response;
-  const { response: appResp } = await requireAppToken(context);
-  if (appResp) return appResp;
-  if (!storageEnabled(env)) return storageDisabledResponse();
-
   const q = new URL(request.url).searchParams;
   const uploadId = q.get('uploadId');
   const key = q.get('key');
@@ -33,6 +28,13 @@ export async function onRequest(context) {
     return err('invalid partNumber', 400);
   }
 
+  const { response } = await requireOwner(context);
+  if (response) return response;
+  // 只验 owner + 上传会话（init 时已验过通行证；sgx-app 10 分钟过期不影响分片）
+  const { response: sessResp } = await verifyUploadSession(context, uploadId, key);
+  if (sessResp) return sessResp;
+  if (!storageEnabled(env)) return storageDisabledResponse();
+
   const format = key.endsWith('.pdf') ? 'pdf' : 'epub';
   const buf = await request.arrayBuffer();
   if (partNumber === 1 && !checkMagic(buf, format)) {
@@ -41,6 +43,7 @@ export async function onRequest(context) {
     } catch {
       // abort 失败不影响返回 400
     }
+    await clearUploadSession(env, uploadId);
     return err('invalid file magic', 400);
   }
 
