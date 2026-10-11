@@ -11,7 +11,8 @@ import { generateKeyPairSync, sign } from 'node:crypto';
 import { createRequire } from 'node:module';
 import assert from 'node:assert/strict';
 import { onRequest as sessionCheck } from '../functions/api/session-check.js';
-import { onRequest as mwOnRequest, verifySessionCookie } from '../functions/_middleware.js';
+import { onRequest as mwOnRequest } from '../functions/_middleware.js';
+import { verifySessionCookie } from '../functions/_sgx-cookie.js';
 
 const require = createRequire(import.meta.url);
 const sgx = require('../static/js/sgx-lock-sync.js');

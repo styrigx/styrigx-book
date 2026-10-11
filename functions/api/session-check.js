@@ -9,7 +9,7 @@
 //
 // 不碰 D1：本接口只验签 cookie，不读 styrigx-books。
 import { json, methodNotAllowed } from './_lib.js';
-import { verifySessionCookie } from '../_middleware.js';
+import { verifySessionCookie } from '../_sgx-cookie.js';
 
 const NO_STORE = { 'Cache-Control': 'no-store' };
 

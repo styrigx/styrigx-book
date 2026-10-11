@@ -13,5 +13,6 @@
     "vendor": "node scripts/vendor.mjs",
     "test": "node tests/pages-dev-301.test.mjs && node tests/lock-sync.test.mjs"
   },
-  "version": "1.2.0"
+  "version": "1.2.0",
+  "type": "module"
 }
