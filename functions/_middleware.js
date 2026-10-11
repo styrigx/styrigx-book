@@ -93,7 +93,7 @@ function lockRedirect(request) {
   /* 手工拼 302（等价于 Response.redirect）：302 本身不可缓存，再加 no-store 明确语义 */
   return new Response(null, {
     status: 302,
-    headers: { Location: target, 'Cache-Control': 'no-store' },
+    headers: { Location: target, 'Cache-Control': 'private, no-store' },
   });
 }
 

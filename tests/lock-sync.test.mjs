@@ -1,21 +1,34 @@
-// 锁屏同步测试（fix/lock-sync）
+// 锁屏同步测试（#8 恢复 + #5 权限规则）
+// #5 权限：owner 可以读、上传、管理；visitor 只读（能进站、能看公开内容）；
+//          /api/admin/* 对 visitor 返回 403。
 // 覆盖：
-//   1. functions/api/session-check.js — 验签通过 200 {ok:true} / 否则 401 {ok:false}，
-//      一律 Cache-Control: no-store；非 GET → 405
-//   2. functions/_middleware.js — 受保护 HTML 响应加 no-store；302 锁屏跳转带 no-store
+//   1. functions/api/session-check.js — 会话有效（owner/visitor）200 {ok:true} /
+//      否则 401 {ok:false}，一律 Cache-Control: no-store；非 GET → 405
+//   2. functions/_middleware.js — 受保护 HTML 响应加 no-store；302 锁屏跳转带 no-store；
+//      visitor 只读放行
 //   3. static/js/sgx-lock-sync.js — 401 处理规则（isLockSignal / checkSession / apiFetch），
 //      网络错误不 reload（fail open）
+//   4. functions/api/_auth.js requireOwner — owner 放行 / visitor 403 / 未登录 401；
+//      三段旧 cookie / 过期 / epoch 过旧 / 伪造签名一律拒绝
 // 运行：node tests/lock-sync.test.mjs
 
 import { generateKeyPairSync, sign } from 'node:crypto';
-import { createRequire } from 'node:module';
+import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
 import assert from 'node:assert/strict';
 import { onRequest as sessionCheck } from '../functions/api/session-check.js';
 import { onRequest as mwOnRequest } from '../functions/_middleware.js';
 import { verifySessionCookie, getCookieValue } from '../functions/_sgx-cookie.js';
+import { requireOwner } from '../functions/api/_auth.js';
 
-const require = createRequire(import.meta.url);
-const sgx = require('../static/js/sgx-lock-sync.js');
+/* static/js/sgx-lock-sync.js 是浏览器 IIFE（module.exports 分支只在 CJS 下生效）。
+   package.json 为 "type": "module"，createRequire 会把它当 ESM 加载导致导出丢失，
+   这里用 vm 在 CJS 沙箱里执行，保证测到的是 #8 的真实导出。 */
+const sgxSrc = readFileSync(new URL('../static/js/sgx-lock-sync.js', import.meta.url), 'utf8');
+const sgxSandbox = { module: { exports: {} }, console };
+vm.createContext(sgxSandbox);
+vm.runInContext(sgxSrc, sgxSandbox);
+const sgx = sgxSandbox.module.exports;
 
 let passed = 0;
 function test(name, fn) {
@@ -26,7 +39,7 @@ function test(name, fn) {
 }
 
 /* ---------- 测试用 Ed25519 密钥与 cookie ---------- */
-// 注意：_middleware.js 在模块内缓存公钥（publicKeyPromise），整个文件只用同一对密钥。
+// 注意：_sgx-cookie.js 在模块内缓存公钥（按密钥值），整个文件只用同一对密钥。
 const { publicKey, privateKey } = generateKeyPairSync('ed25519');
 const spkiDer = publicKey.export({ type: 'spki', format: 'der' });
 const PEM =
@@ -80,10 +93,11 @@ await test('缺失 cookie → 401 {ok:false} + no-store', async () => {
   assert.deepEqual(await res.json(), { ok: false });
   assert.equal(res.headers.get('Cache-Control'), 'no-store');
 });
-await test('visitor 角色（签名有效）→ book 主人专属，401', async () => {
+await test('visitor 角色（签名有效）→ 200 {ok:true}（只读，能进站）', async () => {
   const res = await sessionCheck({ request: apiReq(visitorCookie()), env: ENV });
-  assert.equal(res.status, 401);
-  assert.deepEqual(await res.json(), { ok: false });
+  assert.equal(res.status, 200);
+  assert.deepEqual(await res.json(), { ok: true });
+  assert.equal(res.headers.get('Cache-Control'), 'no-store');
 });
 await test('旧三段式 cookie（无 role）→ 一律无效，401', async () => {
   const res = await sessionCheck({ request: apiReq(makeLegacyCookie(EPOCH, Date.now() + 3600e3)), env: ENV });
@@ -140,10 +154,10 @@ function mwCtx(cookie, nextRes) {
     next: async () => nextRes,
   };
 }
-await test('owner cookie + HTML → 响应加 Cache-Control: no-store', async () => {
+await test('owner cookie + HTML → 响应加 Cache-Control: private, no-store', async () => {
   const res = await mwOnRequest(mwCtx(goodCookie(),
     new Response('<html></html>', { headers: { 'content-type': 'text/html; charset=utf-8' } })));
-  assert.equal(res.headers.get('Cache-Control'), 'no-store');
+  assert.equal(res.headers.get('Cache-Control'), 'private, no-store');
   assert.equal(await res.text(), '<html></html>');
 });
 await test('owner cookie + 非 HTML（JSON API）→ 原样返回，不强制 no-store', async () => {
@@ -151,7 +165,7 @@ await test('owner cookie + 非 HTML（JSON API）→ 原样返回，不强制 no
   const res = await mwOnRequest(mwCtx(goodCookie(), inner));
   assert.equal(res.headers.get('Cache-Control'), null);
 });
-await test('visitor cookie（签名有效）→ book 主人专属，302 到主站锁屏', async () => {
+await test('visitor cookie（签名有效）→ 只读放行，HTML 带 no-store', async () => {
   let nextCalled = false;
   const res = await mwOnRequest({
     request: {
@@ -159,11 +173,15 @@ await test('visitor cookie（签名有效）→ book 主人专属，302 到主�
       headers: { get: (n) => (String(n).toLowerCase() === 'cookie' ? `sgx-verified=${visitorCookie()}` : null) },
     },
     env: ENV,
-    next: async () => { nextCalled = true; },
+    next: async () => {
+      nextCalled = true;
+      return new Response('<html></html>', { headers: { 'content-type': 'text/html; charset=utf-8' } });
+    },
   });
-  assert.equal(res.status, 302);
-  assert.ok(!nextCalled, 'visitor 不应放行');
-  assert.ok(res.headers.get('Location').startsWith('https://styrigx.com/?lock=1'));
+  assert.ok(nextCalled, 'visitor 应放行进站');
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get('Cache-Control'), 'private, no-store');
+  assert.equal(await res.text(), '<html></html>');
 });
 await test('旧三段式 cookie → 302 到主站锁屏（无兼容层）', async () => {
   let nextCalled = false;
@@ -178,7 +196,7 @@ await test('旧三段式 cookie → 302 到主站锁屏（无兼容层）', asyn
   assert.equal(res.status, 302);
   assert.ok(!nextCalled);
 });
-await test('无效 cookie → 302 锁屏跳转，带 return + Cache-Control: no-store', async () => {
+await test('无效 cookie → 302 锁屏跳转，带 return + Cache-Control: private, no-store', async () => {
   let nextCalled = false;
   const res = await mwOnRequest({
     request: {
@@ -193,7 +211,7 @@ await test('无效 cookie → 302 锁屏跳转，带 return + Cache-Control: no-
   const loc = res.headers.get('Location');
   assert.ok(loc.startsWith('https://styrigx.com/?lock=1&return='), `Location: ${loc}`);
   assert.ok(decodeURIComponent(loc).includes('https://book.styrigx.com/read/?id=abc'));
-  assert.equal(res.headers.get('Cache-Control'), 'no-store');
+  assert.equal(res.headers.get('Cache-Control'), 'private, no-store');
 });
 await test('verifySessionCookie 与 middleware 验签逻辑一致（owner 通过 / visitor 不通过 / 坏 cookie 不通过）', async () => {
   assert.equal(await verifySessionCookie(getCookieValue(apiReq(goodCookie())), ENV.SGX_LOCK_PUBLIC), 'owner');
@@ -284,6 +302,47 @@ await test('网络错误 → 透出异常，不 reload', async () => {
     (e) => e instanceof TypeError && !e.sgxLocked
   );
   assert.equal(reloaded, 0);
+});
+
+/* ---------- 4. requireOwner（/api/admin/* 鉴权）---------- */
+console.log('requireOwner:');
+function authCtx(cookie) {
+  return {
+    request: {
+      headers: { get: (n) => (String(n).toLowerCase() === 'cookie' && cookie ? `sgx-verified=${cookie}` : null) },
+    },
+    env: ENV,
+  };
+}
+await test('owner → 放行（response 为 null）', async () => {
+  const { response } = await requireOwner(authCtx(goodCookie()));
+  assert.equal(response, null);
+});
+await test('visitor → 403（只读，无管理权限）', async () => {
+  const { response } = await requireOwner(authCtx(visitorCookie()));
+  assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), { error: 'forbidden' });
+});
+await test('无 cookie → 401', async () => {
+  const { response } = await requireOwner(authCtx(null));
+  assert.equal(response.status, 401);
+});
+await test('旧三段式 cookie（无 role）→ 401', async () => {
+  const { response } = await requireOwner(authCtx(makeLegacyCookie(EPOCH, Date.now() + 3600e3)));
+  assert.equal(response.status, 401);
+});
+await test('exp 过期 → 401', async () => {
+  const { response } = await requireOwner(authCtx(makeCookie('owner', EPOCH, Date.now() - 1000)));
+  assert.equal(response.status, 401);
+});
+await test('epoch 过旧（主站已立即锁定）→ 401', async () => {
+  const { response } = await requireOwner(authCtx(makeCookie('owner', EPOCH - 1, Date.now() + 3600e3)));
+  assert.equal(response.status, 401);
+});
+await test('签名伪造 → 401', async () => {
+  const other = generateKeyPairSync('ed25519').privateKey;
+  const { response } = await requireOwner(authCtx(makeCookie('owner', EPOCH, Date.now() + 3600e3, other)));
+  assert.equal(response.status, 401);
 });
 
 globalThis.fetch = realFetch;
