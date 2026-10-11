@@ -109,4 +109,13 @@ test('hugo 构建产物（public/）无 download 属性指向文件接口', () =
   assert.equal(hits.length, 0, '构建产物中发现下载链接：' + hits.join(', '));
 });
 
+test('阅读器响应用 inline 而不是 attachment（文件在浏览器内查看，不触发下载）', () => {
+  // 检查 functions/api/_lib.js 的 serveR2File
+  // 确保 Content-Disposition 是 inline 而不是 attachment
+  const p = path.join(repoRoot, 'functions/api/_lib.js');
+  const c = fs.readFileSync(p, 'utf8');
+  assert.ok(!/attachment/i.test(c), 'serveR2File 不应使用 attachment');
+  assert.ok(/Content-Disposition.*inline/i.test(c), 'serveR2File 应使用 Content-Disposition: inline');
+});
+
 console.log(`\n${passed} passed${failed ? `, ${failed} failed` : ''}`);
