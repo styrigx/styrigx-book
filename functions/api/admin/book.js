@@ -2,7 +2,7 @@
 // PUT body {title,author,lang,tags,visibility,coverKey?,in_shelf?} → 更新元数据 → {ok:true}
 // DELETE → 删除 R2 文件+封面、D1 books+progress → {ok:true}
 import { json, err, methodNotAllowed, COVER_KEY_RE, storageEnabled } from '../_lib.js';
-import { requireOwner } from '../_auth.js';
+import { requireOwner, requireAppToken } from '../_auth.js';
 
 export async function onRequest(context) {
   const { request, env } = context;
@@ -11,6 +11,11 @@ export async function onRequest(context) {
   }
   const { response } = await requireOwner(context);
   if (response) return response;
+  // 删除是敏感操作：要求有效通行证（PUT 元数据编辑沿用原有 owner 鉴权）
+  if (request.method === 'DELETE') {
+    const { response: appResp } = await requireAppToken(context);
+    if (appResp) return appResp;
+  }
 
   const id = new URL(request.url).searchParams.get('id');
   if (!id) return err('missing id', 400);
