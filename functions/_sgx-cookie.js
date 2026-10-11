@@ -10,7 +10,8 @@ const COOKIE_NAME = 'sgx-verified';
 
 const EPOCH_URL = 'https://styrigx.com/api/session-epoch';
 const EPOCH_TTL_MS = 60 * 1000;
-/* 内存缓存：最新 epoch + 抓取时间（worker 实例内共享） */
+/* 内存缓存：{ epoch, app: { book: M } } + 抓取时间（worker 实例内共享）。
+   2.10.0：主站响应新增 app 字段，如 {"epoch":N,"app":{"book":M}}。 */
 let epochCache = { value: null, at: 0 };
 
 function b64urlToBytes(s) {
@@ -105,8 +106,25 @@ export function getCookieValue(request, name = COOKIE_NAME) {
 }
 
 /* 主站最新 session epoch：内存缓存 TTL 60 秒。
-   失败且有缓存 → 用旧缓存；无缓存 → 返回 null（fail closed 由调用方处理）。 */
+   失败且有缓存 → 用旧缓存；无缓存 → 返回 null（fail closed 由调用方处理）。
+   2.10.0：响应为 {"epoch":N,"app":{"book":M}}，只取 epoch 数字（兼容旧行为）。 */
 export async function fetchSessionEpoch() {
+  const data = await fetchEpochData();
+  if (!data || typeof data.epoch !== 'number' || !Number.isFinite(data.epoch)) return null;
+  return data.epoch;
+}
+
+/* 主站最新 app epoch（2.10.0）：取响应里 app[aud]，如 app.book。
+   缓存 60 秒；拿不到 → null（fail closed 由调用方处理）。缺失 aud 视为 0。 */
+export async function fetchAppEpoch(aud) {
+  const data = await fetchEpochData();
+  if (!data) return null;
+  const v = data.app && typeof data.app[aud] === 'number' ? data.app[aud] : 0;
+  return Number.isFinite(v) ? v : 0;
+}
+
+/* 抓取并缓存主站 session-epoch 响应全文（内部用）。 */
+async function fetchEpochData() {
   const now = Date.now();
   if (epochCache.value !== null && now - epochCache.at < EPOCH_TTL_MS) {
     return epochCache.value;
@@ -124,8 +142,8 @@ export async function fetchSessionEpoch() {
     if (typeof data.epoch !== 'number' || !Number.isFinite(data.epoch)) {
       throw new Error('epoch bad payload');
     }
-    epochCache = { value: data.epoch, at: now };
-    return data.epoch;
+    epochCache = { value: data, at: now };
+    return data;
   } catch (e) {
     if (epochCache.value !== null) return epochCache.value;
     return null;

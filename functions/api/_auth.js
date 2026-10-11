@@ -4,8 +4,8 @@
 // 下划线开头，不会被 Pages 当作路由。
 
 import { err } from './_lib.js';
-import { verifySessionCookieStrict, getCookieValue, fetchSessionEpoch } from '../_sgx-cookie.js';
-import { getAppCookieValue, parseAppToken, verifyAppToken } from '../_app-token.js';
+import { verifySessionCookieStrict, getCookieValue, fetchSessionEpoch, fetchAppEpoch } from '../_sgx-cookie.js';
+import { getAppCookieValue, parseAppToken, verifyAppToken, APP_AUD } from '../_app-token.js';
 
 /**
  * 验签四段式 cookie，返回 role（'owner' | 'visitor'），无效返回 null。
@@ -38,7 +38,8 @@ export async function requireOwner(context) {
 
 /**
  * 要求有效的 sgx-app 通行证。用于书架 FAB 上传入口（/api/admin/upload/*、删除、换封面）。
- * 校验：SGX_APP_PUBLIC 验签 + aud=book + scope=upload + exp 有效 + epoch 与主站当前一致。
+ * 2.10.0：校验 SGX_APP_PUBLIC 验签 + aud=book + scope=upload + exp 有效 +
+ *          session epoch 与主站当前一致 + appEpoch 不低于主站当前 app.book。
  * 缺失或无效一律 403（fail closed）。不区分 visitor/未登录，统一 403。
  * 用法：const { response } = await requireAppToken(context); if (response) return response;
  */
@@ -49,10 +50,11 @@ export async function requireAppToken(context) {
     return { response: err('app-token-required', 403) };
   }
   const latestEpoch = await fetchSessionEpoch();
-  const ok = await verifyAppToken(val, env.SGX_APP_PUBLIC, latestEpoch);
+  const latestAppEpoch = await fetchAppEpoch(APP_AUD);
+  const ok = await verifyAppToken(val, env.SGX_APP_PUBLIC, latestEpoch, latestAppEpoch);
   if (!ok) {
     return { response: err('app-token-invalid', 403) };
   }
-  // 成功时附带解析后的 token（调用方取 epoch 建上传会话；verifyAppToken 已全量校验过）
+  // 成功时附带解析后的 token（调用方取 appEpoch 建上传会话；verifyAppToken 已全量校验过）
   return { response: null, app: parseAppToken(val) };
 }

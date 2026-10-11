@@ -33,16 +33,17 @@ function b64url(buf) {
   return buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-function makeToken({ role = 'owner', epoch = 5, iat = Date.now(), exp = Date.now() + 600000, aud = 'book', scope = 'upload', key = privateKey } = {}) {
-  const payload = [role, epoch, iat, exp, aud, scope].join('.');
+function makeToken({ role = 'owner', epoch = 5, appEpoch = 2, iat = Date.now(), exp = Date.now() + 600000, aud = 'book', scope = 'upload', key = privateKey } = {}) {
+  const payload = [role, epoch, appEpoch, iat, exp, aud, scope].join('.');
   const sig = sign(null, Buffer.from(payload), key);
   return payload + '.' + b64url(sig);
 }
 
-/* mock fetchSessionEpoch：fetch 返回固定 epoch */
+/* mock fetchSessionEpoch：fetch 返回固定 epoch + app */
 const realFetch = globalThis.fetch;
 const CURRENT_EPOCH = 5;
-globalThis.fetch = async () => ({ ok: true, json: async () => ({ epoch: CURRENT_EPOCH }) });
+const CURRENT_APP_EPOCH = 2;
+globalThis.fetch = async () => ({ ok: true, json: async () => ({ epoch: CURRENT_EPOCH, app: { book: CURRENT_APP_EPOCH } }) });
 
 console.log('app-token:');
 
@@ -57,33 +58,38 @@ await test('parseAppToken：有效 token 解析成功', () => {
 
 await test('verifyAppToken：有效 token 通过', async () => {
   const t = makeToken();
-  assert.equal(await verifyAppToken(t, PUB_B64, CURRENT_EPOCH), true);
+  assert.equal(await verifyAppToken(t, PUB_B64, CURRENT_EPOCH, CURRENT_APP_EPOCH), true);
 });
 
 await test('verifyAppToken：过期 token 拒绝', async () => {
   const t = makeToken({ exp: Date.now() - 1000 });
-  assert.equal(await verifyAppToken(t, PUB_B64, CURRENT_EPOCH), false);
+  assert.equal(await verifyAppToken(t, PUB_B64, CURRENT_EPOCH, CURRENT_APP_EPOCH), false);
 });
 
 await test('verifyAppToken：aud 错误拒绝', async () => {
   const t = makeToken({ aud: 'blog' });
-  assert.equal(await verifyAppToken(t, PUB_B64, CURRENT_EPOCH), false);
+  assert.equal(await verifyAppToken(t, PUB_B64, CURRENT_EPOCH, CURRENT_APP_EPOCH), false);
 });
 
 await test('verifyAppToken：scope 错误拒绝', async () => {
   const t = makeToken({ scope: 'read' });
-  assert.equal(await verifyAppToken(t, PUB_B64, CURRENT_EPOCH), false);
+  assert.equal(await verifyAppToken(t, PUB_B64, CURRENT_EPOCH, CURRENT_APP_EPOCH), false);
 });
 
 await test('verifyAppToken：epoch 落后拒绝', async () => {
   const t = makeToken({ epoch: CURRENT_EPOCH - 1 });
-  assert.equal(await verifyAppToken(t, PUB_B64, CURRENT_EPOCH), false);
+  assert.equal(await verifyAppToken(t, PUB_B64, CURRENT_EPOCH, CURRENT_APP_EPOCH), false);
+});
+
+await test('verifyAppToken：appEpoch 落后拒绝', async () => {
+  const t = makeToken({ appEpoch: CURRENT_APP_EPOCH - 1 });
+  assert.equal(await verifyAppToken(t, PUB_B64, CURRENT_EPOCH, CURRENT_APP_EPOCH), false);
 });
 
 await test('verifyAppToken：伪造签名拒绝', async () => {
   const { privateKey: evilKey } = generateKeyPairSync('ed25519');
   const t = makeToken({ key: evilKey });
-  assert.equal(await verifyAppToken(t, PUB_B64, CURRENT_EPOCH), false);
+  assert.equal(await verifyAppToken(t, PUB_B64, CURRENT_EPOCH, CURRENT_APP_EPOCH), false);
 });
 
 await test('verifyAppToken：缺 SGX_APP_PUBLIC 拒绝（fail closed）', async () => {
@@ -94,7 +100,7 @@ await test('verifyAppToken：缺 SGX_APP_PUBLIC 拒绝（fail closed）', async 
 
 await test('verifyAppToken：role 非 owner 拒绝', async () => {
   const t = makeToken({ role: 'visitor' });
-  assert.equal(await verifyAppToken(t, PUB_B64, CURRENT_EPOCH), false);
+  assert.equal(await verifyAppToken(t, PUB_B64, CURRENT_EPOCH, CURRENT_APP_EPOCH), false);
 });
 
 function mockContext(cookieVal) {
@@ -236,13 +242,13 @@ await test('init 成功后记录上传会话（绑定 epoch）', async () => {
   assert.equal(j.uploadId, 'mpu-1');
   const sess = db._sessions.get('mpu-1');
   assert.ok(sess, '会话应已记录');
-  assert.equal(sess.app_epoch, CURRENT_EPOCH);
+  assert.equal(sess.app_epoch, CURRENT_APP_EPOCH);
   assert.equal(sess.r2_key, j.key);
 });
 
 await test('part：通行证过期后，已 init 的 uploadId 仍然放行', async () => {
   const { db } = uploadCtx({ body: INIT_BODY });
-  await recordUploadSession({ DB: db }, 'mpu-1', 'books/12345678-1234-1234-1234-123456789abc.pdf', CURRENT_EPOCH);
+  await recordUploadSession({ DB: db }, 'mpu-1', 'books/12345678-1234-1234-1234-123456789abc.pdf', CURRENT_APP_EPOCH);
   const expired = makeToken({ exp: Date.now() - 1000 });
   const { ctx } = uploadCtx({
     appCookie: expired,
@@ -266,7 +272,7 @@ await test('part：uploadId 与 key 不匹配 → 403', async () => {
   const { ctx, db } = uploadCtx({
     url: 'https://book.styrigx.com/api/admin/upload/part?uploadId=mpu-1&key=books/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa.pdf&partNumber=1',
   });
-  await recordUploadSession({ DB: db }, 'mpu-1', 'books/12345678-1234-1234-1234-123456789abc.pdf', CURRENT_EPOCH);
+  await recordUploadSession({ DB: db }, 'mpu-1', 'books/12345678-1234-1234-1234-123456789abc.pdf', CURRENT_APP_EPOCH);
   const res = await partReq(ctx);
   assert.equal(res.status, 403);
 });
@@ -276,19 +282,19 @@ await test('part：会话超过 2 小时 → 403', async () => {
     url: 'https://book.styrigx.com/api/admin/upload/part?uploadId=mpu-1&key=books/12345678-1234-1234-1234-123456789abc.pdf&partNumber=1',
   });
   const threeHoursAgo = Date.now() - 3 * 60 * 60 * 1000;
-  db._sessions.set('mpu-1', { r2_key: 'books/12345678-1234-1234-1234-123456789abc.pdf', app_epoch: CURRENT_EPOCH, created_at: threeHoursAgo });
+  db._sessions.set('mpu-1', { r2_key: 'books/12345678-1234-1234-1234-123456789abc.pdf', app_epoch: CURRENT_APP_EPOCH, created_at: threeHoursAgo });
   const res = await partReq(ctx);
   assert.equal(res.status, 403);
   assert.equal((await res.json()).error, 'upload-session-expired');
   assert.equal(db._sessions.has('mpu-1'), false, '过期会话应被清理');
 });
 
-await test('part：epoch 变更后 → 403', async () => {
+await test('part：app epoch 变更后 → 403', async () => {
   const { ctx, db } = uploadCtx({
     url: 'https://book.styrigx.com/api/admin/upload/part?uploadId=mpu-1&key=books/12345678-1234-1234-1234-123456789abc.pdf&partNumber=1',
   });
-  // 会话建于 epoch 6（模拟「锁定所有设备」后），当前 epoch 仍为 5
-  await recordUploadSession({ DB: db }, 'mpu-1', 'books/12345678-1234-1234-1234-123456789abc.pdf', CURRENT_EPOCH + 1);
+  // 会话建于 appEpoch 1（模拟删除应用类通行密钥后），当前 app.book 为 2
+  await recordUploadSession({ DB: db }, 'mpu-1', 'books/12345678-1234-1234-1234-123456789abc.pdf', CURRENT_APP_EPOCH - 1);
   const res = await partReq(ctx);
   assert.equal(res.status, 403);
 });
@@ -302,7 +308,7 @@ await test('complete：有效会话放行并清理', async () => {
       meta: { title: 'T', author: 'A' },
     },
   });
-  await recordUploadSession({ DB: db }, 'mpu-1', 'books/12345678-1234-1234-1234-123456789abc.pdf', CURRENT_EPOCH);
+  await recordUploadSession({ DB: db }, 'mpu-1', 'books/12345678-1234-1234-1234-123456789abc.pdf', CURRENT_APP_EPOCH);
   const res = await completeReq(ctx);
   assert.equal(res.status, 200);
   assert.ok((await res.json()).id);
@@ -311,7 +317,7 @@ await test('complete：有效会话放行并清理', async () => {
 
 await test('abort：有效会话放行并清理', async () => {
   const { ctx, db } = uploadCtx({ body: { uploadId: 'mpu-1', key: 'books/12345678-1234-1234-1234-123456789abc.pdf' } });
-  await recordUploadSession({ DB: db }, 'mpu-1', 'books/12345678-1234-1234-1234-123456789abc.pdf', CURRENT_EPOCH);
+  await recordUploadSession({ DB: db }, 'mpu-1', 'books/12345678-1234-1234-1234-123456789abc.pdf', CURRENT_APP_EPOCH);
   const res = await abortReq(ctx);
   assert.equal(res.status, 200);
   assert.equal(db._sessions.has('mpu-1'), false);
