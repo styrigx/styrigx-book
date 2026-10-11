@@ -58,6 +58,9 @@
   </div>
 </div>
 
+{{/* 上传 FAB + 弹层（仅 owner，visitor 不渲染） */}}
+{{ partial "upload-fab.html" (dict "isEn" $isEn) }}
+
 {{/* 删除二次确认（One UI 样式） */}}
 <div id="del-wrap" class="fixed inset-0 z-[70] hidden items-center justify-center p-6" role="alertdialog" aria-modal="true">
   <div class="absolute inset-0 bg-black/50" data-del-cancel></div>
@@ -190,6 +193,7 @@ async function checkLogin(){
     isOwner = owner;
     await loadBooks();
   }
+  if(window.BkShowFab) window.BkShowFab(owner);
 }
 function updateSortOptions(){
   var sel = document.getElementById('bk-sort');

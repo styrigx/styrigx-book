@@ -1,0 +1,83 @@
+{{/* 书架上传 FAB + 弹层（仅 owner 可见，visitor 不渲染）。
+  手机：底部弹层；DeX：居中弹窗。复用 upload-queue.html partial。 */}}
+{{ $isEn := .isEn }}
+
+{{/* One UI 风格 FAB：右下角，仅 owner 显示（JS 控制） */}}
+<button type="button" id="bk-fab" class="hidden fixed z-[60] rounded-full bg-m-primary text-m-on-primary shadow-xl items-center justify-center"
+  style="width:56px;height:56px;right:16px;bottom:88px;"
+  aria-label="{{ if $isEn }}Upload book{{ else }}上传书籍{{ end }}"
+  title="{{ if $isEn }}Upload book{{ else }}上传书籍{{ end }}">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M12 5v14M5 12h14"/>
+  </svg>
+</button>
+
+{{/* 上传弹层：手机底部 sheet，DeX 居中 dialog */}}
+<div id="bk-upload-wrap" class="fixed inset-0 z-[70] hidden" role="dialog" aria-modal="true" aria-label="{{ if $isEn }}Upload books{{ else }}上传书籍{{ end }}">
+  <div id="bk-upload-bg" class="absolute inset-0 bg-black/45"></div>
+  <div id="bk-upload-panel" class="absolute bg-m-surface shadow-2xl flex flex-col max-h-[90vh]
+    left-0 right-0 bottom-0 rounded-t-[1.75rem] p-5 pt-3
+    sm:left-1/2 sm:right-auto sm:bottom-auto sm:top-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:w-[32rem] sm:max-w-[calc(100vw-2rem)] sm:rounded-[1.75rem] sm:p-6">
+    <div class="w-10 h-1.5 rounded-full bg-m-outline/60 mx-auto mb-3 sm:hidden" aria-hidden="true"></div>
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="text-base font-extrabold text-m-on-surface">{{ if $isEn }}Upload books{{ else }}上传书籍{{ end }}</h3>
+      <button type="button" id="bk-upload-close" class="w-10 h-10 rounded-full flex items-center justify-center text-m-on-surface-variant hover:bg-m-container" aria-label="{{ if $isEn }}Close{{ else }}关闭{{ end }}">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="overflow-y-auto flex-1 min-h-0">
+      {{ partial "upload-queue.html" (dict "prefix" "shelf" "isEn" $isEn) }}
+    </div>
+  </div>
+</div>
+
+<script src="/js/upload-queue.js"></script>
+<script>
+(function(){
+"use strict";
+var isEn = {{ if $isEn }}true{{ else }}false{{ end }};
+var fab = document.getElementById('bk-fab');
+var wrap = document.getElementById('bk-upload-wrap');
+var bg = document.getElementById('bk-upload-bg');
+var closeBtn = document.getElementById('bk-upload-close');
+var initialized = false;
+
+function openSheet(){
+  if(!initialized){
+    window.SgxUploadQueue.init('shelf', {
+      isEn: isEn,
+      onBookAdded: function(book){
+        /* 书架页：上传完成后刷新列表（如果有刷新函数） */
+        if(window.BkRefresh) window.BkRefresh();
+      }
+    });
+    initialized = true;
+  }
+  wrap.classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+}
+function closeSheet(){
+  wrap.classList.add('hidden');
+  document.body.style.overflow = '';
+}
+
+if(fab) fab.addEventListener('click', openSheet);
+if(bg) bg.addEventListener('click', closeSheet);
+if(closeBtn) closeBtn.addEventListener('click', closeSheet);
+document.addEventListener('keydown', function(e){
+  if(e.key === 'Escape' && !wrap.classList.contains('hidden')) closeSheet();
+});
+
+/* 仅 owner 显示 FAB（visitor 不渲染入口；服务端鉴权才是权威） */
+window.BkShowFab = function(isOwner){
+  if(!fab) return;
+  if(isOwner){
+    fab.classList.remove('hidden');
+    fab.classList.add('flex');
+  }else{
+    fab.classList.add('hidden');
+    fab.classList.remove('flex');
+  }
+};
+})();
+</script>

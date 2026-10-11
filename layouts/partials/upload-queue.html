@@ -1,0 +1,10 @@
+{{/* 上传队列 partial（/admin/ 与书架 FAB 共用）。参数：prefix（ID 前缀）、isEn */}}
+{{ $prefix := .prefix }}
+{{ $isEn := .isEn }}
+<div id="{{ $prefix }}-drop" class="rounded-3xl border-2 border-dashed border-m-outline bg-m-container-lowest/60 p-8 text-center cursor-pointer transition-colors hover:border-m-primary" role="button" tabindex="0" aria-label="{{ if $isEn }}Select files{{ else }}选择文件{{ end }}">
+  <input type="file" id="{{ $prefix }}-file" multiple accept=".epub,.pdf" class="hidden">
+  <p class="text-sm font-bold">{{ if $isEn }}Drag &amp; drop files here, or click to browse{{ else }}拖放文件到这里，或点击选择{{ end }}</p>
+  <p class="text-xs text-m-on-surface-variant mt-1.5">{{ if $isEn }}Only .epub / .pdf · max 500 MB per file{{ else }}仅接受 .epub / .pdf，单本上限 500MB{{ end }}</p>
+</div>
+<div id="{{ $prefix }}-queue" class="space-y-3 mt-4"></div>
+<input type="file" id="{{ $prefix }}-cover-input" accept="image/*" class="hidden">

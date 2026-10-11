@@ -17,6 +17,8 @@ export async function onRequest(context) {
   if (request.method !== 'POST') return methodNotAllowed('POST');
   const { response } = await requireOwner(context);
   if (response) return response;
+  const { response: appResp } = await requireAppToken(context);
+  if (appResp) return appResp;
   if (!storageEnabled(env)) return storageDisabledResponse();
 
   const key = new URL(request.url).searchParams.get('key');

@@ -3,7 +3,7 @@
 // PDF 须为 %PDF，EPUB 须为 PK\x03\x04；不符 → 400 并 abort 整个上传。
 // 成功 → {etag}
 import { json, err, methodNotAllowed, BOOK_KEY_RE, storageEnabled, storageDisabledResponse } from '../../_lib.js';
-import { requireOwner } from '../../_auth.js';
+import { requireOwner, requireAppToken } from '../../_auth.js';
 
 function checkMagic(buf, format) {
   if (buf.byteLength < 4) return false;
@@ -19,6 +19,8 @@ export async function onRequest(context) {
   if (request.method !== 'POST') return methodNotAllowed('POST');
   const { response } = await requireOwner(context);
   if (response) return response;
+  const { response: appResp } = await requireAppToken(context);
+  if (appResp) return appResp;
   if (!storageEnabled(env)) return storageDisabledResponse();
 
   const q = new URL(request.url).searchParams;
