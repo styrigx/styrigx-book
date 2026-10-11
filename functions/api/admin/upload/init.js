@@ -37,8 +37,9 @@ export async function onRequest(context) {
   const key = `books/${crypto.randomUUID()}.${format}`;
   if (!BOOK_KEY_RE.test(key)) return err('internal key error', 500); // 不应发生
   const mpu = await env.BOOKS.createMultipartUpload(key);
-  // 记录上传会话（绑定通行证 epoch）：后续 part/complete/abort 只验 owner + 会话，
-  // sgx-app（10 分钟）中途过期不影响大文件分片。
-  await recordUploadSession(env, mpu.uploadId, mpu.key, app.epoch);
+  // 记录上传会话（绑定通行证 appEpoch）：后续 part/complete/abort 只验 owner + 会话，
+  // sgx-app（10 分钟）中途过期不影响大文件分片；删除该应用任一应用类通行密钥时
+  // 主站把 app-epoch 加一，进行中的任务被掐断（2.10.0）。
+  await recordUploadSession(env, mpu.uploadId, mpu.key, app.appEpoch);
   return json({ uploadId: mpu.uploadId, key: mpu.key });
 }

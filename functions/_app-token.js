@@ -1,8 +1,10 @@
 // functions/_app-token.js
 // sgx-app 通行证验签（book 端）。
-// 主站签发格式：owner.epoch.iat.exp.aud.scope.Ed25519(SGX_APP_PRIVATE, "owner.epoch.iat.exp.aud.scope")
-// book 只持 SGX_APP_PUBLIC（Cloudflare Text），验签 + 校验 aud/scope/exp/epoch。
-// 缺 SGX_APP_PUBLIC、验签失败、过期、aud/scope 不符、epoch 落后一律返回 null（fail closed）。
+// 主站签发格式（2.10.0）：owner.epoch.appEpoch.iat.exp.aud.scope.sig
+// sig = Ed25519("owner.epoch.appEpoch.iat.exp.aud.scope")，用 APP 密钥对签名。
+// book 只持 SGX_APP_PUBLIC（Cloudflare Text），验签 + 校验 aud/scope/exp/epoch/appEpoch。
+// 缺 SGX_APP_PUBLIC、验签失败、过期、aud/scope 不符、epoch/appEpoch 落后一律返回 null（fail closed）。
+// book 不得读取主站密钥相关变量（CI 静态检查）。
 
 const APP_COOKIE_NAME = 'sgx-app';
 const APP_ROLE = 'owner';
@@ -56,28 +58,30 @@ export function getAppCookieValue(request, name = APP_COOKIE_NAME) {
   return null;
 }
 
-/* 解析 sgx-app token：7 段式 owner.epoch.iat.exp.aud.scope.sig */
+/* 解析 sgx-app token：8 段式 owner.epoch.appEpoch.iat.exp.aud.scope.sig（2.10.0）。
+   旧 7 段式（无 appEpoch）一律视为无效，不留兼容层。 */
 export function parseAppToken(val) {
   if (!val || typeof val !== 'string') return null;
   const parts = val.split('.');
-  if (parts.length !== 7) return null;
+  if (parts.length !== 8) return null;
   if (parts[0] !== APP_ROLE) return null;
   const epoch = Number(parts[1]);
-  const iat = Number(parts[2]);
-  const exp = Number(parts[3]);
-  if (!Number.isFinite(epoch) || !Number.isFinite(iat) || !Number.isFinite(exp)) return null;
+  const appEpoch = Number(parts[2]);
+  const iat = Number(parts[3]);
+  const exp = Number(parts[4]);
+  if (!Number.isFinite(epoch) || !Number.isFinite(appEpoch) || !Number.isFinite(iat) || !Number.isFinite(exp)) return null;
   if (exp <= Date.now()) return null; // 已过期
-  const aud = parts[4];
-  const scope = parts[5];
+  const aud = parts[5];
+  const scope = parts[6];
   if (aud !== APP_AUD || scope !== APP_SCOPE) return null;
   let sig;
   try {
-    sig = b64urlToBytes(parts[6]);
+    sig = b64urlToBytes(parts[7]);
   } catch (e) {
     return null;
   }
   if (sig.length !== 64) return null;
-  return { role: parts[0], epoch, iat, exp, aud, scope, sig, payload: parts.slice(0, 6).join('.') };
+  return { role: parts[0], epoch, appEpoch, iat, exp, aud, scope, sig, payload: parts.slice(0, 7).join('.') };
 }
 
 /**
@@ -85,14 +89,17 @@ export function parseAppToken(val) {
  * @param {string} cookieValue - sgx-app cookie 值
  * @param {string} publicKeyB64 - SGX_APP_PUBLIC
  * @param {number} latestEpoch - 主站当前 session epoch（调用方从 fetchSessionEpoch 获取）
+ * @param {number} latestAppEpoch - 主站当前 app epoch（book 的；调用方从 fetchAppEpoch 获取）
  * @returns {Promise<boolean>} 有效返回 true，否则 false
  */
-export async function verifyAppToken(cookieValue, publicKeyB64, latestEpoch) {
+export async function verifyAppToken(cookieValue, publicKeyB64, latestEpoch, latestAppEpoch) {
   if (!publicKeyB64) return false;
   const parsed = parseAppToken(cookieValue);
   if (!parsed) return false;
   if (latestEpoch === null || latestEpoch === undefined) return false; // fail closed
-  if (parsed.epoch < latestEpoch) return false; // epoch 落后
+  if (latestAppEpoch === null || latestAppEpoch === undefined) return false; // fail closed
+  if (parsed.epoch < latestEpoch) return false; // session epoch 落后
+  if (parsed.appEpoch < latestAppEpoch) return false; // app epoch 落后（应用密钥被删除过）
   let ok;
   try {
     const key = await getAppPublicKey(publicKeyB64);
