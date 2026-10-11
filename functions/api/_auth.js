@@ -4,23 +4,24 @@
 // 下划线开头，不会被 Pages 当作路由。
 
 import { err } from './_lib.js';
-import { verifySessionCookie, getCookieValue } from '../_sgx-cookie.js';
+import { verifySessionCookieStrict, getCookieValue } from '../_sgx-cookie.js';
 
 /**
  * 验签四段式 cookie，返回 role（'owner' | 'visitor'），无效返回 null。
+ * 严格验签：签名 + exp + epoch（epoch 拿不到则 fail closed）。
  * 不抛错，调用方按 null 处理为未登录。
  */
 export async function verifyOwnerCookie(request, env) {
   const val = getCookieValue(request);
   if (!val) return null;
-  return verifySessionCookie(val, env.SGX_LOCK_PUBLIC);
+  return verifySessionCookieStrict(val, env.SGX_LOCK_PUBLIC);
 }
 
 /**
  * 要求 owner 身份。用于 /api/admin/*（上传/管理）。
  * - 未登录/无效 cookie → 401
  * - visitor → 403（只读，无管理权限）
- * - owner → 通过（verifySessionCookie 已检查 exp）
+ * - owner → 通过（严格验签已检查签名 / exp / epoch，epoch 拿不到则 fail closed）
  * 用法：const { response } = await requireOwner(context); if (response) return response;
  */
 export async function requireOwner(context) {

@@ -5,7 +5,7 @@
  * 通过返回 204，失败返回 401 {ok:false, why}（不要 302，fetch 会跟随跳转）。
  * Cache-Control: no-store。
  */
-import { verifySessionCookie, getCookieValue } from '../_sgx-cookie.js';
+import { verifySessionCookieStrict, getCookieValue } from '../_sgx-cookie.js';
 
 export async function onRequestGet(context) {
   const { request, env } = context;
@@ -30,7 +30,8 @@ export async function onRequestGet(context) {
     );
   }
 
-  const role = await verifySessionCookie(val, publicKeyPem);
+  /* 与 middleware 完全相同的校验逻辑（含 epoch，fail closed） */
+  const role = await verifySessionCookieStrict(val, publicKeyPem);
   if (!role) {
     return Response.json(
       { ok: false, why: 'sig' },

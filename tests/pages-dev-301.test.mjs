@@ -102,6 +102,9 @@ test('未解锁访问 /api/file?id= 被 302 到主站锁屏（非白名单）', 
 
 console.log('跨站契约（主站四段式 cookie）:');
 // 用主站 signSessionCookie 同格式生成的测试向量（Ed25519，payload "owner.123.9999999999999"）
+// 契约测试不依赖主站实时 epoch：桩固定返回 epoch=100（测试向量 epoch=123 ≥ 100 通过；
+// epoch 检查本身由 lock-sync.test.mjs 覆盖）
+globalThis.fetch = async () => ({ ok: true, json: async () => ({ epoch: 100 }) });
 const TEST_PUB = 'MCowBQYDK2VwAyEAWv7c7llhIjEYmCcPZEIBfiWnGDkFKjaukkT7KuRxX/g=';
 const TEST_COOKIE_4SEG = 'owner.123.9999999999999.3Jn5hXQurylZTTxNARqfpHuWqFIl_fLdjuLCCDExzMpww26iSMPaws-BeumGjYr7ZPqH3KaGR2oxRBRX-VRuBQ';
 const TEST_COOKIE_3SEG = '123.9999999999999.<redacted>';
