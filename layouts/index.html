@@ -195,12 +195,6 @@ async function checkLogin(){
   }
   if(window.BkShowFab) window.BkShowFab(owner);
 }
-function updateSortOptions(){
-  var sel = document.getElementById('bk-sort');
-  var readOpt = sel.querySelector('option[value="read"]');
-  if(readOpt) readOpt.style.display = loggedIn ? '' : 'none';
-  if(!loggedIn && sortMode === 'read'){ sortMode = 'added'; sel.value = 'added'; }
-}
 async function loadBooks(){
   var loading = document.getElementById('bk-loading');
   var grid = document.getElementById('bk-grid');
@@ -222,6 +216,7 @@ async function loadBooks(){
     renderChips(); renderContinue(); renderGrid();
   }catch(e){
     if(e && e.sgxLocked) return; /* 已触发 reload，页面即将跳转锁屏 */
+    console.error('[book] loadBooks failed:', e);
     loading.classList.add('hidden');
     err.classList.remove('hidden');
     document.getElementById('bk-error-msg').textContent = T.loadFail;
@@ -233,9 +228,6 @@ async function loadBooks(){
 function renderContinue(){
   var sec = document.getElementById('bk-continue-sec');
   if(!isOwner){ sec.classList.add('hidden'); return; }
-  loadProgress();
-  var sec = document.getElementById('bk-continue-sec');
-  if(!loggedIn){ sec.classList.add('hidden'); return; }
   loadProgress();
   var box = document.getElementById('bk-continue');
   var items = Object.keys(progressMap).map(function(id){
