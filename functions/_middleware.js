@@ -134,8 +134,11 @@ export async function onRequest(context) {
   const redirect = pagesDevRedirect(request);
   if (redirect) return redirect;
 
-  /* 只在 SGX_SITE=book 时启用锁屏；未配置时保持原样（不锁死） */
-  if (env.SGX_SITE !== 'book') return next();
+  /* SGX_SITE 必须为 book（Cloudflare 后台配）。缺配置或配错 → fail closed，
+     一律拒绝，不放行（配置错的锁屏站点不能对外服务） */
+  if (!env || env.SGX_SITE !== 'book') {
+    return new Response('Server misconfigured', { status: 500 });
+  }
 
   const url = new URL(request.url);
   const path = url.pathname;
