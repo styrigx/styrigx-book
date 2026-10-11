@@ -2,14 +2,14 @@
 // GET ?book_id= → {location,percent,updated_at} 或 {}
 // PUT body {book_id,location,percent} → upsert
 import { json, err, methodNotAllowed } from '../_lib.js';
-import { requireAccess } from '../_access.js';
+import { requireOwner } from '../_auth.js';
 
 export async function onRequest(context) {
   const { request, env } = context;
   if (request.method !== 'GET' && request.method !== 'PUT') {
     return methodNotAllowed('GET, PUT');
   }
-  const { response } = await requireAccess(context);
+  const { response } = await requireOwner(context);
   if (response) return response;
 
   if (request.method === 'GET') {

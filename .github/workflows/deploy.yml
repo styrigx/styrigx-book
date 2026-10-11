@@ -16,6 +16,28 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Assert no legacy key names
+        run: |
+          # 禁止旧变量名：SGX_ED25519_*（已改名为 SGX_LOCK_*），SGX_STEPUP_KEY（已改名为 SGX_STEPUP_PRIVATE）
+          # 注意：不扫描 .github/，避免匹配到本文件自身的注释
+          if grep -rn "SGX_ED25519_" --include="*.js" --include="*.mjs" --include="*.toml" functions/ tests/ scripts/ static/ layouts/ 2>/dev/null; then
+            echo "ERROR: Found SGX_ED25519_* (use SGX_LOCK_* per key spec v1.0)."
+            exit 1
+          fi
+          if grep -rn "SGX_ED25519_" wrangler.toml 2>/dev/null; then
+            echo "ERROR: Found SGX_ED25519_* in wrangler.toml."
+            exit 1
+          fi
+          if grep -rn "SGX_STEPUP_KEY" --include="*.js" --include="*.mjs" --include="*.toml" functions/ tests/ scripts/ static/ layouts/ 2>/dev/null; then
+            echo "ERROR: Found SGX_STEPUP_KEY (use SGX_STEPUP_PRIVATE per key spec v1.0)."
+            exit 1
+          fi
+          if grep -rn "SGX_STEPUP_KEY" wrangler.toml 2>/dev/null; then
+            echo "ERROR: Found SGX_STEPUP_KEY in wrangler.toml."
+            exit 1
+          fi
+          echo "OK: no legacy key names."
+
       - name: Setup Hugo
         uses: peaceiris/actions-hugo@v3
         with:
@@ -36,8 +58,8 @@ jobs:
       - name: Build CSS
         run: npx tailwindcss -i assets/css/input.css -o assets/css/main.css --minify
 
-      - name: Run middleware tests
-        run: node tests/pages-dev-301.test.mjs
+      - name: Run tests
+        run: npm test
 
       - name: Build site
         run: hugo --minify

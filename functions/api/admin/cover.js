@@ -1,7 +1,7 @@
 // POST /api/admin/cover?key= — 上传封面（webp 二进制），需 Access JWT
 // key 格式：covers/<uuid>.webp；校验前 12 字节 RIFF....WEBP。成功 → {key}
 import { json, err, methodNotAllowed, COVER_KEY_RE, storageEnabled, storageDisabledResponse } from '../_lib.js';
-import { requireAccess } from '../_access.js';
+import { requireOwner } from '../_auth.js';
 
 function isWebp(buf) {
   if (buf.byteLength < 12) return false;
@@ -15,7 +15,7 @@ function isWebp(buf) {
 export async function onRequest(context) {
   const { request, env } = context;
   if (request.method !== 'POST') return methodNotAllowed('POST');
-  const { response } = await requireAccess(context);
+  const { response } = await requireOwner(context);
   if (response) return response;
   if (!storageEnabled(env)) return storageDisabledResponse();
 

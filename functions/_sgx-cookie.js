@@ -1,0 +1,163 @@
+// functions/_sgx-cookie.js
+// 主站四段式 cookie 共享验签：sgx-verified = role.epoch.exp.sig
+// role ∈ {owner, visitor}；sig = Ed25519(SGX_LOCK_PUBLIC, "role.epoch.exp")
+// 供 functions/_middleware.js、functions/api/_auth.js、
+// functions/api/session-check.js、functions/api/lock-check.js 共用。
+// SGX_LOCK_PUBLIC 支持 PEM（含头尾）或 raw base64 SPKI DER。
+
+const SESSION_ROLES = new Set(['owner', 'visitor']);
+const COOKIE_NAME = 'sgx-verified';
+
+const EPOCH_URL = 'https://styrigx.com/api/session-epoch';
+const EPOCH_TTL_MS = 60 * 1000;
+/* 内存缓存：最新 epoch + 抓取时间（worker 实例内共享） */
+let epochCache = { value: null, at: 0 };
+
+function b64urlToBytes(s) {
+  s = s.replace(/-/g, '+').replace(/_/g, '/');
+  const pad = s.length % 4;
+  if (pad) s += '='.repeat(4 - pad);
+  const bin = atob(s);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+function keyToDer(keyB64) {
+  // 去掉 PEM 头尾（如有），剩余为标准 base64
+  const b64 = keyB64
+    .replace(/-----BEGIN [^-]+-----/g, '')
+    .replace(/-----END [^-]+-----/g, '')
+    .replace(/\s+/g, '');
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes.buffer;
+}
+
+let publicKeyPromise = null;
+let cachedKeyInput = null;
+function getPublicKey(keyB64) {
+  if (!publicKeyPromise || cachedKeyInput !== keyB64) {
+    cachedKeyInput = keyB64;
+    publicKeyPromise = crypto.subtle.importKey(
+      'spki',
+      keyToDer(keyB64),
+      { name: 'Ed25519' },
+      false,
+      ['verify'],
+    );
+  }
+  return publicKeyPromise;
+}
+
+/* 解析会话 cookie：四段式 role.epoch.exp.sig。
+   旧三段式（无 role）一律视为无效，不留兼容层。 */
+export function parseSessionCookie(value) {
+  if (!value) return null;
+  const parts = value.split('.');
+  if (parts.length !== 4) return null;
+  const [role, epochStr, expStr, sigB64] = parts;
+  if (!SESSION_ROLES.has(role)) return null;
+  const epoch = Number(epochStr);
+  const exp = Number(expStr);
+  if (!Number.isFinite(epoch) || !Number.isFinite(exp)) return null;
+  if (exp <= Date.now()) return null;
+  let sig;
+  try {
+    sig = b64urlToBytes(sigB64);
+  } catch (e) {
+    return null;
+  }
+  if (sig.length !== 64) return null;
+  return { role, epochStr, expStr, epoch, sig };
+}
+
+/* 验签单个 cookie：成功返回 role（'owner' | 'visitor'），失败返回 null。
+   签名 payload 为 "role.epoch.exp"（与主站 functions/_kernel/session.js 对应）。 */
+export async function verifySessionCookie(cookieValue, publicKeyB64) {
+  if (!publicKeyB64) return null;
+  const parsed = parseSessionCookie(cookieValue);
+  if (!parsed) return null;
+  let ok;
+  try {
+    const key = await getPublicKey(publicKeyB64);
+    ok = await crypto.subtle.verify(
+      { name: 'Ed25519' },
+      key,
+      parsed.sig,
+      new TextEncoder().encode(parsed.role + '.' + parsed.epochStr + '.' + parsed.expStr),
+    );
+  } catch (e) {
+    return null;
+  }
+  return ok ? parsed.role : null;
+}
+
+export function getCookieValue(request, name = COOKIE_NAME) {
+  const header = request.headers.get('Cookie') || '';
+  const parts = header.split(';');
+  for (const p of parts) {
+    const [k, ...v] = p.trim().split('=');
+    if (k === name) return v.join('=');
+  }
+  return null;
+}
+
+/* 主站最新 session epoch：内存缓存 TTL 60 秒。
+   失败且有缓存 → 用旧缓存；无缓存 → 返回 null（fail closed 由调用方处理）。 */
+export async function fetchSessionEpoch() {
+  const now = Date.now();
+  if (epochCache.value !== null && now - epochCache.at < EPOCH_TTL_MS) {
+    return epochCache.value;
+  }
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 5000);
+    const res = await fetch(EPOCH_URL, {
+      signal: ctrl.signal,
+      headers: { accept: 'application/json' },
+    });
+    clearTimeout(timer);
+    if (!res.ok) throw new Error('epoch http ' + res.status);
+    const data = await res.json();
+    if (typeof data.epoch !== 'number' || !Number.isFinite(data.epoch)) {
+      throw new Error('epoch bad payload');
+    }
+    epochCache = { value: data.epoch, at: now };
+    return data.epoch;
+  } catch (e) {
+    if (epochCache.value !== null) return epochCache.value;
+    return null;
+  }
+}
+
+/* 严格验签：verifySessionCookie（签名 + exp）之外，再检查
+   cookie epoch >= 主站最新 epoch。拿不到最新 epoch 则 fail closed（返回 null）。
+   成功返回 role（'owner' | 'visitor'），失败返回 null。
+   middleware、session-check、lock-check、requireOwner 共用此唯一验签入口。 */
+export async function verifySessionCookieStrict(cookieValue, publicKeyB64) {
+  if (!publicKeyB64) return null;
+  const parsed = parseSessionCookie(cookieValue);
+  if (!parsed) return null;
+  let ok;
+  try {
+    const key = await getPublicKey(publicKeyB64);
+    ok = await crypto.subtle.verify(
+      { name: 'Ed25519' },
+      key,
+      parsed.sig,
+      new TextEncoder().encode(parsed.role + '.' + parsed.epochStr + '.' + parsed.expStr),
+    );
+  } catch (e) {
+    return null;
+  }
+  if (!ok) return null;
+  const latest = await fetchSessionEpoch();
+  /* Fail closed：拿不到最新 epoch 则拒绝 */
+  if (latest === null) return null;
+  if (parsed.epoch < latest) return null;
+  return parsed.role;
+}
+
+export { COOKIE_NAME, SESSION_ROLES };

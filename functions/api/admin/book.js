@@ -2,14 +2,14 @@
 // PUT body {title,author,lang,tags,visibility,coverKey?,in_shelf?} → 更新元数据 → {ok:true}
 // DELETE → 删除 R2 文件+封面、D1 books+progress → {ok:true}
 import { json, err, methodNotAllowed, COVER_KEY_RE, storageEnabled } from '../_lib.js';
-import { requireAccess } from '../_access.js';
+import { requireOwner } from '../_auth.js';
 
 export async function onRequest(context) {
   const { request, env } = context;
   if (request.method !== 'PUT' && request.method !== 'DELETE') {
     return methodNotAllowed('PUT, DELETE');
   }
-  const { response } = await requireAccess(context);
+  const { response } = await requireOwner(context);
   if (response) return response;
 
   const id = new URL(request.url).searchParams.get('id');
