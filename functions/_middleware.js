@@ -152,5 +152,17 @@ export async function onRequest(context) {
     }
   }
 
+  /* /api/* 会话无效时回 401 JSON（不回 302），避免 fetch 跨域跟跳转报 TypeError；
+     页面路径保持 302 到主站锁屏 */
+  if (path.startsWith('/api/')) {
+    return new Response(JSON.stringify({ ok: false, error: 'unauthorized' }), {
+      status: 401,
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'private, no-store',
+      },
+    });
+  }
+
   return lockRedirect(request);
 }
