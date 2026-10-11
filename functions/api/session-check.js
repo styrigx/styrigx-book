@@ -9,12 +9,14 @@
 //
 // 不碰 D1：本接口只验签 cookie，不读 styrigx-books。
 import { json, methodNotAllowed } from './_lib.js';
-import { verifySessionCookie } from '../_sgx-cookie.js';
+import { verifySessionCookie, getCookieValue } from '../_sgx-cookie.js';
 
 const NO_STORE = { 'Cache-Control': 'no-store' };
 
 export async function onRequest(context) {
   if (context.request.method !== 'GET') return methodNotAllowed('GET');
-  const ok = await verifySessionCookie(context.request, context.env);
+  const cookieValue = getCookieValue(context.request);
+  const role = await verifySessionCookie(cookieValue, context.env.SGX_LOCK_PUBLIC);
+  const ok = role === 'owner';
   return json({ ok }, ok ? 200 : 401, NO_STORE);
 }

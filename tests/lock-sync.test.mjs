@@ -12,7 +12,7 @@ import { createRequire } from 'node:module';
 import assert from 'node:assert/strict';
 import { onRequest as sessionCheck } from '../functions/api/session-check.js';
 import { onRequest as mwOnRequest } from '../functions/_middleware.js';
-import { verifySessionCookie } from '../functions/_sgx-cookie.js';
+import { verifySessionCookie, getCookieValue } from '../functions/_sgx-cookie.js';
 
 const require = createRequire(import.meta.url);
 const sgx = require('../static/js/sgx-lock-sync.js');
@@ -196,10 +196,9 @@ await test('无效 cookie → 302 锁屏跳转，带 return + Cache-Control: no-
   assert.equal(res.headers.get('Cache-Control'), 'no-store');
 });
 await test('verifySessionCookie 与 middleware 验签逻辑一致（owner 通过 / visitor 不通过 / 坏 cookie 不通过）', async () => {
-  const req = apiReq(goodCookie());
-  assert.equal(await verifySessionCookie(req, ENV), true);
-  assert.equal(await verifySessionCookie(apiReq(visitorCookie()), ENV), false);
-  assert.equal(await verifySessionCookie(apiReq('bad.cookie.here'), ENV), false);
+  assert.equal(await verifySessionCookie(getCookieValue(apiReq(goodCookie())), ENV.SGX_LOCK_PUBLIC), 'owner');
+  assert.equal(await verifySessionCookie(getCookieValue(apiReq(visitorCookie())), ENV.SGX_LOCK_PUBLIC), 'visitor');
+  assert.equal(await verifySessionCookie(getCookieValue(apiReq('bad.cookie.here')), ENV.SGX_LOCK_PUBLIC), null);
 });
 
 /* ---------- 3. 前端 sgx-lock-sync.js：401 处理 ---------- */
