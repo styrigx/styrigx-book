@@ -11,7 +11,7 @@
   "scripts": {
     "build:css": "tailwindcss -i assets/css/input.css -o assets/css/main.css --minify",
     "vendor": "node scripts/vendor.mjs",
-    "test": "node tests/pages-dev-301.test.mjs && node tests/lock-sync.test.mjs && node tests/no-download.test.mjs && node tests/app-token.test.mjs"
+    "test": "node tests/pages-dev-301.test.mjs && node tests/lock-sync.test.mjs && node tests/no-download.test.mjs && node tests/app-token.test.mjs && node tests/shelf-owner-load.test.mjs"
   },
   "version": "1.2.0"
 }
