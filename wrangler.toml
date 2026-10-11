@@ -18,6 +18,7 @@ bucket_name = "styrigx-books"
 [[d1_databases]]
 binding = "DB"
 database_name = "styrigx-books"
+database_id = "569d8caf-e315-471b-a080-4b9f055de5fa"
 
 [env.preview]
 [env.preview.vars]
