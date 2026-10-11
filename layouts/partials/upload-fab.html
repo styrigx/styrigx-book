@@ -3,7 +3,7 @@
 {{ $isEn := .isEn }}
 
 {{/* One UI 风格 FAB：右下角，仅 owner 显示（JS 控制） */}}
-<button type="button" id="bk-fab" class="hidden fixed z-[60] rounded-full bg-m-primary text-m-on-primary shadow-xl items-center justify-center"
+<button type="button" id="bk-fab" class="hidden fixed z-[60] rounded-full bg-m-primary text-m-on-primary shadow-xl items-center justify-center active:scale-95 transition-transform"
   style="width:56px;height:56px;right:16px;bottom:88px;"
   aria-label="{{ if $isEn }}Upload book{{ else }}上传书籍{{ end }}"
   title="{{ if $isEn }}Upload book{{ else }}上传书籍{{ end }}">
@@ -56,6 +56,10 @@ async function openSheet(){
       isEn: isEn,
       onBookAdded: function(book){
         /* 书架页：上传完成后刷新列表（如果有刷新函数） */
+        if(window.BkRefresh) window.BkRefresh();
+      },
+      onBookUpdated: function(book){
+        /* 完成卡补充书名/换封面后刷新书架 */
         if(window.BkRefresh) window.BkRefresh();
       }
     });

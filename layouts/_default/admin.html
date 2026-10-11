@@ -18,8 +18,9 @@
 
   <div id="adm-main" class="hidden">
     {{/* 上传区（与书架 FAB 共用 partial + static/js/upload-queue.js） */}}
-    <section class="mb-10">
-      <h2 class="text-sm font-bold text-m-on-surface-variant mb-3 px-1">{{ if $isEn }}Add books{{ else }}上传新书{{ end }}</h2>
+    <section class="mb-10 rounded-[1.75rem] bg-m-container-lowest border border-m-outline/40 p-4 sm:p-5 shadow-sm">
+      <h2 class="text-base font-extrabold text-m-on-surface mb-1 px-1">{{ if $isEn }}Add books{{ else }}上传新书{{ end }}</h2>
+      <p class="text-xs text-m-on-surface-variant mb-4 px-1">{{ if $isEn }}Files are parsed locally first — fill in the info, then upload.{{ else }}文件先在本地解析，填好信息后再上传。{{ end }}</p>
       {{ partial "upload-queue.html" (dict "prefix" "adm" "isEn" $isEn) }}
     </section>
 
@@ -58,17 +59,21 @@
 (function(){
 "use strict";
 var isEn = {{ if $isEn }}true{{ else }}false{{ end }};
+
+// Init shared upload queue first (helpers() is defined inside init)
+window.SgxUploadQueue.init('adm', {
+  isEn: isEn,
+  onBookAdded: function(book){ adminBooks.unshift(book); renderList(); renderStats(); },
+  onBookUpdated: function(book){
+    var i = adminBooks.findIndex(function(x){ return String(x.id) === String(book.id); });
+    if(i >= 0){ adminBooks[i] = book; renderList(); }
+  }
+});
 var H = window.SgxUploadQueue.helpers(isEn);
 var T = H.T, esc = H.esc, fmtSize = H.fmtSize, fmtDate = H.fmtDate, api = H.api;
 
 var adminBooks = [];
 function subEl(){ return document.querySelector('[data-subpage-head] .subpage-sub'); }
-
-// Init shared upload queue
-window.SgxUploadQueue.init('adm', {
-  isEn: isEn,
-  onBookAdded: function(book){ adminBooks.unshift(book); renderList(); renderStats(); }
-});
 
 /* ============ 管理列表 ============ */
 function coverURLAdmin(b){
@@ -98,7 +103,7 @@ function renderList(){
       : '';
     var btn = function(act, label, danger){
       return '<button type="button" data-act="' + act + '" class="h-9 px-3 rounded-full text-xs font-bold ' +
-        (danger ? 'text-red-500 bg-red-500/10' : 'bg-m-container text-m-on-surface') + '">' + esc(label) + '</button>';
+        (danger ? 'text-m-rose bg-m-rose-container/50' : 'bg-m-container text-m-on-surface') + '">' + esc(label) + '</button>';
     };
     return '<div class="flex gap-3 p-3 rounded-2xl bg-m-container-lowest border border-m-outline/40" data-row="' + esc(b.id) + '">' +
       '<div class="w-14 h-[84px] rounded-lg overflow-hidden bg-m-container flex-shrink-0">' + cover + '</div>' +
@@ -152,7 +157,7 @@ document.getElementById('adm-cover-input').addEventListener('change', async func
   if(!f || !coverTarget) return;
   var b = coverTarget; coverTarget = null;
   try{
-    var webp = await toWebp600(f);
+    var webp = await H.toWebp600(f);
     /* key 用书现有的 cover_key（无则按 covers/<bookid>.webp 构造，book id 即 uuid），后端返回新 coverKey 后 PUT 更新 */
     var key = b.cover_key || ('covers/' + b.id + '.webp');
     var r = await api('/api/admin/cover?key=' + encodeURIComponent(key),
@@ -184,8 +189,8 @@ function openEdit(b){
     field('author', T.author, b.author || '') +
     '<div class="grid grid-cols-2 gap-3">' + field('lang', T.lang, b.lang || '') + field('tags', T.tags, (b.tags || []).join(', '), T.tagsPh) + '</div>' +
     '<div class="flex items-center gap-6 pt-1">' +
-      switchHTML('vis', b.visibility === 'public' ? T.pub : T.priv, b.visibility === 'public') +
-      switchHTML('inShelf', T.inShelf, b.in_shelf === 1 || b.in_shelf === true) +
+      H.switchHTML('vis', b.visibility === 'public' ? T.pub : T.priv, b.visibility === 'public') +
+      H.switchHTML('inShelf', T.inShelf, b.in_shelf === 1 || b.in_shelf === true) +
     '</div>';
   editWrap.classList.remove('hidden'); editWrap.classList.add('flex');
   document.body.style.overflow = 'hidden';

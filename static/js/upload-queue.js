@@ -66,6 +66,12 @@ var T = {
   upload: isEn ? 'Upload' : '上传',
   cancel: isEn ? 'Cancel' : '取消',
   retry: isEn ? 'Retry' : '重试',
+  remove: isEn ? 'Remove' : '移除',
+  editMeta: isEn ? 'Edit info' : '编辑信息',
+  replaceCover: isEn ? 'Replace cover' : '换封面',
+  save: isEn ? 'Save' : '保存',
+  saveFail: isEn ? 'Save failed' : '保存失败',
+  failed: isEn ? 'Failed' : '失败',
   parsing: isEn ? 'Parsing…' : '解析中…',
   ready: isEn ? 'Ready to upload' : '就绪，可上传',
   uploading: function(p){ return (isEn ? 'Uploading ' : '上传中 ') + p + '%'; },
@@ -285,69 +291,142 @@ function switchHTML(fid, label, checked){
     'after:content-[\'\'] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:after:translate-x-4"></span>' +
     '<span>' + esc(label) + '</span></label>';
 }
-function statusText(item){
-  if(item.status === 'parsing') return '<span class="text-m-on-surface-variant">' + T.parsing + '</span>';
-  if(item.status === 'ready') return '<span class="text-m-tertiary">' + T.ready + '</span>';
+/* One UI 状态徽章：容器色 pill，深色模式跟随 --m-* */
+function chipCls(color){
+  return 'inline-flex items-center h-6 px-2.5 rounded-full text-[11px] font-bold whitespace-nowrap ' + color;
+}
+function statusChip(item){
+  var pct = Math.round(item.progress * 100);
+  if(item.status === 'parsing')
+    return '<span class="' + chipCls('bg-m-secondary-container text-m-on-secondary-container') + '">' + T.parsing + '</span>';
+  if(item.status === 'ready')
+    return '<span class="' + chipCls('bg-m-primary-container text-m-on-primary-container') + '">' + T.ready + '</span>';
   if(item.status === 'uploading'){
-    var pct = Math.round(item.progress * 100);
     var spd = item.speed > 0 ? ' · ' + fmtSpeed(item.speed) : '';
-    return '<span class="text-m-primary">' + T.uploading(pct) + spd + '</span>';
+    return '<span class="' + chipCls('bg-m-primary-container text-m-on-primary-container') + '">' + esc(T.uploading(pct) + spd) + '</span>';
   }
-  if(item.status === 'done') return '<span class="text-m-tertiary font-bold">' + T.done + '</span>';
+  if(item.status === 'done')
+    return '<span class="' + chipCls('bg-m-tertiary-container text-m-on-tertiary-container') + '">' + T.done + '</span>';
   if(item.status === 'exists'){
     var t = item.existsInfo && item.existsInfo.title ? '《' + esc(item.existsInfo.title) + '》' : '';
-    return '<span class="text-m-warm font-bold">' + T.exists + ' ' + t + '</span>';
+    return '<span class="' + chipCls('bg-m-warm-container text-m-on-warm-container') + '">' + T.exists + '</span>' +
+      (t ? '<span class="text-xs text-m-on-surface-variant ml-1.5">' + t + '</span>' : '');
   }
-  if(item.status === 'cancelled') return '<span class="text-m-on-surface-variant">' + T.cancelled + '</span>';
-  if(item.status === 'error') return '<span class="text-red-500 font-semibold">' + T.errUpload + esc(item.err) + '</span>';
+  if(item.status === 'cancelled')
+    return '<span class="' + chipCls('bg-m-container text-m-on-surface-variant') + '">' + T.cancelled + '</span>';
+  if(item.status === 'error')
+    return '<span class="' + chipCls('bg-m-rose-container text-m-on-rose-container') + '">' + T.failed + '</span>';
   return '';
+}
+function coverThumb(item, sizeCls){
+  var inner = item.coverURL
+    ? '<img src="' + item.coverURL + '" alt="" class="w-full h-full object-cover">'
+    : '<div class="w-full h-full flex items-center justify-center bg-m-container text-m-on-surface-variant text-xl font-extrabold">' + esc(String(item.title || item.file.name).slice(0, 1)) + '</div>';
+  return '<div class="' + sizeCls + ' rounded-xl overflow-hidden bg-m-container flex-shrink-0">' + inner + '</div>';
+}
+/* One UI 按钮：主按钮 / 文本按钮 / 浅色按钮 */
+function btnPrimary(qact, label, disabled){
+  return '<button type="button" data-qact="' + qact + '"' + (disabled ? ' disabled' : '') +
+    ' class="h-10 px-5 rounded-full bg-m-primary text-m-on-primary text-sm font-bold active:scale-[.97] transition-transform disabled:opacity-50">' + label + '</button>';
+}
+function btnText(qact, label, disabled){
+  return '<button type="button" data-qact="' + qact + '"' + (disabled ? ' disabled' : '') +
+    ' class="h-10 px-4 rounded-full text-m-primary text-sm font-bold hover:bg-m-primary-container/50 active:scale-[.97] transition-transform disabled:opacity-50">' + label + '</button>';
+}
+function btnTonal(qact, label, disabled){
+  return '<button type="button" data-qact="' + qact + '"' + (disabled ? ' disabled' : '') +
+    ' class="h-10 px-5 rounded-full bg-m-secondary-container text-m-on-secondary-container text-sm font-bold active:scale-[.97] transition-transform disabled:opacity-50">' + label + '</button>';
 }
 function renderQueue(){
   var box = document.getElementById(prefix + '-queue');
   box.innerHTML = queue.map(function(item){
-    var cover = item.coverURL
-      ? '<img src="' + item.coverURL + '" alt="" class="w-full h-full object-cover">'
-      : '<div class="w-full h-full flex items-center justify-center bg-m-container text-m-on-surface-variant text-xl font-extrabold">' + esc(String(item.title || item.file.name).slice(0, 1)) + '</div>';
-    var canEdit = item.status === 'ready' || item.status === 'error' || item.status === 'parsing';
-    var field = function(fid, label, val, ph){
-      return '<label class="block min-w-0"><span class="text-[11px] font-bold text-m-on-surface-variant">' + esc(label) + '</span>' +
-        '<input data-f="' + fid + '" value="' + esc(val) + '" placeholder="' + esc(ph || '') + '"' + (canEdit ? '' : ' disabled') +
-        ' class="mt-1 w-full h-10 px-3 rounded-xl bg-m-container text-sm text-m-on-surface outline-none focus:ring-2 focus:ring-m-primary/50 disabled:opacity-60"></label>';
-    };
-    var actions = '';
-    if(item.status === 'ready' || item.status === 'error' || item.status === 'cancelled'){
-      actions = '<button type="button" data-qact="upload" class="h-9 px-4 rounded-full bg-m-primary text-m-on-primary text-xs font-bold">' + T.upload + '</button>';
-    }else if(item.status === 'uploading'){
-      actions = '<button type="button" data-qact="cancel" class="h-9 px-4 rounded-full bg-m-container text-m-on-surface text-xs font-bold">' + T.cancel + '</button>';
-    }
-    return '<div class="rounded-2xl bg-m-container-lowest border border-m-outline/40 p-4" data-q="' + item.uid + '">' +
-      '<div class="flex gap-3">' +
-        '<div class="w-14 h-[84px] rounded-lg overflow-hidden bg-m-container flex-shrink-0">' + cover + '</div>' +
-        '<div class="flex-1 min-w-0">' +
-          '<p class="text-sm font-bold truncate">' + esc(item.file.name) + '</p>' +
-          '<p class="text-xs text-m-on-surface-variant mt-0.5">' + esc(item.format || '…') + ' · ' + esc(fmtSize(item.file.size)) + '</p>' +
-          '<div class="mt-2 h-2 rounded-full bg-m-container overflow-hidden' + (item.status === 'uploading' ? '' : ' hidden') + '">' +
-            '<div id="bk-prog-' + item.uid + '" class="h-full rounded-full bg-m-primary" style="width:' + Math.round(item.progress * 100) + '%"></div></div>' +
-          '<p class="text-xs mt-1.5" data-status="1">' + statusText(item) + '</p>' +
-        '</div>' +
-        '<div class="flex flex-col gap-1.5 flex-shrink-0">' + actions + '</div>' +
-      '</div>' +
-      '<div class="grid grid-cols-2 gap-2 mt-3">' +
-        field('title', T.title, item.title) + field('author', T.author, item.author) +
-        field('lang', T.lang, item.lang) + field('tags', T.tags, item.tags, T.tagsPh) +
-      '</div>' +
-      '<div class="flex items-center gap-6 mt-3">' +
-        switchHTML('vis', item.visibility === 'public' ? T.pub : T.priv, item.visibility === 'public') +
-        switchHTML('inShelf', T.inShelf, item.inShelf) +
-      '</div>' +
-    '</div>';
+    return item.status === 'done' ? doneCard(item) : queueCard(item);
   }).join('');
 }
+/* 上传中/待传/失败的队列卡：封面 + 文件信息 + 进度条 + 元数据表单 + 操作按钮 */
+function queueCard(item){
+  var canEdit = item.status === 'ready' || item.status === 'error' || item.status === 'parsing';
+  var field = function(fid, label, val, ph){
+    return '<label class="block min-w-0"><span class="text-[11px] font-bold text-m-on-surface-variant">' + esc(label) + '</span>' +
+      '<input data-f="' + fid + '" value="' + esc(val) + '" placeholder="' + esc(ph || '') + '"' + (canEdit ? '' : ' disabled') +
+      ' class="mt-1 w-full h-10 px-3 rounded-xl bg-m-container text-sm text-m-on-surface outline-none focus:ring-2 focus:ring-m-primary/50 disabled:opacity-60"></label>';
+  };
+  var actions = '';
+  if(item.status === 'ready'){
+    actions = btnPrimary('upload', T.upload) + btnText('remove', T.remove);
+  }else if(item.status === 'error'){
+    actions = btnPrimary('upload', T.retry) + btnText('remove', T.remove);
+  }else if(item.status === 'cancelled'){
+    actions = btnPrimary('upload', T.upload) + btnText('remove', T.remove);
+  }else if(item.status === 'uploading'){
+    actions = btnTonal('cancel', T.cancel);
+  }
+  var prog = item.status === 'uploading'
+    ? '<div class="mt-2.5"><div class="h-1.5 rounded-full bg-m-container overflow-hidden" role="progressbar"' +
+      ' aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + Math.round(item.progress * 100) + '">' +
+      '<div id="bk-prog-' + item.uid + '" class="h-full rounded-full bg-m-primary transition-[width] duration-300" style="width:' + Math.round(item.progress * 100) + '%"></div></div></div>'
+    : '';
+  var errLine = (item.status === 'error' && item.err)
+    ? '<p class="text-xs text-m-rose font-semibold mt-2 leading-relaxed">' + T.errUpload + esc(item.err) + '</p>'
+    : '';
+  return '<div class="rounded-[1.75rem] bg-m-container-lowest border border-m-outline/40 p-4 shadow-sm" data-q="' + item.uid + '">' +
+    '<div class="flex gap-3">' + coverThumb(item, 'w-12 h-16') +
+      '<div class="flex-1 min-w-0">' +
+        '<p class="text-sm font-extrabold text-m-on-surface truncate">' + esc(item.file.name) + '</p>' +
+        '<p class="text-xs text-m-on-surface-variant mt-0.5">' + esc(item.format || '…') + ' · ' + esc(fmtSize(item.file.size)) + '</p>' +
+        '<div class="mt-1.5" data-status="1">' + statusChip(item) + '</div>' +
+        prog + errLine +
+      '</div>' +
+    '</div>' +
+    '<div class="grid grid-cols-2 gap-2 mt-3">' +
+      field('title', T.title, item.title) + field('author', T.author, item.author) +
+      field('lang', T.lang, item.lang) + field('tags', T.tags, item.tags, T.tagsPh) +
+    '</div>' +
+    '<div class="flex items-center gap-6 mt-3">' +
+      switchHTML('vis', item.visibility === 'public' ? T.pub : T.priv, item.visibility === 'public') +
+      switchHTML('inShelf', T.inShelf, item.inShelf) +
+    '</div>' +
+    (actions ? '<div class="flex gap-2 mt-4">' + actions + '</div>' : '') +
+  '</div>';
+}
+/* 上传完成卡：封面 + 书名展示，可补充书名、换封面 */
+function doneCard(item){
+  var metaLine = [item.author, item.format, fmtSize(item.file.size)].filter(Boolean).join(' · ');
+  var editor = '';
+  if(item.editing){
+    editor = '<div class="mt-3">' +
+      '<input data-titleinput value="' + esc(item.title) + '" placeholder="' + esc(T.title) + '"' +
+      ' class="w-full h-10 px-3 rounded-xl bg-m-container text-sm text-m-on-surface outline-none focus:ring-2 focus:ring-m-primary/50">' +
+      (item.metaErr ? '<p class="text-xs text-m-rose font-semibold mt-2">' + T.saveFail + '：' + esc(item.metaErr) + '</p>' : '') +
+      '<div class="flex gap-2 mt-2">' + btnPrimary('savemeta', T.save) + btnText('cancelmeta', T.cancel) + '</div>' +
+    '</div>';
+  }
+  return '<div class="rounded-[1.75rem] bg-m-container-lowest border border-m-tertiary/40 p-4 shadow-sm" data-q="' + item.uid + '">' +
+    '<div class="flex gap-3 items-center">' + coverThumb(item, 'w-12 h-16') +
+      '<div class="flex-1 min-w-0">' +
+        '<p class="text-sm font-extrabold text-m-on-surface truncate">' + esc(item.title || item.file.name) + '</p>' +
+        (metaLine ? '<p class="text-xs text-m-on-surface-variant truncate mt-0.5">' + esc(metaLine) + '</p>' : '') +
+        '<div class="mt-1.5">' + statusChip(item) + '</div>' +
+      '</div>' +
+    '</div>' +
+    (item.coverErr ? '<p class="text-xs text-m-rose font-semibold mt-2">' + T.saveFail + '：' + esc(item.coverErr) + '</p>' : '') +
+    '<div class="flex gap-2 mt-3">' +
+      btnTonal('editmeta', T.editMeta, item.coverBusy) + btnText('cover', T.replaceCover, item.coverBusy) +
+    '</div>' +
+    editor +
+    '<input type="file" accept="image/*" data-coverfile class="hidden">' +
+  '</div>';
+}
 function updateProg(item){
+  var pct = Math.round(item.progress * 100);
   var el = document.getElementById('bk-prog-' + item.uid);
-  if(el) el.style.width = Math.round(item.progress * 100) + '%';
-  var card = document.querySelector('[data-q="' + item.uid + '"] [data-status]');
-  if(card) card.innerHTML = statusText(item);
+  if(el){
+    el.style.width = pct + '%';
+    var track = el.parentElement;
+    if(track) track.setAttribute('aria-valuenow', String(pct));
+  }
+  var st = document.querySelector('[data-q="' + item.uid + '"] [data-status]');
+  if(st) st.innerHTML = statusChip(item);
 }
 document.getElementById(prefix + '-queue').addEventListener('input', function(e){
   var card = e.target.closest('[data-q]'); if(!card) return;
@@ -363,6 +442,13 @@ document.getElementById(prefix + '-queue').addEventListener('change', function(e
   var card = e.target.closest('[data-q]'); if(!card) return;
   var item = queue.find(function(q){ return q.uid === card.getAttribute('data-q'); });
   if(!item) return;
+  /* 完成卡换封面：选图后压缩 WebP → POST cover → PUT book */
+  if(e.target.hasAttribute('data-coverfile')){
+    var cf = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if(cf) replaceCover(item, cf);
+    return;
+  }
   var f = e.target.getAttribute('data-f');
   if(f === 'vis'){
     item.visibility = e.target.checked ? 'public' : 'private';
@@ -380,6 +466,19 @@ document.getElementById(prefix + '-queue').addEventListener('click', function(e)
   var act = btn.getAttribute('data-qact');
   if(act === 'upload') uploadItem(item);
   else if(act === 'cancel') cancelItem(item);
+  else if(act === 'remove') removeItem(item);
+  else if(act === 'editmeta'){
+    item.editing = true; item.metaErr = '';
+    renderQueue();
+    var inp = document.querySelector('[data-q="' + item.uid + '"] [data-titleinput]');
+    if(inp){ inp.focus(); try{ inp.select(); }catch(x){} }
+  }
+  else if(act === 'savemeta') saveMeta(item);
+  else if(act === 'cancelmeta'){ item.editing = false; item.metaErr = ''; renderQueue(); }
+  else if(act === 'cover'){
+    var fi = card.querySelector('[data-coverfile]');
+    if(fi) fi.click();
+  }
 });
 
 /* ============ R2 multipart 上传 ============ */
@@ -485,16 +584,17 @@ async function uploadItem(item){
     if(!cr2.ok) throw new Error('complete HTTP ' + cr2.status);
     var done = await cr2.json();
     item.status = 'done'; item.progress = 1;
-    renderQueue();
-    /* 传完不刷新：直接 prepend 到管理列表 */
-    (opts.onBookAdded || function(){}).call(null, {
+    item.coverKey = coverKey;
+    item.book = {
       id: done.id, title: item.title, author: item.author, lang: item.lang,
       format: item.format, size: item.file.size, sha256: item.sha256,
       cover_key: coverKey, pages: item.pages, tags: meta.tags,
       visibility: item.visibility, in_shelf: item.inShelf ? 1 : 0,
       created_at: new Date().toISOString(), updated_at: new Date().toISOString()
-    });
-    renderList(); renderStats();
+    };
+    renderQueue();
+    /* 传完不刷新：交给 onBookAdded 回调（管理页 prepend / 书架页刷新），不直接碰页面列表 */
+    (opts.onBookAdded || function(){}).call(null, item.book);
     var it = item;
     setTimeout(function(){
       queue = queue.filter(function(q){ return q !== it; });
@@ -517,6 +617,68 @@ async function cancelItem(item){
     }catch(e){}
   }
   item.status = 'cancelled';
+  renderQueue();
+}
+/* 从队列移除（上传中只能先取消） */
+function removeItem(item){
+  if(item.status === 'uploading') return;
+  if(item.coverURL){ try{ URL.revokeObjectURL(item.coverURL); }catch(e){} }
+  queue = queue.filter(function(q){ return q !== item; });
+  renderQueue();
+}
+/* 完成卡：补充/修改书名 → PUT /api/admin/book */
+async function saveMeta(item){
+  var input = document.querySelector('[data-q="' + item.uid + '"] [data-titleinput]');
+  var title = input ? String(input.value).trim() : item.title;
+  if(!title || !item.book){ item.editing = false; renderQueue(); return; }
+  item.editing = false; item.metaErr = '';
+  renderQueue();
+  try{
+    var r = await api('/api/admin/book?id=' + encodeURIComponent(item.book.id),
+      {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({title: title})});
+    if(r.status === 403 && await window.SgxUploadQueue.appTokenErrorCode(r)){
+      await confirmReauth();
+      throw new Error(T.needReauth);
+    }
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+    item.title = title; item.book.title = title; item.book.updated_at = new Date().toISOString();
+    (opts.onBookUpdated || function(){}).call(null, item.book);
+  }catch(e){
+    item.editing = true;
+    item.metaErr = (e && e.message) || String(e);
+  }
+  renderQueue();
+}
+/* 完成卡：换封面 → 压 WebP 600 → POST /api/admin/cover → PUT book */
+async function replaceCover(item, file){
+  if(!item.book || !item.key) return;
+  item.coverBusy = true; item.coverErr = '';
+  renderQueue();
+  try{
+    var webp = await toWebp600(file);
+    /* key 沿用上传时的 covers/<uuid>.webp（uuid 取自文件 key） */
+    var uuid = item.key.slice('books/'.length, item.key.lastIndexOf('.'));
+    var r = await api('/api/admin/cover?key=' + encodeURIComponent('covers/' + uuid + '.webp'),
+      {method: 'POST', body: webp, headers: {'Content-Type': 'image/webp'}});
+    if(r.status === 403 && await window.SgxUploadQueue.appTokenErrorCode(r)){
+      await confirmReauth();
+      throw new Error(T.needReauth);
+    }
+    if(!r.ok) throw new Error('cover HTTP ' + r.status);
+    var key = (await r.json()).key;
+    var r2 = await api('/api/admin/book?id=' + encodeURIComponent(item.book.id),
+      {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({coverKey: key})});
+    if(!r2.ok) throw new Error('put HTTP ' + r2.status);
+    if(item.coverURL){ try{ URL.revokeObjectURL(item.coverURL); }catch(e2){} }
+    item.coverBlob = webp;
+    item.coverURL = (window.URL && URL.createObjectURL) ? URL.createObjectURL(webp) : item.coverURL;
+    item.coverKey = key;
+    item.book.cover_key = key; item.book.updated_at = new Date().toISOString();
+    (opts.onBookUpdated || function(){}).call(null, item.book);
+  }catch(e){
+    item.coverErr = (e && e.message) || String(e);
+  }
+  item.coverBusy = false;
   renderQueue();
 }
 // Expose helpers for admin management UI
@@ -580,6 +742,7 @@ window.SgxUploadQueue.helpers = function(isEn){
       return res;
     });
   }
-  return {T: T, esc: esc, fmtSize: fmtSize, fmtDate: fmtDate, api: api};
+  return {T: T, esc: esc, fmtSize: fmtSize, fmtDate: fmtDate, api: api,
+    toWebp600: toWebp600, switchHTML: switchHTML};
 };
 };
