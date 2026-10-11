@@ -5,11 +5,12 @@
 // hash/分支预览别名放行，不跳转。
 //
 // SGX_SITE=book 时：
-//   - 检查 sgx-verified cookie（格式 epoch.exp.sig，sig = Ed25519 私钥对 "epoch.exp"
-//     的签名，base64url），用 SGX_LOCK_PUBLIC（PEM/SPKI 公钥）验签；
-//   - exp 未过期；epoch >= 本地缓存的最新 epoch（从主站
-//     https://styrigx.com/api/session-epoch 获取，内存缓存 TTL 60 秒）。
-//   - 有效 → next()；无效/缺失/过期 → 白名单放行，其余 302 到主站锁屏。
+//   - 检查 sgx-verified cookie（四段式 role.epoch.exp.sig，sig = Ed25519 私钥对
+//     "role.epoch.exp" 的签名，base64url），用 SGX_LOCK_PUBLIC（PEM/SPKI 公钥）验签；
+//   - exp 未过期；epoch >= 主站最新 epoch（内存缓存 TTL 60 秒）；
+//   - 验签逻辑与 functions/_sgx-cookie.js 的 verifySessionCookieStrict 为同一入口；
+//   - owner / visitor 均可进站（visitor 只读）；无效/缺失/过期 → 白名单放行，
+//     其余 302 到主站锁屏。
 //   - Fail closed：主站 epoch 接口失败且无缓存时，一律拒绝（302 到锁屏）。
 //
 // 环境变量（Cloudflare 后台配置，代码里只读不写）：
@@ -17,14 +18,15 @@
 //   SGX_LOCK_PUBLIC  = Ed25519 公钥 PEM（只配公钥，不配私钥）
 //
 // 白名单（只放行验证必需与真正公开的跨站只读接口）：
+//   /api/session-check（锁屏会话确认，由接口自己验签、自己返回 401）
 //   /api/shelf、/api/shelf/*（主站书单小组件跨站调用，带 CORS）
 //   /robots.txt、/favicon.ico、静态资源（按扩展名）
-// 其余（页面、/api/books、/api/file、/api/cover、/api/private/*、/api/admin/*）
-// 均需有效 cookie；admin/private 原有的 401 逻辑保持不变。
+// 其余（页面、/api/books、/api/file、/api/cover、/api/private/*、/api/admin/*、
+// /api/lock-check）均需有效 cookie；admin/private 原有的 401/403 逻辑保持不变。
+
+import { verifySessionCookieStrict } from './_sgx-cookie.js';
 
 const LOCK_URL = 'https://styrigx.com/?lock=1';
-const EPOCH_URL = 'https://styrigx.com/api/session-epoch';
-const EPOCH_TTL_MS = 60 * 1000;
 const COOKIE_NAME = 'sgx-verified';
 
 /* pages.dev 生产别名 301 到正式域名（middleware 链首） */
@@ -46,9 +48,6 @@ export function pagesDevRedirect(request) {
   });
 }
 
-/* 内存缓存：最新 epoch + 抓取时间（worker 实例内共享） */
-let epochCache = { value: null, at: 0 };
-
 /* 静态资源扩展名白名单 */
 const STATIC_EXT = new Set([
   'css', 'js', 'mjs', 'map',
@@ -59,6 +58,9 @@ const STATIC_EXT = new Set([
 
 function isWhitelisted(path) {
   if (path === '/robots.txt' || path === '/favicon.ico') return true;
+  /* /api/session-check：锁屏会话确认，middleware 放行，由接口自己验签、自己返回 401，
+     前端才能区分“已锁定”（→ reload 走 302 到主站锁屏）与“网络错误”（→ fail open） */
+  if (path === '/api/session-check') return true;
   if (path === '/api/shelf' || path.startsWith('/api/shelf/')) return true;
   const dot = path.lastIndexOf('.');
   const slash = path.lastIndexOf('/');
@@ -88,7 +90,11 @@ function lockRedirect(request) {
   const target = isReturnAllowed(original)
     ? LOCK_URL + '&return=' + encodeURIComponent(original)
     : LOCK_URL;
-  return Response.redirect(target, 302);
+  /* 手工拼 302（等价于 Response.redirect）：302 本身不可缓存，再加 no-store 明确语义 */
+  return new Response(null, {
+    status: 302,
+    headers: { Location: target, 'Cache-Control': 'no-store' },
+  });
 }
 
 /* 取出所有同名 cookie 的值（旧版可能留下一个只绑主机的同名 cookie，
@@ -106,104 +112,19 @@ function getCookies(request, name) {
   return out;
 }
 
-function b64urlToBytes(s) {
-  s = s.replace(/-/g, '+').replace(/_/g, '/');
-  const pad = s.length % 4;
-  if (pad) s += '='.repeat(4 - pad);
-  const bin = atob(s);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return bytes;
-}
-
-function pemToDer(pem) {
-  const b64 = pem
-    .replace(/-----BEGIN [^-]+-----/g, '')
-    .replace(/-----END [^-]+-----/g, '')
-    .replace(/\s+/g, '');
-  /* PEM 内是标准 base64（非 base64url） */
-  const bin = atob(b64);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return bytes.buffer;
-}
-
-let publicKeyPromise = null;
-function getPublicKey(pem) {
-  if (!publicKeyPromise) {
-    publicKeyPromise = crypto.subtle.importKey(
-      'spki',
-      pemToDer(pem),
-      { name: 'Ed25519' },
-      false,
-      ['verify'],
-    );
-  }
-  return publicKeyPromise;
-}
-
-async function fetchLatestEpoch() {
-  const now = Date.now();
-  if (epochCache.value !== null && now - epochCache.at < EPOCH_TTL_MS) {
-    return epochCache.value;
-  }
-  try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 5000);
-    const res = await fetch(EPOCH_URL, {
-      signal: ctrl.signal,
-      headers: { accept: 'application/json' },
-    });
-    clearTimeout(timer);
-    if (!res.ok) throw new Error('epoch http ' + res.status);
-    const data = await res.json();
-    if (typeof data.epoch !== 'number' || !Number.isFinite(data.epoch)) {
-      throw new Error('epoch bad payload');
-    }
-    epochCache = { value: data.epoch, at: now };
-    return data.epoch;
-  } catch (e) {
-    /* 失败且有缓存：用旧缓存；无缓存：返回 null（fail closed 由调用方处理） */
-    if (epochCache.value !== null) return epochCache.value;
-    return null;
-  }
-}
-
-async function verifyCookie(cookieValue, env) {
-  if (!cookieValue || !env.SGX_LOCK_PUBLIC) return false;
-  const parts = cookieValue.split('.');
-  /* 主站 2.8.0 起为四段式 role.epoch.exp.sig；三段旧格式一律无效，不留兼容层 */
-  if (parts.length !== 4) return false;
-  const [role, epochStr, expStr, sigB64] = parts;
-  if (role !== 'owner' && role !== 'visitor') return false;
-  const epoch = Number(epochStr);
-  const exp = Number(expStr);
-  if (!Number.isFinite(epoch) || !Number.isFinite(exp)) return false;
-  if (exp <= Date.now()) return false;
-  let sig;
-  try {
-    sig = b64urlToBytes(sigB64);
-  } catch (e) {
-    return false;
-  }
-  if (sig.length !== 64) return false;
-  let ok;
-  try {
-    const key = await getPublicKey(env.SGX_LOCK_PUBLIC);
-    ok = await crypto.subtle.verify(
-      { name: 'Ed25519' },
-      key,
-      sig,
-      new TextEncoder().encode(role + '.' + epochStr + '.' + expStr),
-    );
-  } catch (e) {
-    return false;
-  }
-  if (!ok) return false;
-  const latest = await fetchLatestEpoch();
-  /* Fail closed：拿不到最新 epoch 则拒绝 */
-  if (latest === null) return false;
-  return epoch >= latest;
+/* 受保护的 HTML 响应加 Cache-Control: no-store：
+   解锁态页面不能进磁盘/bfcache 缓存，否则“立即锁定”后切回标签页
+   可能直接展示旧页面而不经过 middleware。非 HTML 原样返回。 */
+async function withNoStoreForHtml(res) {
+  const ct = res.headers.get('content-type') || '';
+  if (!ct.includes('text/html')) return res;
+  const headers = new Headers(res.headers);
+  headers.set('Cache-Control', 'private, no-store');
+  return new Response(res.body, {
+    status: res.status,
+    statusText: res.statusText,
+    headers,
+  });
 }
 
 export async function onRequest(context) {
@@ -223,7 +144,12 @@ export async function onRequest(context) {
 
   const cookies = getCookies(request, COOKIE_NAME);
   for (const c of cookies) {
-    if (await verifyCookie(c, env)) return next();
+    /* #5 权限：owner 与 visitor 均可进站（visitor 只读）；验签与
+       session-check / lock-check / requireOwner 为同一入口 */
+    const role = await verifySessionCookieStrict(c, env.SGX_LOCK_PUBLIC);
+    if (role === 'owner' || role === 'visitor') {
+      return withNoStoreForHtml(await next());
+    }
   }
 
   return lockRedirect(request);
