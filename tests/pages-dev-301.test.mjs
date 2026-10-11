@@ -65,7 +65,7 @@ test('pages.dev 请求在锁屏逻辑之前被 301（即使未登录）', async 
 });
 
 console.log('锁屏覆盖 /api/file:');
-test('未解锁访问 /api/file?id= 被 302 到主站锁屏（非白名单）', async () => {
+test('未解锁访问 /api/file?id= 回 401 JSON（不 302，避免 fetch 跨域跟跳转）', async () => {
   let nextCalled = false;
   const res = await onRequest({
     request: {
@@ -76,15 +76,16 @@ test('未解锁访问 /api/file?id= 被 302 到主站锁屏（非白名单）', 
     next: async () => { nextCalled = true; },
   });
   assert.ok(res, '应返回 Response');
-  assert.equal(res.status, 302);
-  assert.ok(res.headers.get('Location').includes('styrigx.com'), '应跳回主站锁屏');
+  assert.equal(res.status, 401);
+  assert.equal(res.headers.get('Content-Type'), 'application/json');
+  assert.equal(res.headers.get('Cache-Control'), 'private, no-store');
   assert.ok(!nextCalled, '不应放行到文件接口');
 });
 
 console.log(`\n${passed} passed`);
 
 console.log('锁屏覆盖 /api/file:');
-test('未解锁访问 /api/file?id= 被 302 到主站锁屏（非白名单）', async () => {
+test('未解锁访问 /api/file?id= 回 401 JSON（不 302，避免 fetch 跨域跟跳转）', async () => {
   let nextCalled = false;
   const res = await onRequest({
     request: {
@@ -95,8 +96,9 @@ test('未解锁访问 /api/file?id= 被 302 到主站锁屏（非白名单）', 
     next: async () => { nextCalled = true; },
   });
   assert.ok(res, '应返回 Response');
-  assert.equal(res.status, 302);
-  assert.ok(res.headers.get('Location').includes('styrigx.com'), '应跳回主站锁屏');
+  assert.equal(res.status, 401);
+  assert.equal(res.headers.get('Content-Type'), 'application/json');
+  assert.equal(res.headers.get('Cache-Control'), 'private, no-store');
   assert.ok(!nextCalled, '不应放行到文件接口');
 });
 

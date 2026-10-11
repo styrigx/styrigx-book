@@ -63,10 +63,13 @@ function checkSession(fetchFn, reloadFn){
 function apiFetch(url, opts, fetchFn, reloadFn){
   opts = opts || {};
   if (!opts.credentials) opts.credentials = 'same-origin';
+  /* 用 redirect: manual 避免 fetch 自动跟随跨域 302（会报 TypeError）；
+     opaqueredirect 视为已锁定，走锁屏流程 */
+  if (!opts.redirect) opts.redirect = 'manual';
   var f = fetchFn || (G.fetch && G.fetch.bind(G));
   var rl = reloadFn || defaultReload;
   return f(url, opts).then(function(res){
-    if (isLockSignal(url, res && res.status)) {
+    if ((res && res.type === 'opaqueredirect') || isLockSignal(url, res && res.status)) {
       rl();
       var e = new Error('sgx session locked');
       e.sgxLocked = true;
