@@ -6,7 +6,7 @@
 //
 // SGX_SITE=book 时：
 //   - 检查 sgx-verified cookie（格式 epoch.exp.sig，sig = Ed25519 私钥对 "epoch.exp"
-//     的签名，base64url），用 SGX_ED25519_PUBLIC（PEM/SPKI 公钥）验签；
+//     的签名，base64url），用 SGX_LOCK_PUBLIC（PEM/SPKI 公钥）验签；
 //   - exp 未过期；epoch >= 本地缓存的最新 epoch（从主站
 //     https://styrigx.com/api/session-epoch 获取，内存缓存 TTL 60 秒）。
 //   - 有效 → next()；无效/缺失/过期 → 白名单放行，其余 302 到主站锁屏。
@@ -14,7 +14,7 @@
 //
 // 环境变量（Cloudflare 后台配置，代码里只读不写）：
 //   SGX_SITE            = book
-//   SGX_ED25519_PUBLIC  = Ed25519 公钥 PEM（只配公钥，不配私钥）
+//   SGX_LOCK_PUBLIC  = Ed25519 公钥 PEM（只配公钥，不配私钥）
 //
 // 白名单（只放行验证必需与真正公开的跨站只读接口）：
 //   /api/shelf、/api/shelf/*（主站书单小组件跨站调用，带 CORS）
@@ -170,10 +170,12 @@ async function fetchLatestEpoch() {
 }
 
 async function verifyCookie(cookieValue, env) {
-  if (!cookieValue || !env.SGX_ED25519_PUBLIC) return false;
+  if (!cookieValue || !env.SGX_LOCK_PUBLIC) return false;
   const parts = cookieValue.split('.');
-  if (parts.length !== 3) return false;
-  const [epochStr, expStr, sigB64] = parts;
+  /* 主站 2.8.0 起为四段式 role.epoch.exp.sig；三段旧格式一律无效，不留兼容层 */
+  if (parts.length !== 4) return false;
+  const [role, epochStr, expStr, sigB64] = parts;
+  if (role !== 'owner' && role !== 'visitor') return false;
   const epoch = Number(epochStr);
   const exp = Number(expStr);
   if (!Number.isFinite(epoch) || !Number.isFinite(exp)) return false;
@@ -187,12 +189,12 @@ async function verifyCookie(cookieValue, env) {
   if (sig.length !== 64) return false;
   let ok;
   try {
-    const key = await getPublicKey(env.SGX_ED25519_PUBLIC);
+    const key = await getPublicKey(env.SGX_LOCK_PUBLIC);
     ok = await crypto.subtle.verify(
       { name: 'Ed25519' },
       key,
       sig,
-      new TextEncoder().encode(epochStr + '.' + expStr),
+      new TextEncoder().encode(role + '.' + epochStr + '.' + expStr),
     );
   } catch (e) {
     return false;
