@@ -17,13 +17,19 @@ export async function verifyOwnerCookie(request, env) {
 }
 
 /**
- * 要求 owner 身份。非 owner（含未登录、visitor）返回 401 Response，调用方直接 return。
+ * 要求 owner 身份。用于 /api/admin/*（上传/管理）。
+ * - 未登录/无效 cookie → 401
+ * - visitor → 403（只读，无管理权限）
+ * - owner → 通过（verifySessionCookie 已检查 exp）
  * 用法：const { response } = await requireOwner(context); if (response) return response;
  */
 export async function requireOwner(context) {
   const role = await verifyOwnerCookie(context.request, context.env);
-  if (role !== 'owner') {
-    return { response: err('unauthorized', 401) };
+  if (role === 'owner') {
+    return { response: null };
   }
-  return { response: null };
+  if (role === 'visitor') {
+    return { response: err('forbidden', 403) };
+  }
+  return { response: err('unauthorized', 401) };
 }
