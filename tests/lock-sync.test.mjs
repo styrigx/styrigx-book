@@ -62,7 +62,7 @@ function apiReq(cookie, method = 'GET') {
     },
   };
 }
-const ENV = { SGX_SITE: 'book', SGX_ED25519_PUBLIC: PEM };
+const ENV = { SGX_SITE: 'book', SGX_LOCK_PUBLIC: PEM };
 
 /* ---------- 1. session-check 接口 ---------- */
 console.log('session-check:');

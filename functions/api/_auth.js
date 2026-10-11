@@ -13,7 +13,7 @@ import { verifySessionCookie, getCookieValue } from '../_sgx-cookie.js';
 export async function verifyOwnerCookie(request, env) {
   const val = getCookieValue(request);
   if (!val) return null;
-  return verifySessionCookie(val, env.SGX_ED25519_PUBLIC);
+  return verifySessionCookie(val, env.SGX_LOCK_PUBLIC);
 }
 
 /**

@@ -1,8 +1,8 @@
 // functions/_sgx-cookie.js
 // 主站四段式 cookie 共享验签：sgx-verified = role.epoch.exp.sig
-// role ∈ {owner, visitor}；sig = Ed25519(SGX_ED25519_PUBLIC, "role.epoch.exp")
+// role ∈ {owner, visitor}；sig = Ed25519(SGX_LOCK_PUBLIC, "role.epoch.exp")
 // 供 functions/_middleware.js 和 functions/api/_auth.js 共用。
-// SGX_ED25519_PUBLIC 支持 PEM（含头尾）或 raw base64 SPKI DER。
+// SGX_LOCK_PUBLIC 支持 PEM（含头尾）或 raw base64 SPKI DER。
 
 const SESSION_ROLES = new Set(['owner', 'visitor']);
 const COOKIE_NAME = 'sgx-verified';

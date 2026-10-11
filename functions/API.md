@@ -13,9 +13,9 @@ JSON 响应 `Content-Type: application/json`；错误格式 `{error:'...'}`；�
 | 变量 | `MAX_UPLOAD_MB` | 单文件上传上限（MB），默认 500 |
 | 变量 | `STORAGE_ENABLED` | 严格为 `true` 且绑定了 `BOOKS` 时才启用存储 |
 | 变量 | `SGX_SITE` | 固定 `book`，启用主站会话锁屏 |
-| 变量 | `SGX_ED25519_PUBLIC` | Ed25519 公钥 PEM，用于验签主站 `sgx-verified` cookie |
+| 变量 | `SGX_LOCK_PUBLIC` | Ed25519 公钥 PEM，用于验签主站 `sgx-verified` cookie |
 
-鉴权（2.0）：`/api/admin/*` 与 `/api/private/*` 只认主站签发的四段式 `sgx-verified` cookie（`role.epoch.exp.sig`），用 `SGX_ED25519_PUBLIC` 验签；要求 `role=owner`。未登录或 role 不符一律 401。Cloudflare Access 已移除。
+鉴权（2.0）：`/api/admin/*` 与 `/api/private/*` 只认主站签发的四段式 `sgx-verified` cookie（`role.epoch.exp.sig`），用 `SGX_LOCK_PUBLIC` 验签；要求 `role=owner`。未登录或 role 不符一律 401。Cloudflare Access 已移除。
 
 ## 主站 Cookie 校验（`_auth.js`）
 

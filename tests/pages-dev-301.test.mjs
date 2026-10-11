@@ -72,7 +72,7 @@ test('未解锁访问 /api/file?id= 被 302 到主站锁屏（非白名单）', 
       url: 'https://book.styrigx.com/api/file?id=abc123',
       headers: new Headers(),
     },
-    env: { SGX_SITE: 'book', SGX_ED25519_PUBLIC: 'test-key' },
+    env: { SGX_SITE: 'book', SGX_LOCK_PUBLIC: 'test-key' },
     next: async () => { nextCalled = true; },
   });
   assert.ok(res, '应返回 Response');
@@ -91,7 +91,7 @@ test('未解锁访问 /api/file?id= 被 302 到主站锁屏（非白名单）', 
       url: 'https://book.styrigx.com/api/file?id=abc123',
       headers: new Headers(),
     },
-    env: { SGX_SITE: 'book', SGX_ED25519_PUBLIC: 'test-key' },
+    env: { SGX_SITE: 'book', SGX_LOCK_PUBLIC: 'test-key' },
     next: async () => { nextCalled = true; },
   });
   assert.ok(res, '应返回 Response');
@@ -110,7 +110,7 @@ test('四段式 cookie 被 _auth.js 接受（owner）', async () => {
   const { verifyOwnerCookie } = await import('../functions/api/_auth.js');
   const role = await verifyOwnerCookie(
     { headers: new Headers({ Cookie: 'sgx-verified=' + TEST_COOKIE_4SEG }) },
-    { SGX_ED25519_PUBLIC: TEST_PUB }
+    { SGX_LOCK_PUBLIC: TEST_PUB }
   );
   assert.equal(role, 'owner');
 });
@@ -119,7 +119,7 @@ test('三段式 cookie 被 _auth.js 拒绝', async () => {
   const { verifyOwnerCookie } = await import('../functions/api/_auth.js');
   const role = await verifyOwnerCookie(
     { headers: new Headers({ Cookie: 'sgx-verified=' + TEST_COOKIE_3SEG }) },
-    { SGX_ED25519_PUBLIC: TEST_PUB }
+    { SGX_LOCK_PUBLIC: TEST_PUB }
   );
   assert.equal(role, null);
 });

@@ -8,7 +8,6 @@ compatibility_date = "2026-10-08"
 
 [vars]
 SGX_SITE = "book"
-SGX_ED25519_PUBLIC = "MCowBQYDK2VwAyEATpeuRiz6J463BL6Ye+5XpHAzdypy8hZKMJ41P1ainF8="
 MAX_UPLOAD_MB = "500"
 STORAGE_ENABLED = "true"
 
@@ -23,7 +22,6 @@ database_name = "styrigx-books"
 [env.preview]
 [env.preview.vars]
 SGX_SITE = "book"
-SGX_ED25519_PUBLIC = "MCowBQYDK2VwAyEATpeuRiz6J463BL6Ye+5XpHAzdypy8hZKMJ41P1ainF8="
 MAX_UPLOAD_MB = "500"
 STORAGE_ENABLED = "true"
 
