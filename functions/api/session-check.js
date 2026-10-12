@@ -1,6 +1,6 @@
 // GET /api/session-check — 锁屏会话确认（L6 前端 visibilitychange / pageshow 调用）
 //
-// 会话有效（owner 或 visitor，四段式 role.epoch.exp.sig，验签 + exp + epoch
+// 会话有效（owner 或 visitor，五段式 by.role.epoch.exp.sig，验签 + exp + epoch
 // 均通过，epoch 检查 fail closed）→ 200 {ok:true}；否则 → 401 {ok:false}。
 // 未启用锁屏（SGX_SITE !== 'book'）→ 200 {ok:true}，与 middleware 放行一致。
 // 一律 Cache-Control: no-store。

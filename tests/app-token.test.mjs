@@ -183,11 +183,11 @@ const mockR2 = {
   async head() { return { size: 123 }; },
 };
 
-/* owner 会话 cookie（sgx-verified = owner.epoch.exp.sig，自签测试密钥） */
+/* owner 会话 cookie（sgx-verified = by.owner.epoch.exp.sig，自签测试密钥） */
 const { publicKey: lockPub, privateKey: lockPriv } = generateKeyPairSync('ed25519');
 const LOCK_PUB_B64 = lockPub.export({ type: 'spki', format: 'der' }).toString('base64');
-function makeSessionCookie() {
-  const payload = `owner.${CURRENT_EPOCH}.${Date.now() + 3600000}`;
+function makeSessionCookie(by = 'owner') {
+  const payload = `${by}.owner.${CURRENT_EPOCH}.${Date.now() + 3600000}`;
   return payload + '.' + b64url(sign(null, Buffer.from(payload), lockPriv));
 }
 

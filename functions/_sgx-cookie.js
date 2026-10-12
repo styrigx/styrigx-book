@@ -1,10 +1,14 @@
 // functions/_sgx-cookie.js
-// 主站四段式 cookie 共享验签：sgx-verified = role.epoch.exp.sig
-// role ∈ {owner, visitor}；sig = Ed25519(SGX_LOCK_PUBLIC, "role.epoch.exp")
+// 主站五段式 cookie 共享验签（2.11）：sgx-verified = by.role.epoch.exp.sig
+// by ∈ {root, owner}；role ∈ {owner, visitor}；
+// sig = Ed25519(SGX_LOCK_PUBLIC, "by.role.epoch.exp")
+// 与主站 functions/_middleware.js 的 verifyOneCookie 完全一致；
+// 旧四段式（无 by）一律视为无效，不留兼容层。
 // 供 functions/_middleware.js、functions/api/_auth.js、
 // functions/api/session-check.js、functions/api/lock-check.js 共用。
 // SGX_LOCK_PUBLIC 支持 PEM（含头尾）或 raw base64 SPKI DER。
 
+const SESSION_BYS = new Set(['root', 'owner']);
 const SESSION_ROLES = new Set(['owner', 'visitor']);
 const COOKIE_NAME = 'sgx-verified';
 
@@ -52,18 +56,19 @@ function getPublicKey(keyB64) {
   return publicKeyPromise;
 }
 
-/* 解析会话 cookie：四段式 role.epoch.exp.sig。
-   旧三段式（无 role）一律视为无效，不留兼容层。 */
+/* 解析会话 cookie：五段式 by.role.epoch.exp.sig（2.11）。
+   旧四段式（无 by）一律视为无效，不留兼容层。 */
 export function parseSessionCookie(value) {
   if (!value) return null;
   const parts = value.split('.');
-  if (parts.length !== 4) return null;
-  const [role, epochStr, expStr, sigB64] = parts;
+  if (parts.length !== 5) return null;
+  const [by, role, epochStr, expStr, sigB64] = parts;
+  if (!SESSION_BYS.has(by)) return null;
   if (!SESSION_ROLES.has(role)) return null;
   const epoch = Number(epochStr);
   const exp = Number(expStr);
   if (!Number.isFinite(epoch) || !Number.isFinite(exp)) return null;
-  if (exp <= Date.now()) return null;
+  if (!exp || exp < Date.now()) return null;
   let sig;
   try {
     sig = b64urlToBytes(sigB64);
@@ -71,11 +76,12 @@ export function parseSessionCookie(value) {
     return null;
   }
   if (sig.length !== 64) return null;
-  return { role, epochStr, expStr, epoch, sig };
+  return { by, role, epochStr, expStr, epoch, sig };
 }
 
 /* 验签单个 cookie：成功返回 role（'owner' | 'visitor'），失败返回 null。
-   签名 payload 为 "role.epoch.exp"（与主站 functions/_kernel/session.js 对应）。 */
+   签名 payload 为 "by.role.epoch.exp"（与主站 functions/_middleware.js
+   verifyOneCookie 的 2.11 五段式对应）。 */
 export async function verifySessionCookie(cookieValue, publicKeyB64) {
   if (!publicKeyB64) return null;
   const parsed = parseSessionCookie(cookieValue);
@@ -87,7 +93,7 @@ export async function verifySessionCookie(cookieValue, publicKeyB64) {
       { name: 'Ed25519' },
       key,
       parsed.sig,
-      new TextEncoder().encode(parsed.role + '.' + parsed.epochStr + '.' + parsed.expStr),
+      new TextEncoder().encode(parsed.by + '.' + parsed.role + '.' + parsed.epochStr + '.' + parsed.expStr),
     );
   } catch (e) {
     return null;
@@ -150,6 +156,11 @@ async function fetchEpochData() {
   }
 }
 
+/* 测试用：清空主站 epoch 内存缓存（生产代码不调用）。 */
+export function _resetEpochCache() {
+  epochCache = { value: null, at: 0 };
+}
+
 /* 严格验签：verifySessionCookie（签名 + exp）之外，再检查
    cookie epoch >= 主站最新 epoch。拿不到最新 epoch 则 fail closed（返回 null）。
    成功返回 role（'owner' | 'visitor'），失败返回 null。
@@ -165,7 +176,7 @@ export async function verifySessionCookieStrict(cookieValue, publicKeyB64) {
       { name: 'Ed25519' },
       key,
       parsed.sig,
-      new TextEncoder().encode(parsed.role + '.' + parsed.epochStr + '.' + parsed.expStr),
+      new TextEncoder().encode(parsed.by + '.' + parsed.role + '.' + parsed.epochStr + '.' + parsed.expStr),
     );
   } catch (e) {
     return null;
@@ -178,4 +189,4 @@ export async function verifySessionCookieStrict(cookieValue, publicKeyB64) {
   return parsed.role;
 }
 
-export { COOKIE_NAME, SESSION_ROLES };
+export { COOKIE_NAME, SESSION_ROLES, SESSION_BYS };

@@ -1,5 +1,5 @@
 // functions/api/_auth.js
-// 主站四段式 cookie 鉴权（book 2.0）：sgx-verified = role.epoch.exp.sig
+// 主站五段式 cookie 鉴权（book 2.0/2.11）：sgx-verified = by.role.epoch.exp.sig
 // 使用 functions/_sgx-cookie.js 的共享验签逻辑。
 // 下划线开头，不会被 Pages 当作路由。
 
@@ -8,8 +8,8 @@ import { verifySessionCookieStrict, getCookieValue, fetchSessionEpoch, fetchAppE
 import { getAppCookieValue, parseAppToken, verifyAppToken, APP_AUD } from '../_app-token.js';
 
 /**
- * 验签四段式 cookie，返回 role（'owner' | 'visitor'），无效返回 null。
- * 严格验签：签名 + exp + epoch（epoch 拿不到则 fail closed）。
+ * 验签五段式 cookie，返回 role（'owner' | 'visitor'），无效返回 null。
+ * 严格验签：by/role 白名单 + 签名 + exp + epoch（epoch 拿不到则 fail closed）。
  * 不抛错，调用方按 null 处理为未登录。
  */
 export async function verifyOwnerCookie(request, env) {
