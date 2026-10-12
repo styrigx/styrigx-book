@@ -274,6 +274,21 @@ const settings = Object.assign(
 );
 const saveSettings = () => { try { localStorage.setItem(LS_SET, JSON.stringify(settings)); } catch (e) {} };
 
+/* foliate-js 的 margin 是页眉页脚高度（上下），gap 是左右边距百分比。
+   renderer 的长度属性必须带单位：曾经传裸数字 '48'，minmax(var(--_margin),1fr)
+   整条声明失效，正文只占中间一行。上下 margin 固定 32px 不暴露给用户；
+   「页边距」设置只控制左右（映射到 gap 4%–14%，默认≈7% 与 foliate 默认一致）。
+   旧 localStorage 值同键同范围，直接兼容；非法值回退默认。 */
+const BK_CHROME_MARGIN_PX = 32;
+const BK_MARGIN_MIN = 16, BK_MARGIN_MAX = 120, BK_MARGIN_DEF = 48;
+const sanitizeMargin = v => {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.min(BK_MARGIN_MAX, Math.max(BK_MARGIN_MIN, n)) : BK_MARGIN_DEF;
+};
+const marginToGapPct = m =>
+  (4 + (sanitizeMargin(m) - BK_MARGIN_MIN) * (10 / (BK_MARGIN_MAX - BK_MARGIN_MIN))).toFixed(1) + '%';
+settings.margin = sanitizeMargin(settings.margin);
+
 let loggedIn = false, book = null, isPrivate = false, format = '';
 let epubView = null, pdfDoc = null, pdfState = null;
 let sliderDragging = false;
@@ -399,9 +414,24 @@ function applyEpubPrefs() {
   if (!r) return;
   if (r.setStyles) r.setStyles(epubCSS());
   r.setAttribute('flow', settings.flow === 'scrolled' ? 'scrolled' : 'paginated');
-  r.setAttribute('margin', String(settings.margin));
+  r.setAttribute('margin', BK_CHROME_MARGIN_PX + 'px'); // 上下固定（页眉页脚高度），带单位
+  r.setAttribute('gap', marginToGapPct(settings.margin)); // 左右由「页边距」控制，百分比
   applyTheme();
 }
+/* 页眉=当前章节名，页脚=页码。只在翻页模式下有（滚动模式 heads/feet 为 null）。
+   配色继承 #bkrd，随阅读主题。heads/feet 每次 render 会重建，所以在 relocate 里填。 */
+function updateMarginals(d) {
+  const r = epubView && epubView.renderer;
+  if (!r || settings.flow !== 'paginated') return;
+  const heads = r.heads, feet = r.feet;
+  if (!heads || !feet || !heads.length || !feet.length) return;
+  const label = (d && d.tocItem && d.tocItem.label) || (book && book.title) || '';
+  const pageTxt = (r.pages > 0 && r.page > 0) ? (r.page + ' / ' + r.pages) : '';
+  for (const h of heads) h.textContent = label;
+  for (const f of feet) f.textContent = pageTxt;
+}
+/* 测试钩子：Playwright 布局断言用（生产无影响） */
+window.__bkrdTest = { getRenderer: () => (epubView && epubView.renderer) || null };
 function onEpubTap(e) {
   const tg = e.target;
   if (tg && typeof tg.closest === 'function' && tg.closest('a[href]')) return; // 链接走 foliate 自己的导航
@@ -450,6 +480,7 @@ async function openEPUB(buf, progress) {
   applyEpubPrefs();
   view.addEventListener('relocate', e => {
     const d = e.detail || {};
+    updateMarginals(d);
     if (!d.cfi) return;
     const frac = typeof d.fraction === 'number' ? d.fraction : 0;
     const pct = Math.min(100, Math.max(0, frac * 100));
@@ -469,6 +500,7 @@ async function openEPUB(buf, progress) {
   } catch (e) {
     await view.init({ showTextStart: true });
   }
+  updateMarginals(null); // 首次渲染后也填一次（relocate 可能尚未触发）
   $('#bkrd-search-btn').classList.add('on');
   slider.max = 1000;
   setFormatUI('epub');
@@ -748,7 +780,7 @@ function syncSettingsUI() {
     b.setAttribute('aria-pressed', String(b.dataset.zoom === settings.pdfMode));
   const fs = $('#bkrd-fontsize'); if (fs) { fs.value = settings.fontSize; $('#bkrd-fontsize-v').textContent = settings.fontSize + 'px'; }
   const lh = $('#bkrd-lineheight'); if (lh) { lh.value = settings.lineHeight; $('#bkrd-lineheight-v').textContent = Number(settings.lineHeight).toFixed(1); }
-  const mg = $('#bkrd-margin'); if (mg) { mg.value = settings.margin; $('#bkrd-margin-v').textContent = settings.margin + 'px'; }
+  const mg = $('#bkrd-margin'); if (mg) { mg.value = settings.margin; $('#bkrd-margin-v').textContent = marginToGapPct(settings.margin); }
   const zc = $('#bkrd-zoomcustom'); if (zc) { zc.value = Math.round(settings.pdfScale * 100); $('#bkrd-zoomcustom-v').textContent = Math.round(settings.pdfScale * 100) + '%'; }
 }
 /* 按格式切换面板内 EPUB/PDF 专属内容 */
@@ -763,7 +795,7 @@ function wireSheet() {
   $('#bkrd-sheet-close').addEventListener('click', () => closePanels());
   segWire('#bkrd-seg-flow', 'flow', () => settings.flow, v => {
     settings.flow = v;
-    if (format === 'epub') applyEpubPrefs();
+    if (format === 'epub') { applyEpubPrefs(); updateMarginals(null); }
   });
   segWire('#bkrd-seg-theme', 'theme', () => settings.theme, v => {
     settings.theme = v;
@@ -776,13 +808,13 @@ function wireSheet() {
   });
   rangeWire('#bkrd-fontsize', '#bkrd-fontsize-v', v => v + 'px',
     () => settings.fontSize, v => settings.fontSize = v,
-    () => { if (format === 'epub') applyEpubPrefs(); });
+    () => { if (format === 'epub') { applyEpubPrefs(); updateMarginals(null); } });
   rangeWire('#bkrd-lineheight', '#bkrd-lineheight-v', v => Number(v).toFixed(1),
     () => settings.lineHeight, v => settings.lineHeight = v,
-    () => { if (format === 'epub') applyEpubPrefs(); });
-  rangeWire('#bkrd-margin', '#bkrd-margin-v', v => v + 'px',
-    () => settings.margin, v => settings.margin = v,
-    () => { if (format === 'epub') applyEpubPrefs(); });
+    () => { if (format === 'epub') { applyEpubPrefs(); updateMarginals(null); } });
+  rangeWire('#bkrd-margin', '#bkrd-margin-v', v => marginToGapPct(v),
+    () => settings.margin, v => settings.margin = sanitizeMargin(v),
+    () => { if (format === 'epub') { applyEpubPrefs(); updateMarginals(null); } });
   rangeWire('#bkrd-zoomcustom', '#bkrd-zoomcustom-v', v => Math.round(v) + '%',
     () => Math.round(settings.pdfScale * 100), v => settings.pdfScale = v / 100,
     () => { if (format === 'pdf') { settings.pdfMode = 'custom'; syncSettingsUI(); applyPdfZoom(); } });
