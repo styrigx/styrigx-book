@@ -11,7 +11,7 @@
 //   - epoch >= 主站最新 epoch（内存缓存 TTL 60 秒）；
 //   - 验签逻辑与 functions/_sgx-cookie.js 的 verifySessionCookieStrict 为同一入口；
 //   - owner / visitor 均可进站（visitor 只读）；无效/缺失/过期 → 白名单放行，
-//     其余 302 到主站锁屏。
+//     其余 302 到主站锁屏（URL 带 ?why=no-cookie|invalid-session，主站见 why 不再回跳）。
 //   - Fail closed：主站 epoch 接口失败且无缓存时，一律拒绝（302 到锁屏）。
 //
 // 环境变量（Cloudflare 后台配置，代码里只读不写）：
@@ -85,12 +85,15 @@ function isReturnAllowed(returnUrl) {
   return host === 'styrigx.com' || host.endsWith('.styrigx.com');
 }
 
-function lockRedirect(request) {
+/* 子站踢回主站锁屏：URL 带 ?why= 说明原因（no-cookie / invalid-session），
+   主站 L1 见到 why 不再 302，直接停在首页显示原因，避免重定向死循环。 */
+function lockRedirect(request, why) {
   const url = new URL(request.url);
   const original = url.origin + url.pathname + url.search;
-  const target = isReturnAllowed(original)
-    ? LOCK_URL + '&return=' + encodeURIComponent(original)
-    : LOCK_URL;
+  let target = LOCK_URL + '&why=' + encodeURIComponent(why || 'invalid-session');
+  if (isReturnAllowed(original)) {
+    target += '&return=' + encodeURIComponent(original);
+  }
   /* 手工拼 302（等价于 Response.redirect）：302 本身不可缓存，再加 no-store 明确语义 */
   return new Response(null, {
     status: 302,
@@ -155,6 +158,7 @@ export async function onRequest(context) {
       return withNoStoreForHtml(await next());
     }
   }
+  const why = cookies.length === 0 ? 'no-cookie' : 'invalid-session';
 
   /* /api/* 会话无效时回 401 JSON（不回 302），避免 fetch 跨域跟跳转报 TypeError；
      页面路径保持 302 到主站锁屏 */
@@ -168,5 +172,5 @@ export async function onRequest(context) {
     });
   }
 
-  return lockRedirect(request);
+  return lockRedirect(request, why);
 }
