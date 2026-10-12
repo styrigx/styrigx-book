@@ -4,6 +4,8 @@
 // 成功 → {etag}
 // 2.10.2：顶层 try/catch —— R2 uploadPart 等未捕获异常不再直接 500，
 // 而是 abort multipart + 清理上传会话后返回短错误码 part-failed（不暴露内部细节）。
+// 鉴权/会话校验异常只返回 part-auth-error，不触发 abort（未鉴权时不得写操作）。
+// abortAndClear 内部对 clearUploadSession 也包 try/catch，避免二次抛错。
 import { json, err, methodNotAllowed, BOOK_KEY_RE, storageEnabled, storageDisabledResponse } from '../../_lib.js';
 import { requireOwner } from '../../_auth.js';
 import { verifyUploadSession, clearUploadSession } from './_sessions.js';
@@ -24,7 +26,11 @@ async function abortAndClear(env, key, uploadId) {
   } catch {
     // abort 失败不影响主流程
   }
-  await clearUploadSession(env, uploadId);
+  try {
+    await clearUploadSession(env, uploadId);
+  } catch {
+    // 清理失败不影响主流程（避免 catch 里再抛变回裸 500）
+  }
 }
 
 export async function onRequest(context) {
@@ -40,12 +46,20 @@ export async function onRequest(context) {
     return err('invalid partNumber', 400);
   }
 
+  // 鉴权与会话校验：异常只返回错误码，不触发 abort（未鉴权时不得写操作）
+  let authed = false;
   try {
     const { response } = await requireOwner(context);
     if (response) return response;
     // 只验 owner + 上传会话（init 时已验过通行证；sgx-app 10 分钟过期不影响分片）
     const { response: sessResp } = await verifyUploadSession(context, uploadId, key);
     if (sessResp) return sessResp;
+    authed = true;
+  } catch {
+    return err('part-auth-error', 500);
+  }
+
+  try {
     if (!storageEnabled(env)) return storageDisabledResponse();
 
     const format = key.endsWith('.pdf') ? 'pdf' : 'epub';
@@ -59,7 +73,10 @@ export async function onRequest(context) {
     return json({ etag: part.etag });
   } catch {
     // 未捕获异常（如 R2 uploadPart 抛错）：中止上传、清理会话，返回短错误码
-    await abortAndClear(env, key, uploadId);
+    // 仅在鉴权通过后才会 abort，未鉴权时不写操作
+    if (authed) {
+      await abortAndClear(env, key, uploadId);
+    }
     return err('part-failed', 500);
   }
 }

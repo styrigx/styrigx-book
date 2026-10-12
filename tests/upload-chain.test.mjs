@@ -153,6 +153,83 @@ async function doComplete(db, r2, key) {
 
 console.log('upload-chain: init → part → complete 全链路');
 
+// 鉴权失败测试放在开头（epoch 缓存未填充时），确保 fetch 抛错能传播到 requireOwner
+await test('part：requireOwner 抛错 → 500 part-auth-error，不 abort，会话不清理', async () => {
+  const db = mockDB();
+  const r2 = mockR2();
+  const key = 'books/12345678-1234-1234-1234-123456789abc.epub';
+  db._sessions.set('mpu-1', { r2_key: key, app_epoch: CURRENT_APP_EPOCH, created_at: Date.now() });
+
+  // 构造 headers 为 undefined 的 request → getCookieValue 抛 TypeError → requireOwner 抛错
+  const ctx = {
+    request: {
+      method: 'POST',
+      url: partUrl(key),
+      headers: undefined,  // 触发 TypeError
+      arrayBuffer: async () => EPUB_MAGIC,
+    },
+    env: {
+      SGX_APP_PUBLIC: 'dummy',
+      SGX_LOCK_PUBLIC: 'dummy',
+      DB: db,
+      BOOKS: r2,
+      STORAGE_ENABLED: 'true',
+    },
+  };
+  let pr;
+  let threw = false;
+  try {
+    pr = await partReq(ctx);
+  } catch (e) {
+    threw = true;
+  }
+  assert.equal(threw, false, '不应有未捕获异常');
+  assert.equal(pr.status, 500);
+  assert.equal((await pr.json()).error, 'part-auth-error');
+  assert.equal(r2._calls.abort, 0, '未鉴权时不得 abort');
+  assert.equal(db._sessions.has('mpu-1'), true, '未鉴权时会话不得被清理');
+});
+
+await test('complete：requireOwner 抛错 → 500 complete-auth-error，不 abort，会话不清理', async () => {
+  const db = mockDB();
+  const r2 = mockR2();
+  const key = 'books/12345678-1234-1234-1234-123456789abc.epub';
+  db._sessions.set('mpu-1', { r2_key: key, app_epoch: CURRENT_APP_EPOCH, created_at: Date.now() });
+
+  const ctx = {
+    request: {
+      method: 'POST',
+      url: 'https://book.styrigx.com/api/admin/upload/complete',
+      headers: undefined,  // 触发 TypeError
+      json: async () => ({
+        uploadId: 'mpu-1', key,
+        parts: [{ partNumber: 1, etag: 'etag-1' }],
+        sha256: 'c'.repeat(64),
+        meta: { title: 'T' },
+      }),
+    },
+    env: {
+      SGX_APP_PUBLIC: 'dummy',
+      SGX_LOCK_PUBLIC: 'dummy',
+      DB: db,
+      BOOKS: r2,
+      STORAGE_ENABLED: 'true',
+    },
+  };
+  let cr;
+  let threw = false;
+  try {
+    cr = await completeReq(ctx);
+  } catch (e) {
+    threw = true;
+  }
+  assert.equal(threw, false, '不应有未捕获异常');
+  assert.equal(cr.status, 500);
+  assert.equal((await cr.json()).error, 'complete-auth-error');
+  assert.equal(r2._calls.abort, 0, '未鉴权时不得 abort');
+  assert.equal(db._sessions.has('mpu-1'), true, '未鉴权时会话不得被清理');
+});
+
 await test('EPUB 全链路：init → part → complete 均为 200，会话清理', async () => {
   const db = mockDB();
   const r2 = mockR2();
@@ -216,6 +293,34 @@ await test('complete：未捕获异常（如 head 抛错）→ 500 complete-fail
   assert.equal((await cr.json()).error, 'complete-failed');
   assert.equal(r2._calls.abort, 1, '应 abort multipart');
   assert.equal(db._sessions.has('mpu-1'), false, '会话应被清理');
+});
+
+await test('part：abortAndClear 内 clearUploadSession 抛错 → 仍返回 500 part-failed，不抛未捕获异常', async () => {
+  const db = mockDB();
+  // 让 DELETE 抛错 → clearUploadSession 内部抛错（绕过其自带的 try/catch，模拟极端情况）
+  const origPrepare = db.prepare.bind(db);
+  db.prepare = (sql) => {
+    const stmt = origPrepare(sql);
+    if (sql.includes('DELETE FROM upload_sessions')) {
+      stmt.run = async () => { throw new Error('db delete boom'); };
+    }
+    return stmt;
+  };
+  const r2 = mockR2({ async uploadPart() { throw new Error('r2 boom'); } });
+  const init = await doInit(db, r2, 'epub');
+
+  // 不应抛未捕获异常，应返回 500 JSON
+  let pr;
+  let threw = false;
+  try {
+    pr = await doPart(db, r2, init.key, EPUB_MAGIC);
+  } catch (e) {
+    threw = true;
+  }
+  assert.equal(threw, false, '不应有未捕获异常');
+  assert.equal(pr.status, 500);
+  assert.equal((await pr.json()).error, 'part-failed');
+  assert.equal(r2._calls.abort, 1, '应 abort multipart');
 });
 
 console.log(`\n  ${passed} passed`);
