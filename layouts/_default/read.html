@@ -173,13 +173,39 @@ try{var __s=JSON.parse(localStorage.getItem('bk-settings')||'{}');var __t=(__s&&
       </section>
       <section data-pane="font" role="tabpanel" aria-label="{{ if $isEn }}Font size{{ else }}字号{{ end }}" hidden>
         <div class="bkrd-set" data-epub-only>
+          <span class="bkrd-set-label">{{ if $isEn }}Reading mode{{ else }}阅读模式{{ end }}</span>
+          <div class="bkrd-seg" id="bkrd-seg-flow">
+            <button type="button" data-flow="paginated">{{ if $isEn }}Paginated{{ else }}翻页{{ end }}</button>
+            <button type="button" data-flow="scrolled">{{ if $isEn }}Scrolled{{ else }}滚动{{ end }}</button>
+          </div>
+        </div>
+        <div class="bkrd-set" data-epub-only>
           <span class="bkrd-set-label">{{ if $isEn }}Font size{{ else }}字号{{ end }}</span>
           <div class="bkrd-range-row">
             <input type="range" id="bkrd-fontsize" min="14" max="26" step="1" aria-label="{{ if $isEn }}Font size{{ else }}字号{{ end }}">
             <span class="bkrd-range-val" id="bkrd-fontsize-v"></span>
           </div>
         </div>
-        <p class="bkrd-note" data-pdf-only>{{ if $isEn }}Font size does not apply to PDF. Use the − / ＋ buttons in the top bar to zoom.{{ else }}字号对 PDF 无效，请用顶栏 − / ＋ 缩放调整。{{ end }}</p>
+        <div class="bkrd-set" data-epub-only>
+          <span class="bkrd-set-label">{{ if $isEn }}Margins{{ else }}页边距{{ end }}</span>
+          <div class="bkrd-range-row">
+            <input type="range" id="bkrd-margin" min="16" max="120" step="4" aria-label="{{ if $isEn }}Margins{{ else }}页边距{{ end }}">
+            <span class="bkrd-range-val" id="bkrd-margin-v"></span>
+          </div>
+        </div>
+        <div class="bkrd-set" data-pdf-only>
+          <span class="bkrd-set-label">{{ if $isEn }}Zoom{{ else }}缩放{{ end }}</span>
+          <p class="bkrd-note" style="padding:0 0 8px">{{ if $isEn }}Font size and line spacing do not apply to PDF.{{ else }}字号、行距对 PDF 无效，请用缩放调整。{{ end }}</p>
+          <div class="bkrd-seg" id="bkrd-seg-zoom">
+            <button type="button" data-zoom="width">{{ if $isEn }}Fit width{{ else }}适应宽度{{ end }}</button>
+            <button type="button" data-zoom="page">{{ if $isEn }}Fit page{{ else }}适应整页{{ end }}</button>
+            <button type="button" data-zoom="custom">{{ if $isEn }}Custom{{ else }}自定义{{ end }}</button>
+          </div>
+          <div class="bkrd-range-row" id="bkrd-zoomcustom-row" style="margin-top:12px">
+            <input type="range" id="bkrd-zoomcustom" min="30" max="400" step="5" aria-label="{{ if $isEn }}Custom zoom{{ else }}自定义缩放{{ end }}">
+            <span class="bkrd-range-val" id="bkrd-zoomcustom-v"></span>
+          </div>
+        </div>
       </section>
       <section data-pane="lh" role="tabpanel" aria-label="{{ if $isEn }}Line height{{ else }}行距{{ end }}" hidden>
         <div class="bkrd-set" data-epub-only>
@@ -243,7 +269,7 @@ const LS_PROG = 'bk-progress-' + bookId;
 const LS_SET = 'bk-settings';
 
 const settings = Object.assign(
-  { fontSize: 18, lineHeight: 1.8, theme: 'light', pdfMode: 'width', pdfScale: 1 },
+  { fontSize: 18, lineHeight: 1.8, margin: 48, theme: 'light', flow: 'paginated', pdfMode: 'width', pdfScale: 1 },
   (() => { try { return JSON.parse(localStorage.getItem(LS_SET)) || {}; } catch (e) { return {}; } })()
 );
 const saveSettings = () => { try { localStorage.setItem(LS_SET, JSON.stringify(settings)); } catch (e) {} };
@@ -372,7 +398,8 @@ function applyEpubPrefs() {
   const r = epubView && epubView.renderer;
   if (!r) return;
   if (r.setStyles) r.setStyles(epubCSS());
-  r.setAttribute('margin', '48');
+  r.setAttribute('flow', settings.flow === 'scrolled' ? 'scrolled' : 'paginated');
+  r.setAttribute('margin', String(settings.margin));
   applyTheme();
 }
 function onEpubTap(e) {
@@ -580,6 +607,9 @@ function computePdfScale() {
   if (!pdfState || !pdfState.pages.length) return;
   pdfState.scale = pdfPageScale(pdfState.pages[0]);
 }
+function applyPdfZoom() {
+  saveSettings(); computePdfScale(); layoutPdf();
+}
 function layoutPdf() {
   if (!pdfState) return;
   const cw = pdfHost.clientWidth;
@@ -710,10 +740,16 @@ function rangeWire(id, valId, fmt, get, set, after) {
   r.addEventListener('input', () => { set(parseFloat(r.value)); v.textContent = fmt(get()); saveSettings(); if (after) after(); });
 }
 function syncSettingsUI() {
+  for (const b of document.querySelectorAll('#bkrd-seg-flow button'))
+    b.setAttribute('aria-pressed', String(b.dataset.flow === settings.flow));
   for (const b of document.querySelectorAll('#bkrd-seg-theme button'))
     b.setAttribute('aria-pressed', String(b.dataset.theme === settings.theme));
+  for (const b of document.querySelectorAll('#bkrd-seg-zoom button'))
+    b.setAttribute('aria-pressed', String(b.dataset.zoom === settings.pdfMode));
   const fs = $('#bkrd-fontsize'); if (fs) { fs.value = settings.fontSize; $('#bkrd-fontsize-v').textContent = settings.fontSize + 'px'; }
   const lh = $('#bkrd-lineheight'); if (lh) { lh.value = settings.lineHeight; $('#bkrd-lineheight-v').textContent = Number(settings.lineHeight).toFixed(1); }
+  const mg = $('#bkrd-margin'); if (mg) { mg.value = settings.margin; $('#bkrd-margin-v').textContent = settings.margin + 'px'; }
+  const zc = $('#bkrd-zoomcustom'); if (zc) { zc.value = Math.round(settings.pdfScale * 100); $('#bkrd-zoomcustom-v').textContent = Math.round(settings.pdfScale * 100) + '%'; }
 }
 /* 按格式切换面板内 EPUB/PDF 专属内容 */
 function setFormatUI(fmt) {
@@ -725,10 +761,18 @@ function wireSheet() {
   for (const b of document.querySelectorAll('.bkrd-tabs [role="tab"]'))
     b.addEventListener('click', () => activateTab(b.dataset.tab));
   $('#bkrd-sheet-close').addEventListener('click', () => closePanels());
+  segWire('#bkrd-seg-flow', 'flow', () => settings.flow, v => {
+    settings.flow = v;
+    if (format === 'epub') applyEpubPrefs();
+  });
   segWire('#bkrd-seg-theme', 'theme', () => settings.theme, v => {
     settings.theme = v;
     applyTheme();
     if (format === 'epub') applyEpubPrefs(); // PDF 主题由 CSS 经 #bkrd[data-btheme] 生效
+  });
+  segWire('#bkrd-seg-zoom', 'zoom', () => settings.pdfMode, v => {
+    settings.pdfMode = v;
+    if (format === 'pdf') applyPdfZoom();
   });
   rangeWire('#bkrd-fontsize', '#bkrd-fontsize-v', v => v + 'px',
     () => settings.fontSize, v => settings.fontSize = v,
@@ -736,6 +780,12 @@ function wireSheet() {
   rangeWire('#bkrd-lineheight', '#bkrd-lineheight-v', v => Number(v).toFixed(1),
     () => settings.lineHeight, v => settings.lineHeight = v,
     () => { if (format === 'epub') applyEpubPrefs(); });
+  rangeWire('#bkrd-margin', '#bkrd-margin-v', v => v + 'px',
+    () => settings.margin, v => settings.margin = v,
+    () => { if (format === 'epub') applyEpubPrefs(); });
+  rangeWire('#bkrd-zoomcustom', '#bkrd-zoomcustom-v', v => Math.round(v) + '%',
+    () => Math.round(settings.pdfScale * 100), v => settings.pdfScale = v / 100,
+    () => { if (format === 'pdf') { settings.pdfMode = 'custom'; syncSettingsUI(); applyPdfZoom(); } });
   syncSettingsUI();
 }
 

@@ -155,15 +155,15 @@ function langStr(v){
   return String(v);
 }
 async function toWebp600(blob){
-  try{
-    var bmp = await createImageBitmap(blob);
-    var w = 600, h = Math.max(1, Math.round(bmp.height * (600 / bmp.width)));
-    var cv = document.createElement('canvas');
-    cv.width = w; cv.height = h;
-    cv.getContext('2d').drawImage(bmp, 0, 0, w, h);
-    if(bmp.close) bmp.close();
-    return await new Promise(function(res){ cv.toBlob(res, 'image/webp', 0.85); });
-  }catch(e){ return blob; }
+  var bmp = await createImageBitmap(blob);
+  var w = 600, h = Math.max(1, Math.round(bmp.height * (600 / bmp.width)));
+  var cv = document.createElement('canvas');
+  cv.width = w; cv.height = h;
+  cv.getContext('2d').drawImage(bmp, 0, 0, w, h);
+  if(bmp.close) bmp.close();
+  var webp = await new Promise(function(res){ cv.toBlob(res, 'image/webp', 0.85); });
+  if(!webp) throw new Error('webp compress failed');
+  return webp;
 }
 async function makeZipLoader(file){
   var zip = await import('/js/vendor/foliate-js/vendor/zip.js');

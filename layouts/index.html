@@ -108,6 +108,7 @@ var T = {
   noBookVisitor: isEn ? 'No public books yet.' : '暂时没有公开的书。',
   unknownAuthor: isEn ? 'Unknown author' : '未知作者',
   cont: isEn ? 'Continue reading' : '继续阅读',
+  start: isEn ? 'Start reading' : '开始阅读',
   edit: isEn ? 'Edit info' : '编辑信息',
   cover: isEn ? 'Change cover' : '更换封面',
   coverFail: isEn ? 'Failed to replace cover' : '更换封面失败',
@@ -408,8 +409,8 @@ function openSheet(id){
     ? '<div class="mt-4"><div class="flex justify-between text-xs text-m-on-surface-variant mb-1.5"><span>' + T.progress + '</span><span>' + fmtPct(p) + '</span></div>' +
       '<div class="h-2 rounded-full bg-m-container overflow-hidden"><div class="h-full rounded-full bg-m-primary" style="width:' + fmtPct(p) + '"></div></div></div>'
     : '';
-  /* 按钮区：「继续阅读」是唯一主按钮（全宽）；owner 第二行：编辑信息 / 更换封面 / 删除 */
-  var btns = '<a href="' + readBase + '?id=' + encodeURIComponent(b.id) + '" class="w-full h-12 mt-5 inline-flex items-center justify-center rounded-full bg-m-primary text-m-on-primary text-sm font-bold">' + T.cont + '</a>';
+  /* 按钮区：有进度显示「继续阅读」，无进度（含 visitor）显示「开始阅读」；owner 第二行：编辑信息 / 更换封面 / 删除 */
+  var btns = '<a href="' + readBase + '?id=' + encodeURIComponent(b.id) + '" class="w-full h-12 mt-5 inline-flex items-center justify-center rounded-full bg-m-primary text-m-on-primary text-sm font-bold">' + (p > 0 ? T.cont : T.start) + '</a>';
   if(isOwner){
     btns += '<div class="flex gap-2 mt-2">' +
       '<a href="' + adminBase + '#book-' + encodeURIComponent(b.id) + '" class="flex-1 h-12 px-3 inline-flex items-center justify-center rounded-full bg-m-container text-m-on-surface text-sm font-bold">' + T.edit + '</a>' +
@@ -499,16 +500,6 @@ document.getElementById('sheet-body').addEventListener('click', function(e){
 /* ---- 更换封面（owner；与后台管理页同流程：选图 → 压 WebP 600 → POST /api/admin/cover → PUT /api/admin/book） ---- */
 var coverInput = document.getElementById('bk-cover-input');
 var coverTargetId = null;
-function bkToWebp600(blob){
-  return createImageBitmap(blob).then(function(bmp){
-    var w = 600, h = Math.max(1, Math.round(bmp.height * (600 / bmp.width)));
-    var cv = document.createElement('canvas');
-    cv.width = w; cv.height = h;
-    cv.getContext('2d').drawImage(bmp, 0, 0, w, h);
-    if(bmp.close) bmp.close();
-    return new Promise(function(res){ cv.toBlob(res, 'image/webp', 0.85); });
-  }).catch(function(){ return blob; });
-}
 if(coverInput) coverInput.addEventListener('change', async function(){
   var f = coverInput.files && coverInput.files[0];
   coverInput.value = '';
@@ -516,8 +507,9 @@ if(coverInput) coverInput.addEventListener('change', async function(){
   var b = id && bookById[id];
   if(!f || !b || !isOwner) return;
   try{
-    var webp = await bkToWebp600(f);
-    if(!webp) throw new Error('compress failed');
+    /* 用 helpers 的 toWebp600；压缩失败直接抛错，不回退原图 */
+    var helpers = window.SgxUploadQueue.helpers(isEn);
+    var webp = await helpers.toWebp600(f);
     /* helpers.api 与管理页同一份：same-origin 凭证 + app token 失效自动跳复验 */
     var apiH = window.SgxUploadQueue.helpers(isEn).api;
     var key = b.cover_key || ('covers/' + b.id + '.webp');
