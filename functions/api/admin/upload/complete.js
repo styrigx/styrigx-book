@@ -3,11 +3,23 @@
 // 注：sha256 为必填（books.sha256 列 NOT NULL + UNIQUE，init 阶段客户端已计算）。
 // in_shelf: 1=上架到主站书单，默认 0。
 // 成功 → {id}
+// 2.10.2：顶层 try/catch —— 未捕获异常不再直接 500，而是 abort multipart +
+// 清理上传会话后返回短错误码（不暴露内部细节）。
 import { json, err, methodNotAllowed, BOOK_KEY_RE, COVER_KEY_RE, storageEnabled, storageDisabledResponse } from '../../_lib.js';
 import { requireOwner } from '../../_auth.js';
 import { verifyUploadSession, clearUploadSession } from './_sessions.js';
 
 const SHA256_RE = /^[a-fA-F0-9]{64}$/;
+
+/* 中止 multipart 上传并清理上传会话（自身不抛错）。 */
+async function abortAndClear(env, key, uploadId) {
+  try {
+    await env.BOOKS.abortMultipartUpload(key, uploadId);
+  } catch {
+    // 忽略
+  }
+  await clearUploadSession(env, uploadId);
+}
 
 export async function onRequest(context) {
   const { request, env } = context;
@@ -22,6 +34,17 @@ export async function onRequest(context) {
   if (!uploadId) return err('missing uploadId', 400);
   if (!key || !BOOK_KEY_RE.test(key)) return err('invalid key', 400);
 
+  try {
+    return await handleComplete(context, { uploadId, key, parts, sha256, meta, coverKey });
+  } catch {
+    // 未捕获异常：中止上传、清理会话，返回短错误码
+    await abortAndClear(env, key, uploadId);
+    return err('complete-failed', 500);
+  }
+}
+
+async function handleComplete(context, { uploadId, key, parts, sha256, meta, coverKey }) {
+  const { env } = context;
   const { response } = await requireOwner(context);
   if (response) return response;
   // 只验 owner + 上传会话（init 时已验过通行证）
@@ -49,12 +72,7 @@ export async function onRequest(context) {
     .bind(sha256.toLowerCase())
     .first();
   if (dup) {
-    try {
-      await env.BOOKS.abortMultipartUpload(key, uploadId);
-    } catch {
-      // 忽略
-    }
-    await clearUploadSession(env, uploadId);
+    await abortAndClear(env, key, uploadId);
     return json({ exists: true, book: { id: dup.id } }, 409);
   }
 
@@ -64,11 +82,15 @@ export async function onRequest(context) {
       uploadId,
       parts.map((p) => ({ partNumber: p.partNumber, etag: p.etag }))
     );
-  } catch (e) {
-    return err('complete failed: ' + (e && e.message ? e.message : 'unknown'), 400);
+  } catch {
+    await abortAndClear(env, key, uploadId);
+    return err('complete-failed', 400);
   }
   const head = await env.BOOKS.head(key);
-  if (!head) return err('upload not found after complete', 500);
+  if (!head) {
+    await abortAndClear(env, key, uploadId);
+    return err('upload-not-found', 500);
+  }
 
   let cover_key = null;
   if (coverKey) {
@@ -102,8 +124,9 @@ export async function onRequest(context) {
         now
       )
       .run();
-  } catch (e) {
-    return err('db insert failed: ' + (e && e.message ? e.message : 'unknown'), 500);
+  } catch {
+    await abortAndClear(env, key, uploadId);
+    return err('db-insert-failed', 500);
   }
   await clearUploadSession(env, uploadId);
   return json({ id });
