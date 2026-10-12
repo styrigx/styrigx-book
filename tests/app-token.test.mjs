@@ -351,7 +351,7 @@ globalThis.fetch = realFetch;
 
 /* ===== 前端：403 分类（app-token-* / upload-session-invalid 跳复验）===== */
 await test('前端：app-token-required / app-token-invalid / upload-session-invalid 识别为跳转', async () => {
-  const src = readFileSync(new URL('../static/js/upload-queue.js', import.meta.url), 'utf8');
+  const src = readFileSync(new URL('../assets/js/upload-queue.js', import.meta.url), 'utf8');
   globalThis.window = globalThis;
   eval(src);
   const { appTokenErrorCode, appVerifyUrl, describe403 } = globalThis.SgxUploadQueue;
@@ -391,7 +391,7 @@ await test('前端：app-token-required / app-token-invalid / upload-session-inv
 });
 
 await test('前端：上传中途被拒直接跳转（不弹 confirm）', () => {
-  const src = readFileSync(new URL('../static/js/upload-queue.js', import.meta.url), 'utf8');
+  const src = readFileSync(new URL('../assets/js/upload-queue.js', import.meta.url), 'utf8');
   // 不再用 window.confirm，直接 location.href 跳授权页
   assert.ok(!src.includes('window.confirm('), '不应再弹确认框，直接跳转');
   assert.ok(src.includes('授权已失效，请重新授权'), '应有中文提示文案');

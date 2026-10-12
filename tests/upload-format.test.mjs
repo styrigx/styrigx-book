@@ -1,7 +1,7 @@
 // 上传格式测试：确认 checkMagic 返回大写格式，但发送到 init 时转小写
 // 运行：node tests/upload-format.test.mjs
 //
-// 背景：static/js/upload-queue.js 的 checkMagic 返回 format 为 'EPUB' / 'PDF'（大写），
+// 背景：assets/js/upload-queue.js 的 checkMagic 返回 format 为 'EPUB' / 'PDF'（大写），
 // 而 functions/api/admin/upload/init.js 只接受 'epub' / 'pdf'（小写）。
 // 修复：客户端发送时用 item.format.toLowerCase()。
 
@@ -27,7 +27,7 @@ function test(name, fn) {
   }
 }
 
-const uploadQueueJs = fs.readFileSync(path.join(repoRoot, 'static/js/upload-queue.js'), 'utf8');
+const uploadQueueJs = fs.readFileSync(path.join(repoRoot, 'assets/js/upload-queue.js'), 'utf8');
 const initJs = fs.readFileSync(path.join(repoRoot, 'functions/api/admin/upload/init.js'), 'utf8');
 
 console.log('upload-format:');

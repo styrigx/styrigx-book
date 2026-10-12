@@ -17,7 +17,7 @@
   </div>
 
   <div id="adm-main" class="hidden">
-    {{/* 上传区（与书架 FAB 共用 partial + static/js/upload-queue.js） */}}
+    {{/* 上传区（与书架 FAB 共用 partial + assets/js/upload-queue.js） */}}
     <section class="mb-10 rounded-[1.75rem] bg-m-container-lowest border border-m-outline/40 p-4 sm:p-5 shadow-sm">
       <h2 class="text-base font-extrabold text-m-on-surface mb-1 px-1">{{ if $isEn }}Add books{{ else }}上传新书{{ end }}</h2>
       <p class="text-xs text-m-on-surface-variant mb-4 px-1">{{ if $isEn }}Files are parsed locally first — fill in the info, then upload.{{ else }}文件先在本地解析，填好信息后再上传。{{ end }}</p>
@@ -54,7 +54,7 @@
 
 {{ define "pagejs" }}
 {{ $isEn := or (eq .Lang "en") (hasPrefix .RelPermalink "/en/") }}
-<script src="/js/upload-queue.js"></script>
+<script src="{{ (resources.Get "js/upload-queue.js" | minify | fingerprint).RelPermalink }}"></script>
 <script>
 (function(){
 "use strict";

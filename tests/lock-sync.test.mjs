@@ -6,7 +6,7 @@
 //      否则 401 {ok:false}，一律 Cache-Control: no-store；非 GET → 405
 //   2. functions/_middleware.js — 受保护 HTML 响应加 no-store；302 锁屏跳转带 no-store；
 //      visitor 只读放行
-//   3. static/js/sgx-lock-sync.js — 401 处理规则（isLockSignal / checkSession / apiFetch），
+//   3. assets/js/sgx-lock-sync.js — 401 处理规则（isLockSignal / checkSession / apiFetch），
 //      网络错误不 reload（fail open）
 //   4. functions/api/_auth.js requireOwner — owner 放行 / visitor 403 / 未登录 401；
 //      四段旧 cookie / 过期 / epoch 过旧 / 伪造签名一律拒绝
@@ -21,10 +21,10 @@ import { onRequest as mwOnRequest } from '../functions/_middleware.js';
 import { verifySessionCookie, getCookieValue } from '../functions/_sgx-cookie.js';
 import { requireOwner } from '../functions/api/_auth.js';
 
-/* static/js/sgx-lock-sync.js 是浏览器 IIFE（module.exports 分支只在 CJS 下生效）。
+/* assets/js/sgx-lock-sync.js 是浏览器 IIFE（module.exports 分支只在 CJS 下生效）。
    package.json 为 "type": "module"，createRequire 会把它当 ESM 加载导致导出丢失，
    这里用 vm 在 CJS 沙箱里执行，保证测到的是 #8 的真实导出。 */
-const sgxSrc = readFileSync(new URL('../static/js/sgx-lock-sync.js', import.meta.url), 'utf8');
+const sgxSrc = readFileSync(new URL('../assets/js/sgx-lock-sync.js', import.meta.url), 'utf8');
 const sgxSandbox = { module: { exports: {} }, console };
 vm.createContext(sgxSandbox);
 vm.runInContext(sgxSrc, sgxSandbox);
