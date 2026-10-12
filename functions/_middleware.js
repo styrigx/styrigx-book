@@ -131,6 +131,32 @@ async function withNoStoreForHtml(res) {
   });
 }
 
+/* 指纹化 JS 文件名模式：Hugo Pipes fingerprint 产出如
+   upload-queue.min.<sha>.js，中间有一段十六进制哈希。 */
+function isFingerprintedJs(path) {
+  return /^\/js\/.+\.[0-9a-f]{8,}\.(js|mjs)$/.test(path);
+}
+
+/* /js/ 下的脚本缓存策略：
+   - 已指纹化（文件名带哈希）：public, max-age=31536000, immutable
+   - 未指纹化：no-cache（每次重新验证，避免部署后客户端仍跑旧脚本）
+   注意：本 middleware 是根目录中间件，静态资源走 isWhitelisted 直接
+   return next()，响应仍算「经过 Functions」，Cloudflare Pages 的
+   static/_headers 规则对这类响应不生效，所以在这里直接设头。 */
+async function withJsCacheHeaders(path, res) {
+  const headers = new Headers(res.headers);
+  if (isFingerprintedJs(path)) {
+    headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+  } else {
+    headers.set('Cache-Control', 'no-cache');
+  }
+  return new Response(res.body, {
+    status: res.status,
+    statusText: res.statusText,
+    headers,
+  });
+}
+
 export async function onRequest(context) {
   const { request, env, next } = context;
 
@@ -147,7 +173,10 @@ export async function onRequest(context) {
   const url = new URL(request.url);
   const path = url.pathname;
 
-  if (isWhitelisted(path)) return next();
+  if (isWhitelisted(path)) {
+    if (path.startsWith('/js/')) return withJsCacheHeaders(path, await next());
+    return next();
+  }
 
   const cookies = getCookies(request, COOKIE_NAME);
   for (const c of cookies) {

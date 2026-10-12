@@ -13,7 +13,7 @@ import { readFileSync } from 'node:fs';
 
 // stub window/document/fetch：只加载顶层分类函数（init 闭包不执行）
 globalThis.window = {};
-const src = readFileSync(new URL('../static/js/upload-queue.js', import.meta.url), 'utf8');
+const src = readFileSync(new URL('../assets/js/upload-queue.js', import.meta.url), 'utf8');
 // 截取顶层部分（window.SgxUploadQueue.init 之前），避免执行浏览器相关代码
 const topSrc = src.slice(0, src.indexOf('window.SgxUploadQueue.init = function'));
 eval(topSrc);

@@ -1,4 +1,4 @@
-/* static/js/sgx-lock-sync.js
+/* assets/js/sgx-lock-sync.js
  * SGX 锁屏同步（L6 前端，不跨层：只做“复查 + 重载”）
  *
  * 主站「立即锁定」后，本页切回前台 / bfcache 恢复时，向服务端确认会话：

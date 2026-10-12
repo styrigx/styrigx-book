@@ -1,4 +1,9 @@
-# 未指纹化的 JS：每次重新验证，避免部署后客户端仍跑旧脚本。
-# （CSS/图片已走 Hugo fingerprint，无需在此处理。）
-/js/*
-  Cache-Control: no-cache
+# 注意：本仓库的 functions/_middleware.js 是根目录中间件，匹配所有路由。
+# 静态资源虽在 isWhitelisted 里直接 return next()，响应仍算「经过 Functions」，
+# Cloudflare Pages 的 _headers 规则对这类响应不生效。
+# 因此 JS 缓存策略在 functions/_middleware.js 的 withJsCacheHeaders 里直接设头：
+#   - 已指纹化（Hugo Pipes fingerprint，文件名带哈希）：public, max-age=31536000, immutable
+#   - 未指纹化：no-cache
+# 下面这条 _headers 规则保留作文档，但实际不生效，不要依赖它。
+# /js/*
+#   Cache-Control: no-cache
