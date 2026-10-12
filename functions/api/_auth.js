@@ -4,7 +4,7 @@
 // 下划线开头，不会被 Pages 当作路由。
 
 import { err } from './_lib.js';
-import { verifySessionCookieStrict, getCookieValue, fetchSessionEpoch, fetchAppEpoch } from '../_sgx-cookie.js';
+import { verifySessionCookieStrict, getCookieValue, fetchSessionEpoch, fetchAppEpochFresh } from '../_sgx-cookie.js';
 import { getAppCookieValue, parseAppToken, verifyAppToken, APP_AUD } from '../_app-token.js';
 
 /**
@@ -41,6 +41,8 @@ export async function requireOwner(context) {
  * 2.10.0：校验 SGX_APP_PUBLIC 验签 + aud=book + scope=upload + exp 有效 +
  *          session epoch 与主站当前一致 + appEpoch 不低于主站当前 app.book。
  * 缺失或无效一律 403（fail closed）。不区分 visitor/未登录，统一 403。
+ * appEpoch 用强制刷新（不走 60 秒缓存）：init 必须看到最新值，
+ * 过期 token 在 init 即 403 app-token-invalid，而不是放行后在 part 才 403。
  * 用法：const { response } = await requireAppToken(context); if (response) return response;
  */
 export async function requireAppToken(context) {
@@ -50,7 +52,7 @@ export async function requireAppToken(context) {
     return { response: err('app-token-required', 403) };
   }
   const latestEpoch = await fetchSessionEpoch();
-  const latestAppEpoch = await fetchAppEpoch(APP_AUD);
+  const latestAppEpoch = await fetchAppEpochFresh(APP_AUD);
   const ok = await verifyAppToken(val, env.SGX_APP_PUBLIC, latestEpoch, latestAppEpoch);
   if (!ok) {
     return { response: err('app-token-invalid', 403) };

@@ -2,8 +2,9 @@
 window.SgxUploadQueue = window.SgxUploadQueue || {};
 
 /* ---- 通行证 403 分类（顶层：FAB 预检与队列共用） ----
-   只有 error 为 app-token-required / app-token-invalid 时才跳主站复验；
-   其他 403（visitor / 会话失效 / 上传会话无效）走原有逻辑，不跳。 */
+   需要重新授权的错误码：app-token-required / app-token-invalid / upload-session-invalid
+   （upload-session-invalid 表示主站 app-epoch 已加一，旧通行证失效，需重新授权）。
+   其他 403 按错误码给中文提示，不跳。 */
 window.SgxUploadQueue.appVerifyUrl = function(){
   return 'https://styrigx.com/app-verify/?aud=book&scope=upload&return=' + encodeURIComponent(window.location.href);
 };
@@ -12,9 +13,28 @@ window.SgxUploadQueue.appTokenErrorCode = async function(res){
   try{
     var j = await res.clone().json();
     var e = j && j.error;
-    if(e === 'app-token-required' || e === 'app-token-invalid') return e;
+    if(e === 'app-token-required' || e === 'app-token-invalid' || e === 'upload-session-invalid') return e;
   }catch(x){}
   return null;
+};
+/* 403 错误码 → 中文提示（不直接显示 HTTP 状态码）。
+   返回 {reauth:bool, msg:string}：reauth 为 true 时直接跳授权页。 */
+window.SgxUploadQueue.describe403 = async function(res, isEn){
+  var code = null;
+  try{
+    var j = await res.clone().json();
+    code = j && j.error;
+  }catch(x){}
+  if(code === 'app-token-required' || code === 'app-token-invalid' || code === 'upload-session-invalid'){
+    return { reauth: true, msg: isEn ? 'Authorization expired, please re-authorize' : '授权已失效，请重新授权' };
+  }
+  if(code === 'upload-session-expired'){
+    return { reauth: false, msg: isEn ? 'Upload session expired, please re-upload' : '上传会话已过期，请重新上传' };
+  }
+  if(code === 'forbidden'){
+    return { reauth: false, msg: isEn ? 'No permission' : '无权限' };
+  }
+  return { reauth: false, msg: (isEn ? 'Upload failed: ' : '上传失败：') + (code || 'HTTP 403') };
 };
 /* 上传队列开始前（选文件之前）预检：通行证无效返回 false，调用方直接跳复验 */
 window.SgxUploadQueue.appCheck = async function(){
@@ -30,16 +50,6 @@ window.SgxUploadQueue.init = function(prefix, opts){
 "use strict";
 var isEn = !!opts.isEn;
 
-/* 上传中途被拒：先提示「需要重新验证，已完成的不受影响」，用户点确认后再跳，不直接 location.href */
-async function confirmReauth(){
-  var msg = isEn ? 'Re-verification needed. Completed uploads are not affected. Go to verify now?'
-                 : '需要重新验证，已完成的不受影响，现在去验证吗？';
-  if(window.confirm(msg)){
-    window.location.href = window.SgxUploadQueue.appVerifyUrl();
-    return true;
-  }
-  return false;
-}
 /* 旧 checkAppAuth 保留给管理页 helpers：分类后跳转（兼容原有调用） */
 async function checkAppAuth(res){
   var code = await window.SgxUploadQueue.appTokenErrorCode(res);
@@ -502,12 +512,14 @@ async function uploadItem(item){
       renderQueue(); return;
     }
     if(initR.status === 403){
-      // 通行证问题 → 先提示再跳；其他 403 走原有错误逻辑
-      if(await window.SgxUploadQueue.appTokenErrorCode(initR)){
-        await confirmReauth();
-        item.status = 'error'; item.err = T.needReauth; renderQueue(); return;
+      // 403 按错误码给中文提示；需重新授权的直接跳授权页（带 return）
+      var d403 = await window.SgxUploadQueue.describe403(initR, isEn);
+      if(d403.reauth){
+        item.status = 'error'; item.err = d403.msg; renderQueue();
+        window.location.href = window.SgxUploadQueue.appVerifyUrl();
+        return;
       }
-      throw new Error('init HTTP 403');
+      throw new Error(d403.msg);
     }
     if(!initR.ok) throw new Error('init HTTP ' + initR.status);
     var init = await initR.json();
@@ -526,12 +538,13 @@ async function uploadItem(item){
             '&key=' + encodeURIComponent(item.key) + '&partNumber=' + (i + 1),
             {method: 'POST', body: blob, signal: signal});
           if(pr.status === 403){
-            // 通行证问题不重试：先提示，用户确认后再跳
-            if(await window.SgxUploadQueue.appTokenErrorCode(pr)){
-              await confirmReauth();
-              throw new Error(T.needReauth);
+            // 403 按错误码给中文提示；需重新授权的不重试，直接跳授权页（带 return）
+            var pd403 = await window.SgxUploadQueue.describe403(pr, isEn);
+            if(pd403.reauth){
+              window.location.href = window.SgxUploadQueue.appVerifyUrl();
+              throw new Error(pd403.msg);
             }
-            throw new Error('part ' + (i + 1) + ' HTTP 403');
+            throw new Error(pd403.msg);
           }
           if(!pr.ok) throw new Error('part ' + (i + 1) + ' HTTP ' + pr.status);
           var pj = await pr.json();
@@ -559,9 +572,12 @@ async function uploadItem(item){
       var _uuid = item.key.slice('books/'.length, item.key.lastIndexOf('.'));
       var cr = await api('/api/admin/cover?key=' + encodeURIComponent('covers/' + _uuid + '.webp'),
         {method: 'POST', body: item.coverBlob, headers: {'Content-Type': 'image/webp'}, signal: signal});
-      if(cr.status === 403 && await window.SgxUploadQueue.appTokenErrorCode(cr)){
-        await confirmReauth();
-        throw new Error(T.needReauth);
+      if(cr.status === 403){
+        var cd403 = await window.SgxUploadQueue.describe403(cr, isEn);
+        if(cd403.reauth){
+          window.location.href = window.SgxUploadQueue.appVerifyUrl();
+        }
+        throw new Error(cd403.msg);
       }
       if(!cr.ok) throw new Error('cover HTTP ' + cr.status);
       coverKey = (await cr.json()).key || null;
@@ -577,9 +593,12 @@ async function uploadItem(item){
       method: 'POST', headers: {'Content-Type': 'application/json'}, signal: signal,
       body: JSON.stringify({uploadId: item.uploadId, key: item.key, parts: parts, sha256: item.sha256, meta: meta})
     });
-    if(cr2.status === 403 && await window.SgxUploadQueue.appTokenErrorCode(cr2)){
-      await confirmReauth();
-      throw new Error(T.needReauth);
+    if(cr2.status === 403){
+      var c2d403 = await window.SgxUploadQueue.describe403(cr2, isEn);
+      if(c2d403.reauth){
+        window.location.href = window.SgxUploadQueue.appVerifyUrl();
+      }
+      throw new Error(c2d403.msg);
     }
     if(!cr2.ok) throw new Error('complete HTTP ' + cr2.status);
     var done = await cr2.json();
@@ -636,9 +655,12 @@ async function saveMeta(item){
   try{
     var r = await api('/api/admin/book?id=' + encodeURIComponent(item.book.id),
       {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({title: title})});
-    if(r.status === 403 && await window.SgxUploadQueue.appTokenErrorCode(r)){
-      await confirmReauth();
-      throw new Error(T.needReauth);
+    if(r.status === 403){
+      var md403 = await window.SgxUploadQueue.describe403(r, isEn);
+      if(md403.reauth){
+        window.location.href = window.SgxUploadQueue.appVerifyUrl();
+      }
+      throw new Error(md403.msg);
     }
     if(!r.ok) throw new Error('HTTP ' + r.status);
     item.title = title; item.book.title = title; item.book.updated_at = new Date().toISOString();
@@ -660,9 +682,12 @@ async function replaceCover(item, file){
     var uuid = item.key.slice('books/'.length, item.key.lastIndexOf('.'));
     var r = await api('/api/admin/cover?key=' + encodeURIComponent('covers/' + uuid + '.webp'),
       {method: 'POST', body: webp, headers: {'Content-Type': 'image/webp'}});
-    if(r.status === 403 && await window.SgxUploadQueue.appTokenErrorCode(r)){
-      await confirmReauth();
-      throw new Error(T.needReauth);
+    if(r.status === 403){
+      var rd403 = await window.SgxUploadQueue.describe403(r, isEn);
+      if(rd403.reauth){
+        window.location.href = window.SgxUploadQueue.appVerifyUrl();
+      }
+      throw new Error(rd403.msg);
     }
     if(!r.ok) throw new Error('cover HTTP ' + r.status);
     var key = (await r.json()).key;
