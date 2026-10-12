@@ -3,7 +3,9 @@
 //   1. invalid-file-magic（400）→ 中文提示 + 字节数，不重试
 //   2. part-body-empty（400）→ 可重试
 //   3. part-r2-error（500）→ 不重试
-//   4. 403 upload-session-invalid → 跳授权（DIAG 码已删除，统一为正式码）
+//   4. 403 upload-session-invalid → 会话已失效（sessionGone），由调用方自动从 init 重建，
+//      不直接跳授权页（重建时若通行证真失效，init 会返回需授权的 403）
+//   4b. 403 upload-session-expired → 同样 sessionGone
 //   5. 403 app-token-invalid → 跳授权
 //   6. describe403 兜底不再带「上传失败：」前缀（UI 统一加，避免双前缀）
 // 运行：node tests/upload-part-error.test.mjs
@@ -57,11 +59,25 @@ await test('part-r2-error → 不重试', async () => {
   assert.ok(r.msg.includes('存储服务异常'));
 });
 
-await test('403 upload-session-invalid → 跳授权', async () => {
+await test('403 upload-session-invalid → 会话已失效（自动重建，不直接跳授权）', async () => {
   const r = await SQ.describePartError(fakeRes(403, { error: 'upload-session-invalid' }), 1, false);
   assert.equal(r.retryable, false);
-  assert.equal(r.reauth, true);
-  assert.ok(r.msg.includes('重新授权'), '应提示重新授权：' + r.msg);
+  assert.equal(r.reauth, false);
+  assert.equal(r.sessionGone, true);
+});
+
+await test('403 upload-session-expired → 会话已失效（自动重建）', async () => {
+  const r = await SQ.describePartError(fakeRes(403, { error: 'upload-session-expired' }), 1, false);
+  assert.equal(r.retryable, false);
+  assert.equal(r.reauth, false);
+  assert.equal(r.sessionGone, true);
+  assert.ok(r.msg.includes('过期'), '应提示会话过期：' + r.msg);
+});
+
+await test('404 → 会话已失效（自动重建）', async () => {
+  const r = await SQ.describePartError(fakeRes(404, { error: 'not-found' }), 1, false);
+  assert.equal(r.sessionGone, true);
+  assert.equal(r.retryable, false);
 });
 
 await test('403 app-token-invalid → 跳授权', async () => {
