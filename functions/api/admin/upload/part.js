@@ -23,10 +23,13 @@ function checkMagic(buf, format) {
   return b[0] === 0x50 && b[1] === 0x4b && b[2] === 0x03 && b[3] === 0x04; // PK\x03\x04
 }
 
-/* 中止 multipart 上传并清理上传会话（自身不抛错，失败只打日志）。 */
+/* 中止 multipart 上传并清理上传会话（自身不抛错，失败只打日志）。
+   R2Bucket 绑定只有 createMultipartUpload / resumeMultipartUpload；
+   uploadPart / abort / complete 是 R2MultipartUpload 对象的方法（S3 风格的
+   bucket.uploadPart 等在绑定上不存在，调用会 TypeError）。 */
 async function abortAndClear(env, key, uploadId) {
   try {
-    await env.BOOKS.abortMultipartUpload(key, uploadId);
+    await env.BOOKS.resumeMultipartUpload(key, uploadId).abort();
   } catch (e) {
     // abort 失败不影响主流程
     console.error('[upload-part]', 'abortMultipartUpload', e && e.name, e && e.message);
@@ -85,7 +88,8 @@ export async function onRequest(context) {
 
     let part;
     try {
-      part = await env.BOOKS.uploadPart(key, uploadId, partNumber, buf);
+      /* R2MultipartUpload 对象的方法，不是桶方法 */
+      part = await env.BOOKS.resumeMultipartUpload(key, uploadId).uploadPart(partNumber, buf);
     } catch (e) {
       /* R2 异常：日志保留真实错误（不进响应体），中止上传、清理会话 */
       console.error('[upload-part]', 'part-r2-error', e && e.name, e && e.message);

@@ -3,7 +3,7 @@
 //   1. EPUB 全链路 200，会话在 complete 后清理
 //   2. PDF 全链路 200
 //   3. part 时 R2 uploadPart 抛错 → 500 part-r2-error，且 abort 被调用、会话被清理
-//   4. complete 时 R2 completeMultipartUpload 抛错 → 400 complete-failed，且 abort 被调用、会话被清理
+//   4. complete 时 R2MultipartUpload.complete 抛错 → 400 complete-failed，且 abort 被调用、会话被清理
 //   5. complete 时发生未捕获异常（如 head 抛错）→ 500 complete-failed，且 abort 被调用、会话被清理
 //   6. R2 uploadPart 抛 Error('boom') → console.error 被调用且包含 'boom'，响应体不包含 'boom'
 // 运行：node tests/upload-chain.test.mjs
@@ -79,16 +79,38 @@ function mockDB() {
   };
 }
 
+/* R2 绑定同形 mock：桶上只有 createMultipartUpload / resumeMultipartUpload；
+   uploadPart / abort / complete 是 R2MultipartUpload 对象的方法。
+   桶上故意不提供 S3 风格的 uploadPart/abortMultipartUpload/completeMultipartUpload，
+   代码若误调会 TypeError（与生产一致）。 */
 function mockR2(overrides = {}) {
-  const calls = { abort: 0 };
+  const calls = { abort: 0, uploadPart: 0, complete: 0 };
+  const mpu = {
+    uploadId: 'mpu-1',
+    key: null,
+    async uploadPart(partNumber, value) {
+      calls.uploadPart++;
+      if (overrides.uploadPart) return overrides.uploadPart(partNumber, value);
+      return { partNumber, etag: 'etag-1' };
+    },
+    async abort() {
+      calls.abort++;
+      if (overrides.abort) return overrides.abort();
+    },
+    async complete(parts) {
+      calls.complete++;
+      if (overrides.complete) return overrides.complete(parts);
+      return {};
+    },
+  };
   return {
     _calls: calls,
-    async createMultipartUpload(key) { return { uploadId: 'mpu-1', key }; },
-    async uploadPart() { return { etag: 'etag-1' }; },
-    async abortMultipartUpload() { calls.abort++; },
-    async completeMultipartUpload() {},
-    async head() { return { size: 273000 }; },
-    ...overrides,
+    async createMultipartUpload(key) { mpu.key = key; return mpu; },
+    resumeMultipartUpload(key, uploadId) { return mpu; },
+    async head() {
+      if (overrides.head) return overrides.head();
+      return { size: 273000 };
+    },
   };
 }
 
@@ -291,9 +313,9 @@ await test("R2 uploadPart 抛 Error('boom') → console.error 含 boom，响应�
   assert.ok(!bodyText.includes('boom'), '响应体不应包含 boom（不暴露内部细节）');
 });
 
-await test('complete：R2 completeMultipartUpload 抛错 → 400 complete-failed，abort 被调用，会话被清理', async () => {
+await test('complete：R2MultipartUpload.complete 抛错 → 400 complete-failed，abort 被调用，会话被清理', async () => {
   const db = mockDB();
-  const r2 = mockR2({ async completeMultipartUpload() { throw new Error('r2 boom'); } });
+  const r2 = mockR2({ async complete() { throw new Error('r2 boom'); } });
   const init = await doInit(db, r2, 'epub');
   const pr = await doPart(db, r2, init.key, EPUB_MAGIC);
   assert.equal(pr.status, 200);

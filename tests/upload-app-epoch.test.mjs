@@ -76,11 +76,17 @@ function mockDB() {
   };
 }
 
+/* R2 绑定同形：桶上只有 createMultipartUpload / resumeMultipartUpload */
 function mockR2() {
-  return {
-    async createMultipartUpload(key) { return { uploadId: 'mpu-1', key }; },
+  const mpu = (key) => ({
+    uploadId: 'mpu-1', key,
     async uploadPart() { return { etag: 'etag-1' }; },
-    async abortMultipartUpload() {},
+    async abort() {},
+    async complete() {},
+  });
+  return {
+    async createMultipartUpload(key) { return mpu(key); },
+    resumeMultipartUpload(key, uploadId) { return mpu(key); },
   };
 }
 
@@ -148,7 +154,7 @@ await test('init：token appEpoch=2 与主站一致 → 200', async () => {
   assert.equal(db._sessions.size, 1, '应创建上传会话');
 });
 
-await test('part：会话 app_epoch=1 落后于主站 2 → 403 upload-session-epoch-stale（DIAG 临时）', async () => {
+await test('part：会话 app_epoch=1 落后于主站 2 → 403 upload-session-invalid', async () => {
   _resetEpochCache();
   const db = mockDB();
   const r2 = mockR2();
@@ -164,7 +170,7 @@ await test('part：会话 app_epoch=1 落后于主站 2 → 403 upload-session-e
   const res = await partReq(ctx);
   assert.equal(res.status, 403, 'part 应 403');
   const body = await res.json();
-  assert.equal(body.error, 'upload-session-epoch-stale', '错误码应为 upload-session-epoch-stale（DIAG 临时）');
+  assert.equal(body.error, 'upload-session-invalid', '错误码应为 upload-session-invalid');
 });
 
 await test('集成：init 成功后紧接 part → 200（同一 DB 绑定）', async () => {

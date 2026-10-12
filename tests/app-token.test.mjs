@@ -175,11 +175,25 @@ function mockDB() {
   };
 }
 
+/* R2 绑定同形：桶上只有 createMultipartUpload / resumeMultipartUpload，
+   uploadPart / abort / complete 是 R2MultipartUpload 对象的方法。 */
 const mockR2 = {
-  async createMultipartUpload(key) { return { uploadId: 'mpu-1', key }; },
-  async uploadPart() { return { etag: 'etag-1' }; },
-  async abortMultipartUpload() {},
-  async completeMultipartUpload() {},
+  async createMultipartUpload(key) {
+    return {
+      uploadId: 'mpu-1', key,
+      async uploadPart() { return { etag: 'etag-1' }; },
+      async abort() {},
+      async complete() {},
+    };
+  },
+  resumeMultipartUpload(key, uploadId) {
+    return {
+      uploadId, key,
+      async uploadPart() { return { etag: 'etag-1' }; },
+      async abort() {},
+      async complete() {},
+    };
+  },
   async head() { return { size: 123 }; },
 };
 
