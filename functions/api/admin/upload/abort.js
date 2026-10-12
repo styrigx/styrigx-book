@@ -28,7 +28,8 @@ export async function onRequest(context) {
     if (!storageEnabled(env)) return storageDisabledResponse();
 
     try {
-      await env.BOOKS.abortMultipartUpload(key, uploadId);
+      /* abort 是 R2MultipartUpload 对象的方法（见 part.js 注释） */
+      await env.BOOKS.resumeMultipartUpload(key, uploadId).abort();
     } catch (e) {
       // 幂等：上传不存在也视为成功；日志保留真实错误
       console.error('[upload-abort]', 'abortMultipartUpload', e && e.name, e && e.message);

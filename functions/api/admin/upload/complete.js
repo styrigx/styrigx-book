@@ -15,10 +15,11 @@ import { verifyUploadSession, clearUploadSession } from './_sessions.js';
 
 const SHA256_RE = /^[a-fA-F0-9]{64}$/;
 
-/* 中止 multipart 上传并清理上传会话（自身不抛错，失败只打日志）。 */
+/* 中止 multipart 上传并清理上传会话（自身不抛错，失败只打日志）。
+   abort 是 R2MultipartUpload 对象的方法（见 part.js 注释）。 */
 async function abortAndClear(env, key, uploadId) {
   try {
-    await env.BOOKS.abortMultipartUpload(key, uploadId);
+    await env.BOOKS.resumeMultipartUpload(key, uploadId).abort();
   } catch (e) {
     // 忽略
     console.error('[upload-complete]', 'abortMultipartUpload', e && e.name, e && e.message);
@@ -102,9 +103,8 @@ async function handleComplete(context, { uploadId, key, parts, sha256, meta, cov
   }
 
   try {
-    await env.BOOKS.completeMultipartUpload(
-      key,
-      uploadId,
+    /* complete 是 R2MultipartUpload 对象的方法 */
+    await env.BOOKS.resumeMultipartUpload(key, uploadId).complete(
       parts.map((p) => ({ partNumber: p.partNumber, etag: p.etag }))
     );
   } catch (e) {
