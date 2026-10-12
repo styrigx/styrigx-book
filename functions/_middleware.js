@@ -146,14 +146,24 @@ function isFingerprintedCss(path) {
    仍可能拿到非预期的 HTML），导致两个问题：
    1. 未解锁访客能拿到页面壳；
    2. 下面的缓存头逻辑只看路径，浏览器会把 HTML 当 JS/CSS 缓存一年。
-   规则：只有「200 + content-type 与路径扩展名匹配」才算命中静态文件；
-   否则（text/html 回落、非 200 等）一律 404 + no-store + 纯文本空体。 */
+   规则：
+   - 304（带 If-None-Match / If-Modified-Since 的重新验证）：原样放行，
+     不检查 content-type（304 本来就可能没有），仍按路径加缓存头；
+   - 206（分段请求，如字体/媒体）：content-type 匹配时放行；
+   - 200：只有 content-type 与路径扩展名匹配才算命中静态文件；
+   - 其余（200 + text/html 回落、404、其他错误码）：一律 404 + no-store
+     + 纯文本空体。 */
 function staticGuard(path, res) {
+  /* 304 重新验证命中：Pages 已确认资源未变，原样放行。
+     未指纹化的 JS/CSS 是 no-cache，每次都会重新验证走 304。 */
+  if (res.status === 304) return null;
+
   const dot = path.lastIndexOf('.');
   const ext = dot !== -1 ? path.slice(dot + 1).toLowerCase() : '';
   const ct = (res.headers.get('content-type') || '').toLowerCase();
 
-  let ok = res.status === 200 && !ct.includes('text/html');
+  /* 200 与 206 都需要类型匹配（排除 text/html 回落） */
+  let ok = (res.status === 200 || res.status === 206) && !ct.includes('text/html');
   if (ok && (ext === 'js' || ext === 'mjs')) ok = ct.includes('javascript');
   if (ok && ext === 'css') ok = ct.includes('text/css');
 

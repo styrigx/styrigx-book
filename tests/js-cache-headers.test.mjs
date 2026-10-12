@@ -9,8 +9,11 @@
 //
 // 静态守卫（staticGuard）：文件不存在时 Pages 回落到 index.html（200 text/html），
 // 未解锁访客能拿到 HTML 壳；更糟的是缓存头逻辑只看路径，浏览器会把 HTML
-// 当 JS/CSS 缓存一年。规则：只有「200 + content-type 与扩展名匹配」才算命中；
-// 否则一律 404 + no-store + 纯文本体。
+// 当 JS/CSS 缓存一年。规则：
+//   - 304（重新验证命中）：原样放行，不查 content-type，仍按路径加缓存头；
+//   - 206（分段）：content-type 与扩展名匹配时放行；
+//   - 200：content-type 与扩展名匹配才算命中；
+//   - 其余（200 + text/html 回落、404、其他错误码）：一律 404 + no-store + 纯文本体。
 
 import { onRequest } from '../functions/_middleware.js';
 import assert from 'node:assert/strict';
@@ -31,15 +34,22 @@ function test(name, fn) {
     });
 }
 
-/* mock next()：按 content-type 返回指定响应 */
-function makeContext(path, { status = 200, contentType = 'application/javascript', body = 'x' } = {}) {
+/* mock next()：按 content-type 返回指定响应
+   contentType 传 null 表示响应不带 Content-Type（304 常见）；
+   reqHeaders 模拟浏览器发出的请求头（如 If-None-Match） */
+function makeContext(
+  path,
+  { status = 200, contentType = 'application/javascript', body = 'x', reqHeaders = {} } = {}
+) {
+  const resHeaders = {};
+  if (contentType != null) resHeaders['Content-Type'] = contentType;
   return {
-    request: new Request('https://book.styrigx.com' + path),
+    request: new Request('https://book.styrigx.com' + path, { headers: reqHeaders }),
     env: { SGX_SITE: 'book' },
     next: async () =>
       new Response(body, {
         status,
-        headers: { 'Content-Type': contentType },
+        headers: resHeaders,
       }),
   };
 }
@@ -120,6 +130,74 @@ await test('/js/xxx.js 非 200（如 500）→ 404 + no-store', async () => {
       status: 500,
       contentType: 'application/javascript',
       body: 'err',
+    })
+  );
+  assert.equal(res.status, 404);
+  assert.equal(res.headers.get('Cache-Control'), 'no-store');
+});
+
+console.log('staticGuard（304 / 206 放行）:');
+
+await test('带 If-None-Match 的请求、next() 返回 304 → 结果仍是 304（仍加缓存头）', async () => {
+  const res = await onRequest(
+    makeContext('/js/upload-queue.js', {
+      status: 304,
+      contentType: null, // 304 本来就可能没有 content-type
+      body: null,
+      reqHeaders: { 'If-None-Match': '"3642ecc6"' },
+    })
+  );
+  assert.equal(res.status, 304);
+  assert.equal(res.headers.get('Cache-Control'), 'no-cache');
+});
+
+await test('指纹化 /js/ 的 304 → 304 + immutable（按路径加缓存头）', async () => {
+  const res = await onRequest(
+    makeContext(
+      '/js/upload-queue.min.3642ecc6b53d66210f8cb685868415c15db1a98c7873081a50c560158a2c81fd.js',
+      {
+        status: 304,
+        contentType: null,
+        body: null,
+        reqHeaders: { 'If-Modified-Since': 'Mon, 12 Oct 2026 00:00:00 GMT' },
+      }
+    )
+  );
+  assert.equal(res.status, 304);
+  assert.equal(res.headers.get('Cache-Control'), 'public, max-age=31536000, immutable');
+});
+
+await test('206 分段 + content-type 匹配（/fonts/x.woff2）→ 206 原样放行', async () => {
+  const res = await onRequest(
+    makeContext('/fonts/x.woff2', {
+      status: 206,
+      contentType: 'font/woff2',
+      body: 'WOFF2-PART',
+    })
+  );
+  assert.equal(res.status, 206);
+  assert.equal(await res.text(), 'WOFF2-PART');
+  assert.ok((res.headers.get('Content-Type') || '').includes('font/woff2'));
+});
+
+await test('206 但 content-type 是 text/html（回落）→ 404 + no-store', async () => {
+  const res = await onRequest(
+    makeContext('/js/x.js', {
+      status: 206,
+      contentType: 'text/html',
+      body: '<html></html>',
+    })
+  );
+  assert.equal(res.status, 404);
+  assert.equal(res.headers.get('Cache-Control'), 'no-store');
+});
+
+await test('206 但 content-type 不匹配扩展名（/js/ 配 text/css）→ 404 + no-store', async () => {
+  const res = await onRequest(
+    makeContext('/js/x.js', {
+      status: 206,
+      contentType: 'text/css',
+      body: 'body{}',
     })
   );
   assert.equal(res.status, 404);
