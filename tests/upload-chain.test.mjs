@@ -5,6 +5,7 @@
 //   3. part 时 R2 uploadPart 抛错 → 500 part-failed，且 abort 被调用、会话被清理
 //   4. complete 时 R2 completeMultipartUpload 抛错 → 400 complete-failed，且 abort 被调用、会话被清理
 //   5. complete 时发生未捕获异常（如 head 抛错）→ 500 complete-failed，且 abort 被调用、会话被清理
+//   6. R2 uploadPart 抛 Error('boom') → console.error 被调用且包含 'boom'，响应体不包含 'boom'
 // 运行：node tests/upload-chain.test.mjs
 
 import { generateKeyPairSync, sign } from 'node:crypto';
@@ -267,6 +268,27 @@ await test('part：R2 uploadPart 抛错 → 500 part-failed，abort 被调用，
   assert.equal((await pr.json()).error, 'part-failed');
   assert.equal(r2._calls.abort, 1, '应 abort multipart');
   assert.equal(db._sessions.has('mpu-1'), false, '会话应被清理');
+});
+
+await test("R2 uploadPart 抛 Error('boom') → console.error 含 boom，响应体不含 boom", async () => {
+  const db = mockDB();
+  const r2 = mockR2({ async uploadPart() { throw new Error('boom'); } });
+  const init = await doInit(db, r2, 'epub');
+
+  const logged = [];
+  const origError = console.error;
+  console.error = (...args) => { logged.push(args.join(' ')); };
+  let pr;
+  try {
+    pr = await doPart(db, r2, init.key, EPUB_MAGIC);
+  } finally {
+    console.error = origError;
+  }
+  assert.equal(pr.status, 500);
+  const bodyText = JSON.stringify(await pr.json());
+  assert.equal(JSON.parse(bodyText).error, 'part-failed');
+  assert.ok(logged.some((m) => m.includes('boom')), 'console.error 应包含 boom');
+  assert.ok(!bodyText.includes('boom'), '响应体不应包含 boom（不暴露内部细节）');
 });
 
 await test('complete：R2 completeMultipartUpload 抛错 → 400 complete-failed，abort 被调用，会话被清理', async () => {

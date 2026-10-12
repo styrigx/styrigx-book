@@ -1,6 +1,7 @@
 // POST /api/admin/upload/abort — 取消 multipart 上传，需 Access JWT
 // body: {uploadId, key} → {ok:true}（幂等：上传已不存在也视为成功）
 // 2.10.2：顶层 try/catch —— 未捕获异常返回短错误码 abort-failed（不暴露内部细节）。
+// 日志：每个 catch 先 console.error 打出 [upload-abort] e.name + e.message，再返回短错误码。
 import { json, err, methodNotAllowed, BOOK_KEY_RE, storageEnabled, storageDisabledResponse } from '../../_lib.js';
 import { requireOwner } from '../../_auth.js';
 import { verifyUploadSession, clearUploadSession } from './_sessions.js';
@@ -28,12 +29,14 @@ export async function onRequest(context) {
 
     try {
       await env.BOOKS.abortMultipartUpload(key, uploadId);
-    } catch {
-      // 幂等：上传不存在也视为成功
+    } catch (e) {
+      // 幂等：上传不存在也视为成功；日志保留真实错误
+      console.error('[upload-abort]', 'abortMultipartUpload', e && e.name, e && e.message);
     }
     await clearUploadSession(env, uploadId);
     return json({ ok: true });
-  } catch {
+  } catch (e) {
+    console.error('[upload-abort]', e && e.name, e && e.message);
     return err('abort-failed', 500);
   }
 }

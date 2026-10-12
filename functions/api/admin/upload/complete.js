@@ -7,23 +7,27 @@
 // 清理上传会话后返回短错误码（不暴露内部细节）。
 // 鉴权/会话校验异常只返回 complete-auth-error，不触发 abort（未鉴权时不得写操作）。
 // abortAndClear 内部对 clearUploadSession 也包 try/catch，避免二次抛错。
+// 日志：每个 catch 先 console.error 打出 [upload-complete] e.name + e.message（不打 key 以外的
+// 用户数据、不打密钥），再返回短错误码 —— 日志里必须有真实错误，否则线上 500 查不到根因。
 import { json, err, methodNotAllowed, BOOK_KEY_RE, COVER_KEY_RE, storageEnabled, storageDisabledResponse } from '../../_lib.js';
 import { requireOwner } from '../../_auth.js';
 import { verifyUploadSession, clearUploadSession } from './_sessions.js';
 
 const SHA256_RE = /^[a-fA-F0-9]{64}$/;
 
-/* 中止 multipart 上传并清理上传会话（自身不抛错）。 */
+/* 中止 multipart 上传并清理上传会话（自身不抛错，失败只打日志）。 */
 async function abortAndClear(env, key, uploadId) {
   try {
     await env.BOOKS.abortMultipartUpload(key, uploadId);
-  } catch {
+  } catch (e) {
     // 忽略
+    console.error('[upload-complete]', 'abortMultipartUpload', e && e.name, e && e.message);
   }
   try {
     await clearUploadSession(env, uploadId);
-  } catch {
+  } catch (e) {
     // 清理失败不影响主流程（避免 catch 里再抛变回裸 500）
+    console.error('[upload-complete]', 'clearUploadSession', e && e.name, e && e.message);
   }
 }
 
@@ -49,15 +53,18 @@ export async function onRequest(context) {
     const { response: sessResp } = await verifyUploadSession(context, uploadId, key);
     if (sessResp) return sessResp;
     authed = true;
-  } catch {
+  } catch (e) {
+    // 日志保留真实错误（线上 500 排查用）；对外不暴露细节
+    console.error('[upload-complete]', e && e.name, e && e.message);
     return err('complete-auth-error', 500);
   }
 
   try {
     return await handleComplete(context, { uploadId, key, parts, sha256, meta, coverKey });
-  } catch {
-    // 未捕获异常：中止上传、清理会话，返回短错误码
+  } catch (e) {
+    // 未捕获异常：日志保留真实错误，中止上传、清理会话，返回短错误码
     // 仅在鉴权通过后才会 abort，未鉴权时不写操作
+    console.error('[upload-complete]', e && e.name, e && e.message);
     if (authed) {
       await abortAndClear(env, key, uploadId);
     }
@@ -66,12 +73,8 @@ export async function onRequest(context) {
 }
 
 async function handleComplete(context, { uploadId, key, parts, sha256, meta, coverKey }) {
+  // 鉴权与会话校验已在外层 onRequest 完成，这里不再重复
   const { env } = context;
-  const { response } = await requireOwner(context);
-  if (response) return response;
-  // 只验 owner + 上传会话（init 时已验过通行证）
-  const { response: sessResp } = await verifyUploadSession(context, uploadId, key);
-  if (sessResp) return sessResp;
   if (!storageEnabled(env)) return storageDisabledResponse();
   if (!Array.isArray(parts) || parts.length === 0) return err('invalid parts', 400);
   for (const p of parts) {
@@ -104,7 +107,8 @@ async function handleComplete(context, { uploadId, key, parts, sha256, meta, cov
       uploadId,
       parts.map((p) => ({ partNumber: p.partNumber, etag: p.etag }))
     );
-  } catch {
+  } catch (e) {
+    console.error('[upload-complete]', 'completeMultipartUpload', e && e.name, e && e.message);
     await abortAndClear(env, key, uploadId);
     return err('complete-failed', 400);
   }
@@ -146,7 +150,8 @@ async function handleComplete(context, { uploadId, key, parts, sha256, meta, cov
         now
       )
       .run();
-  } catch {
+  } catch (e) {
+    console.error('[upload-complete]', 'db-insert', e && e.name, e && e.message);
     await abortAndClear(env, key, uploadId);
     return err('db-insert-failed', 500);
   }
