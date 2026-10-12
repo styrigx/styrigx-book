@@ -544,42 +544,52 @@ async function uploadItem(item){
   renderQueue();
   var sleep = function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); };
   try{
-    /* init（含 SHA-256 去重） */
-    var initR = await api('/api/admin/upload/init', {
-      method: 'POST', headers: {'Content-Type': 'application/json'}, signal: signal,
-      body: JSON.stringify({filename: item.file.name, size: item.file.size, sha256: item.sha256, format: item.format.toLowerCase()})
-    });
-    if(initR.status === 409){
-      var j409 = await initR.json().catch(function(){ return {}; });
-      item.status = 'exists'; item.existsInfo = j409.book || null;
-      renderQueue(); return;
-    }
-    if(initR.status === 403){
-      // 403 按错误码给中文提示；需重新授权的直接跳授权页（带 return）
-      var d403 = await window.SgxUploadQueue.describe403(initR, isEn);
-      if(d403.reauth){
-        item.status = 'error'; item.err = d403.msg; renderQueue();
-        window.location.href = window.SgxUploadQueue.appVerifyUrl();
-        return;
+    /* 断点续传：如果已有 uploadId 且有已上传的分片，直接从断点继续，不重新 init。
+       网络瞬断不应导致整本失败，而是自动从失败的分片续传。 */
+    var canResume = item.uploadId && item.key && item.parts && item.parts.length > 0;
+    if(!canResume){
+      /* init（含 SHA-256 去重） */
+      var initR = await api('/api/admin/upload/init', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, signal: signal,
+        body: JSON.stringify({filename: item.file.name, size: item.file.size, sha256: item.sha256, format: item.format.toLowerCase()})
+      });
+      if(initR.status === 409){
+        var j409 = await initR.json().catch(function(){ return {}; });
+        item.status = 'exists'; item.existsInfo = j409.book || null;
+        renderQueue(); return;
       }
-      throw new Error(d403.msg);
+      if(initR.status === 403){
+        // 403 按错误码给中文提示；需重新授权的直接跳授权页（带 return）
+        var d403 = await window.SgxUploadQueue.describe403(initR, isEn);
+        if(d403.reauth){
+          item.status = 'error'; item.err = d403.msg; renderQueue();
+          window.location.href = window.SgxUploadQueue.appVerifyUrl();
+          return;
+        }
+        throw new Error(d403.msg);
+      }
+      if(!initR.ok) throw new Error('init HTTP ' + initR.status);
+      var init = await initR.json();
+      item.uploadId = init.uploadId; item.key = init.key;
+      item.parts = [];
     }
-    if(!initR.ok) throw new Error('init HTTP ' + initR.status);
-    var init = await initR.json();
-    item.uploadId = init.uploadId; item.key = init.key;
     /* 切片上传：4xx 与服务端已中止的错误不重试（重试只会得到 norow，掩盖首次错误）；
-       只对网络错误/可重试错误重试，最多 3 次；错误显示首次错误码并附重试次数 */
+       只对网络错误/可重试错误重试；网络错误最多 5 次（指数退避），其他可重试错误最多 3 次；
+       错误显示首次错误码并附重试次数 */
     var total = item.file.size, n = Math.max(1, Math.ceil(total / CHUNK));
-    var parts = [];
+    var parts = item.parts || [];
+    var startIdx = parts.length; /* 断点续传：从已上传分片之后开始 */
     var uploadedBytes = 0, lastTime = Date.now(), lastBytes = 0;
     item.speed = 0;
     var retrySuffix = function(k){ return isEn ? ' (retried ' + k + '×)' : '（已重试' + k + '次）'; };
-    for(var i = 0; i < n; i++){
+    for(var i = startIdx; i < n; i++){
       var blob = item.file.slice(i * CHUNK, Math.min(total, (i + 1) * CHUNK));
       var etag = null, firstErrMsg = null, attempts = 0, done = false;
-      while(!done && attempts < 3){
+      var isNetErr = false;
+      while(!done){
         attempts++;
         var pr = null, perr = null;
+        isNetErr = false;
         try{
           pr = await api('/api/admin/upload/part?uploadId=' + encodeURIComponent(item.uploadId) +
             '&key=' + encodeURIComponent(item.key) + '&partNumber=' + (i + 1),
@@ -587,6 +597,7 @@ async function uploadItem(item){
         }catch(netErr){
           if(signal.aborted) throw netErr;
           /* 网络错误：可重试 */
+          isNetErr = true;
           perr = { msg: (netErr && netErr.message) || 'network error', retryable: true, reauth: false };
         }
         if(pr){
@@ -601,14 +612,17 @@ async function uploadItem(item){
           }
         }
         if(!firstErrMsg) firstErrMsg = perr.msg;
-        if(!perr.retryable || attempts >= 3){
+        /* 网络错误最多 5 次（指数退避 0.8s/1.6s/3.2s/6.4s），其他可重试错误最多 3 次 */
+        var maxAttempts = isNetErr ? 5 : 3;
+        if(!perr.retryable || attempts >= maxAttempts){
           /* 不可重试，或已达上限：抛首次错误（附重试次数） */
           throw new Error(firstErrMsg + (attempts > 1 ? retrySuffix(attempts - 1) : ''));
         }
-        await sleep(800 * attempts);
+        await sleep(800 * Math.pow(2, attempts - 1));
       }
       if(!done) throw new Error(firstErrMsg || 'part failed');
       parts.push({partNumber: i + 1, etag: etag});
+      item.parts = parts; /* 持久化已上传分片，支持断点续传 */
       uploadedBytes += blob.size;
       var now = Date.now(), dt = (now - lastTime) / 1000;
       if(dt >= 1){
@@ -655,6 +669,7 @@ async function uploadItem(item){
     if(!cr2.ok) throw new Error('complete HTTP ' + cr2.status);
     var done = await cr2.json();
     item.status = 'done'; item.progress = 1;
+    item.parts = null; /* 上传完成，清理断点续传状态 */
     item.coverKey = coverKey;
     item.book = {
       id: done.id, title: item.title, author: item.author, lang: item.lang,
@@ -688,6 +703,7 @@ async function cancelItem(item){
     }catch(e){}
   }
   item.status = 'cancelled';
+  item.parts = null; item.uploadId = null; /* 取消后会话已 abort，清理断点续传状态 */
   renderQueue();
 }
 /* 从队列移除（上传中只能先取消） */

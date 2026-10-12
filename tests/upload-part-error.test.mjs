@@ -80,4 +80,24 @@ await test('英文：invalid-file-magic 提示为英文', async () => {
   assert.ok(r.msg.includes('7'), r.msg);
 });
 
+await test('断点续传：uploadItem 源码包含续传逻辑', async () => {
+  // 网络瞬断应自动续传而不是整本失败：uploadItem 需支持从已上传分片继续
+  assert.ok(src.includes('var canResume = item.uploadId && item.key && item.parts'),
+    '应有 canResume 判断');
+  assert.ok(src.includes('var startIdx = parts.length'),
+    '应从已上传分片之后开始');
+  assert.ok(src.includes('item.parts = parts;'),
+    '应持久化已上传分片');
+  assert.ok(src.includes('for(var i = startIdx; i < n; i++)'),
+    '循环应从 startIdx 开始');
+});
+
+await test('网络错误：最多 5 次 + 指数退避', async () => {
+  // 网络瞬断（如 42.7MB 大文件）应有更多重试机会，而非 3 次后整本失败
+  assert.ok(src.includes('var maxAttempts = isNetErr ? 5 : 3'),
+    '网络错误应最多 5 次，其他可重试错误 3 次');
+  assert.ok(src.includes('await sleep(800 * Math.pow(2, attempts - 1))'),
+    '应使用指数退避（0.8s/1.6s/3.2s/6.4s）');
+});
+
 console.log(`\n  ${passed} passed`);
