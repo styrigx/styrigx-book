@@ -58,6 +58,9 @@
   </div>
 </div>
 
+{{/* 更换封面：隐藏文件选择器（owner，书架页内联实现） */}}
+<input type="file" id="bk-cover-input" accept="image/*" class="hidden" tabindex="-1" aria-hidden="true">
+
 {{/* 上传 FAB + 弹层（仅 owner，visitor 不渲染） */}}
 {{ partial "upload-fab.html" (dict "isEn" $isEn) }}
 
@@ -104,8 +107,11 @@ var T = {
   noBookAdminLink: isEn ? 'No books yet. <a href="' + adminBase + '" class="text-m-primary font-bold">Upload your first book</a>' : '还没有书。<a href="' + adminBase + '" class="text-m-primary font-bold">去上传第一本书</a>',
   noBookVisitor: isEn ? 'No public books yet.' : '暂时没有公开的书。',
   unknownAuthor: isEn ? 'Unknown author' : '未知作者',
-  read: isEn ? 'Read' : '阅读',
-  edit: isEn ? 'Edit' : '编辑',
+  cont: isEn ? 'Continue reading' : '继续阅读',
+  start: isEn ? 'Start reading' : '开始阅读',
+  edit: isEn ? 'Edit info' : '编辑信息',
+  cover: isEn ? 'Change cover' : '更换封面',
+  coverFail: isEn ? 'Failed to replace cover' : '更换封面失败',
   del: isEn ? 'Delete' : '删除',
   delTitle: isEn ? 'Delete book?' : '删除书籍？',
   delBody: isEn ? 'This will delete the book file and reading progress. This cannot be undone.' : '将同时删除书籍文件和阅读进度，此操作不可撤销。',
@@ -149,9 +155,12 @@ var sortMode = 'added';  /* added | read | title */
 var query = '';
 var progressMap = {};    /* id -> {p, t, title, author, cover} */
 
+var coverRev = {};    /* id -> 换封面后的缓存破坏时间戳（同 key 覆盖时刷新浏览器缓存） */
 function coverURL(b){
   if(!b || !b.cover_key) return '';
-  return (isOwner ? '/api/private/cover?key=' : '/api/cover?key=') + encodeURIComponent(b.cover_key);
+  var u = (isOwner ? '/api/private/cover?key=' : '/api/cover?key=') + encodeURIComponent(b.cover_key);
+  if(coverRev[b.id]) u += '&_=' + coverRev[b.id];
+  return u;
 }
 
 /* ---- 阅读进度（localStorage bk-progress-<id>） ---- */
@@ -174,6 +183,13 @@ function loadProgress(){
 function progressOf(id){
   var v = progressMap[id];
   return v ? v.p : 0;
+}
+function lastReadOf(id){
+  var v = progressMap[id];
+  return (v && v.t) ? v.t : 0;
+}
+function lastReadLabel(t){
+  return (isEn ? 'Last read ' : '最近阅读 ') + fmtDate(t);
 }
 
 /* ---- 数据 ---- */
@@ -351,6 +367,7 @@ function renderGrid(){
   grid.classList.remove('sgx-fade'); void grid.offsetWidth; grid.classList.add('sgx-fade'); /* 1.0.1：结果淡入 */
   grid.innerHTML = list.map(function(b){
     var p = isOwner ? progressOf(b.id) : 0;
+    var lastT = isOwner ? lastReadOf(b.id) : 0; /* 最近阅读时间：owner 仅 */
     var badges = '<span class="absolute left-1.5 top-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-black/55 text-white">' + esc((b.format || '').toUpperCase()) + '</span>';
     if(p > 0){
       badges += '<span class="absolute right-1.5 top-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-m-primary/90 text-m-on-primary">' + fmtPct(p) + '</span>';
@@ -362,6 +379,7 @@ function renderGrid(){
       '</div>' +
       '<p class="text-[13px] font-semibold leading-snug mt-2 line-clamp-2 text-m-on-surface">' + esc(b.title || '') + '</p>' +
       '<p class="text-xs text-m-on-surface-variant line-clamp-1 mt-0.5">' + esc(b.author || T.unknownAuthor) + '</p>' +
+      (lastT ? '<p class="text-[11px] text-m-on-surface-variant line-clamp-1 mt-0.5">' + esc(lastReadLabel(lastT)) + '</p>' : '') +
     '</button>';
   }).join('');
 }
@@ -391,13 +409,15 @@ function openSheet(id){
     ? '<div class="mt-4"><div class="flex justify-between text-xs text-m-on-surface-variant mb-1.5"><span>' + T.progress + '</span><span>' + fmtPct(p) + '</span></div>' +
       '<div class="h-2 rounded-full bg-m-container overflow-hidden"><div class="h-full rounded-full bg-m-primary" style="width:' + fmtPct(p) + '"></div></div></div>'
     : '';
-  var btns = '<div class="flex gap-2 mt-5">' +
-    '<a href="' + readBase + '?id=' + encodeURIComponent(b.id) + '" class="flex-1 h-12 inline-flex items-center justify-center rounded-full bg-m-primary text-m-on-primary text-sm font-bold">' + T.read + '</a>';
+  /* 按钮区：有进度显示「继续阅读」，无进度（含 visitor）显示「开始阅读」；owner 第二行：编辑信息 / 更换封面 / 删除 */
+  var btns = '<a href="' + readBase + '?id=' + encodeURIComponent(b.id) + '" class="w-full h-12 mt-5 inline-flex items-center justify-center rounded-full bg-m-primary text-m-on-primary text-sm font-bold">' + (p > 0 ? T.cont : T.start) + '</a>';
   if(isOwner){
-    btns += '<a href="' + adminBase + '#book-' + encodeURIComponent(b.id) + '" class="h-12 px-5 inline-flex items-center justify-center rounded-full bg-m-container text-m-on-surface text-sm font-bold">' + T.edit + '</a>' +
-      '<button type="button" data-del-book="' + esc(b.id) + '" class="h-12 px-5 inline-flex items-center justify-center rounded-full bg-m-rose-container text-m-on-rose-container text-sm font-bold">' + T.del + '</button>';
+    btns += '<div class="flex gap-2 mt-2">' +
+      '<a href="' + adminBase + '#book-' + encodeURIComponent(b.id) + '" class="flex-1 h-12 px-3 inline-flex items-center justify-center rounded-full bg-m-container text-m-on-surface text-sm font-bold">' + T.edit + '</a>' +
+      '<button type="button" data-cover-book="' + esc(b.id) + '" class="flex-1 h-12 px-3 inline-flex items-center justify-center rounded-full bg-m-container text-m-on-surface text-sm font-bold">' + T.cover + '</button>' +
+      '<button type="button" data-del-book="' + esc(b.id) + '" class="flex-1 h-12 px-3 inline-flex items-center justify-center rounded-full bg-m-rose-container text-m-on-rose-container text-sm font-bold">' + T.del + '</button>' +
+    '</div>';
   }
-  btns += '</div>';
   document.getElementById('sheet-body').innerHTML =
     '<div class="flex gap-4">' +
       '<div class="w-24 flex-shrink-0 aspect-[2/3] rounded-xl overflow-hidden bg-m-container shadow">' + coverTile(b, '') + '</div>' +
@@ -475,6 +495,51 @@ document.getElementById('del-confirm').addEventListener('click', async function(
 document.getElementById('sheet-body').addEventListener('click', function(e){
   var b = e.target.closest('[data-del-book]');
   if(b) openDelDialog(b.getAttribute('data-del-book'));
+});
+
+/* ---- 更换封面（owner；与后台管理页同流程：选图 → 压 WebP 600 → POST /api/admin/cover → PUT /api/admin/book） ---- */
+var coverInput = document.getElementById('bk-cover-input');
+var coverTargetId = null;
+if(coverInput) coverInput.addEventListener('change', async function(){
+  var f = coverInput.files && coverInput.files[0];
+  coverInput.value = '';
+  var id = coverTargetId; coverTargetId = null;
+  var b = id && bookById[id];
+  if(!f || !b || !isOwner) return;
+  try{
+    /* 用 helpers 的 toWebp600；压缩失败直接抛错，不回退原图 */
+    var helpers = window.SgxUploadQueue.helpers(isEn);
+    var webp = await helpers.toWebp600(f);
+    /* helpers.api 与管理页同一份：same-origin 凭证 + app token 失效自动跳复验 */
+    var apiH = window.SgxUploadQueue.helpers(isEn).api;
+    var key = b.cover_key || ('covers/' + b.id + '.webp');
+    var r = await apiH('/api/admin/cover?key=' + encodeURIComponent(key),
+      {method: 'POST', body: webp, headers: {'Content-Type': 'image/webp'}});
+    if(!r.ok) throw new Error('cover HTTP ' + r.status);
+    var ck = (await r.json()).key;
+    var r2 = await apiH('/api/admin/book?id=' + encodeURIComponent(b.id),
+      {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({coverKey: ck})});
+    if(!r2.ok) throw new Error('put HTTP ' + r2.status);
+    b.cover_key = ck;
+    coverRev[b.id] = Date.now();
+    renderGrid();
+    if(sheetWrap.classList.contains('open')) openSheet(b.id); /* 刷新弹层内封面 */
+  }catch(err){
+    console.error('[book] replace cover failed:', err);
+    alert(T.coverFail);
+  }
+});
+/* 详情弹层内的更换封面按钮（事件委托） */
+document.getElementById('sheet-body').addEventListener('click', async function(e){
+  var c = e.target.closest('[data-cover-book]');
+  if(!c || !isOwner) return;
+  /* 预检通行证：与上传 FAB 一致，无效时在选图之前跳主站复验 */
+  try{
+    var ok = await window.SgxUploadQueue.appCheck();
+    if(!ok){ window.location.href = window.SgxUploadQueue.appVerifyUrl(); return; }
+  }catch(err){ /* 预检失败不阻塞打开，上传时再处理 */ }
+  coverTargetId = c.getAttribute('data-cover-book');
+  if(coverInput) coverInput.click();
 });
 
 /* ---- 登录状态变化时刷新 ---- */
