@@ -1,0 +1,4 @@
+# 未指纹化的 JS：每次重新验证，避免部署后客户端仍跑旧脚本。
+# （CSS/图片已走 Hugo fingerprint，无需在此处理。）
+/js/*
+  Cache-Control: no-cache

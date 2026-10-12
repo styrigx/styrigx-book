@@ -377,7 +377,7 @@ function queueCard(item){
       '<div id="bk-prog-' + item.uid + '" class="h-full rounded-full bg-m-primary transition-[width] duration-300" style="width:' + Math.round(item.progress * 100) + '%"></div></div></div>'
     : '';
   var errLine = (item.status === 'error' && item.err)
-    ? '<p class="text-xs text-m-rose font-semibold mt-2 leading-relaxed">' + T.errUpload + esc(item.err) + '</p>'
+    ? '<p class="text-xs text-m-rose font-semibold mt-2 leading-relaxed break-words">' + T.errUpload + esc(item.err) + '</p>'
     : '';
   return '<div class="rounded-[1.75rem] bg-m-container-lowest border border-m-outline/40 p-4 shadow-sm" data-q="' + item.uid + '">' +
     '<div class="flex gap-3">' + coverThumb(item, 'w-12 h-16') +
@@ -388,7 +388,7 @@ function queueCard(item){
         prog + errLine +
       '</div>' +
     '</div>' +
-    '<div class="grid grid-cols-2 gap-2 mt-3">' +
+    '<div class="grid grid-cols-1 min-[420px]:grid-cols-2 gap-2 mt-3 min-w-0">' +
       field('title', T.title, item.title) + field('author', T.author, item.author) +
       field('lang', T.lang, item.lang) + field('tags', T.tags, item.tags, T.tagsPh) +
     '</div>' +

@@ -303,6 +303,11 @@ html { scroll-padding-top: calc(var(--nav-h) + 16px); }
 }
 .subpage-back-float.show{opacity:1;pointer-events:auto;transform:none}
 .subpage-back-float svg{width:24px;height:24px;color:var(--m-primary)}
+/* 滚过子页面标题区后：站点头栏只留毛玻璃底，品牌与通用标题隐去，
+   让位给悬浮返回键 + 当前页小标题（避免「管理/书架」与「书库」重叠、返回键压住 Styrigx） */
+body.subpage-scrolled #site-nav > a,
+body.subpage-scrolled #site-nav > span{opacity:0;pointer-events:none;transition:opacity .2s ease}
+#site-nav > a,#site-nav > span{transition:opacity .2s ease}
 .layout-dex .subpage-back-float{display:none}
 .reduced-motion .subpage-back-float{transition:none}
 
