@@ -206,7 +206,7 @@ await test('旧四段式 cookie → 302 到主站锁屏（无兼容层）', asyn
   assert.equal(res.status, 302);
   assert.ok(!nextCalled);
 });
-await test('无效 cookie → 302 锁屏跳转，带 return + Cache-Control: private, no-store', async () => {
+await test('无效 cookie → 302 锁屏跳转，带 why + return + Cache-Control: private, no-store', async () => {
   let nextCalled = false;
   const res = await mwOnRequest({
     request: {
@@ -219,9 +219,25 @@ await test('无效 cookie → 302 锁屏跳转，带 return + Cache-Control: pri
   assert.equal(res.status, 302);
   assert.ok(!nextCalled);
   const loc = res.headers.get('Location');
-  assert.ok(loc.startsWith('https://styrigx.com/?lock=1&return='), `Location: ${loc}`);
+  assert.ok(loc.startsWith('https://styrigx.com/?lock=1&why=no-cookie&return='), `Location: ${loc}`);
   assert.ok(decodeURIComponent(loc).includes('https://book.styrigx.com/read/?id=abc'));
   assert.equal(res.headers.get('Cache-Control'), 'private, no-store');
+});
+await test('cookie 存在但验签失败 → 302 带 why=invalid-session', async () => {
+  let nextCalled = false;
+  const res = await mwOnRequest({
+    request: {
+      url: 'https://book.styrigx.com/',
+      headers: { get: (n) => (String(n).toLowerCase() === 'cookie' ? 'sgx-verified=bogus.value.here' : null) },
+    },
+    env: ENV,
+    next: async () => { nextCalled = true; },
+  });
+  assert.equal(res.status, 302);
+  assert.ok(!nextCalled);
+  const loc = res.headers.get('Location');
+  assert.ok(loc.includes('why=invalid-session'), `Location: ${loc}`);
+  assert.ok(!loc.includes('why=no-cookie'), `Location: ${loc}`);
 });
 await test('verifySessionCookie 与 middleware 验签逻辑一致（owner 通过 / visitor 不通过 / 坏 cookie 不通过）', async () => {
   assert.equal(await verifySessionCookie(getCookieValue(apiReq(goodCookie())), ENV.SGX_LOCK_PUBLIC), 'owner');
