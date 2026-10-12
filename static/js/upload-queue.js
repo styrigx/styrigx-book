@@ -34,7 +34,50 @@ window.SgxUploadQueue.describe403 = async function(res, isEn){
   if(code === 'forbidden'){
     return { reauth: false, msg: isEn ? 'No permission' : '无权限' };
   }
-  return { reauth: false, msg: (isEn ? 'Upload failed: ' : '上传失败：') + (code || 'HTTP 403') };
+  /* 注意：调用方 UI 会统一加「上传失败：」前缀，这里只返回错误码本身，避免双前缀 */
+  return { reauth: false, msg: code || 'HTTP 403' };
+};
+/* 分片错误解析：返回 {msg, code, retryable, reauth}。
+   - 4xx（文件/客户端问题）与服务端已中止会话的错误不重试：重试只会得到 norow，
+     掩盖首次真实错误。
+   - 只有网络错误、会话保留的可重试错误才重试。
+   - msg 不带「上传失败：」前缀，调用方 UI 统一加。 */
+window.SgxUploadQueue.describePartError = async function(res, partNumber, isEn){
+  var code = null, detail = null;
+  try{
+    var j = await res.clone().json();
+    code = j && j.error; detail = j && j.detail;
+  }catch(x){}
+  /* 需重新授权的 403：沿用 describe403；会话类 403 不重试 */
+  if(res.status === 403){
+    var d = await window.SgxUploadQueue.describe403(res, isEn);
+    return { msg: d.msg, code: code, retryable: false, reauth: d.reauth };
+  }
+  var msg = code || ('HTTP ' + res.status);
+  var retryable = false;
+  if(code === 'invalid-file-magic'){
+    var bytes = detail && detail.bytes;
+    msg = isEn ? 'Invalid file header' : '文件头校验失败';
+    if(bytes !== undefined && bytes !== null) msg += isEn ? ' (received ' + bytes + ' bytes)' : '（收到 ' + bytes + ' 字节）';
+    retryable = false; /* 服务端已 abort，会话已删 */
+  }else if(code === 'part-body-empty'){
+    msg = isEn ? 'Empty chunk data, retrying' : '分片数据为空，正在重试';
+    retryable = true; /* 会话保留 */
+  }else if(code === 'part-r2-error'){
+    msg = isEn ? 'Storage service error' : '存储服务异常';
+    retryable = false; /* 服务端已 abort，会话已删 */
+  }else if(code === 'part-auth-error'){
+    msg = isEn ? 'Server verification error' : '服务端校验异常';
+    retryable = true; /* 会话未被清理 */
+  }else if(code === 'part-failed'){
+    msg = isEn ? 'Part upload failed' : '分片上传失败';
+    retryable = false;
+  }else if(res.status >= 400 && res.status < 500){
+    retryable = false; /* 其他 4xx 不重试 */
+  }else if(res.status >= 500){
+    retryable = true; /* 未知 5xx 保守重试 */
+  }
+  return { msg: msg, code: code, retryable: retryable, reauth: false };
 };
 /* 上传队列开始前（选文件之前）预检：通行证无效返回 false，调用方直接跳复验 */
 window.SgxUploadQueue.appCheck = async function(){
@@ -524,38 +567,47 @@ async function uploadItem(item){
     if(!initR.ok) throw new Error('init HTTP ' + initR.status);
     var init = await initR.json();
     item.uploadId = init.uploadId; item.key = init.key;
-    /* 切片上传，每片失败重试 3 次 */
+    /* 切片上传：4xx 与服务端已中止的错误不重试（重试只会得到 norow，掩盖首次错误）；
+       只对网络错误/可重试错误重试，最多 3 次；错误显示首次错误码并附重试次数 */
     var total = item.file.size, n = Math.max(1, Math.ceil(total / CHUNK));
     var parts = [];
     var uploadedBytes = 0, lastTime = Date.now(), lastBytes = 0;
     item.speed = 0;
+    var retrySuffix = function(k){ return isEn ? ' (retried ' + k + '×)' : '（已重试' + k + '次）'; };
     for(var i = 0; i < n; i++){
       var blob = item.file.slice(i * CHUNK, Math.min(total, (i + 1) * CHUNK));
-      var etag = null, lastErr = null;
-      for(var a = 0; a < 3; a++){
+      var etag = null, firstErrMsg = null, attempts = 0, done = false;
+      while(!done && attempts < 3){
+        attempts++;
+        var pr = null, perr = null;
         try{
-          var pr = await api('/api/admin/upload/part?uploadId=' + encodeURIComponent(item.uploadId) +
+          pr = await api('/api/admin/upload/part?uploadId=' + encodeURIComponent(item.uploadId) +
             '&key=' + encodeURIComponent(item.key) + '&partNumber=' + (i + 1),
             {method: 'POST', body: blob, signal: signal});
-          if(pr.status === 403){
-            // 403 按错误码给中文提示；需重新授权的不重试，直接跳授权页（带 return）
-            var pd403 = await window.SgxUploadQueue.describe403(pr, isEn);
-            if(pd403.reauth){
-              window.location.href = window.SgxUploadQueue.appVerifyUrl();
-              throw new Error(pd403.msg);
-            }
-            throw new Error(pd403.msg);
-          }
-          if(!pr.ok) throw new Error('part ' + (i + 1) + ' HTTP ' + pr.status);
-          var pj = await pr.json();
-          etag = pj.etag; lastErr = null; break;
-        }catch(e){
-          lastErr = e;
-          if(signal.aborted) throw e;
-          await sleep(800 * (a + 1));
+        }catch(netErr){
+          if(signal.aborted) throw netErr;
+          /* 网络错误：可重试 */
+          perr = { msg: (netErr && netErr.message) || 'network error', retryable: true, reauth: false };
         }
+        if(pr){
+          if(pr.ok){
+            var pj = await pr.json();
+            etag = pj.etag; done = true; continue;
+          }
+          perr = await window.SgxUploadQueue.describePartError(pr, i + 1, isEn);
+          if(perr.reauth){
+            window.location.href = window.SgxUploadQueue.appVerifyUrl();
+            throw new Error(perr.msg);
+          }
+        }
+        if(!firstErrMsg) firstErrMsg = perr.msg;
+        if(!perr.retryable || attempts >= 3){
+          /* 不可重试，或已达上限：抛首次错误（附重试次数） */
+          throw new Error(firstErrMsg + (attempts > 1 ? retrySuffix(attempts - 1) : ''));
+        }
+        await sleep(800 * attempts);
       }
-      if(etag == null) throw lastErr || new Error('part failed');
+      if(!done) throw new Error(firstErrMsg || 'part failed');
       parts.push({partNumber: i + 1, etag: etag});
       uploadedBytes += blob.size;
       var now = Date.now(), dt = (now - lastTime) / 1000;

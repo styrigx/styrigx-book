@@ -11,7 +11,7 @@
   "scripts": {
     "build:css": "tailwindcss -i assets/css/input.css -o assets/css/main.css --minify",
     "vendor": "node scripts/vendor.mjs",
-    "test": "node tests/pages-dev-301.test.mjs && node tests/lock-sync.test.mjs && node tests/no-download.test.mjs && node tests/app-token.test.mjs && node tests/app-token-vectors.test.mjs && node tests/sgx-cookie-vectors.test.mjs && node tests/shelf-owner-load.test.mjs && node tests/upload-chain.test.mjs && node tests/upload-format.test.mjs && node tests/upload-app-epoch.test.mjs",
+    "test": "node tests/pages-dev-301.test.mjs && node tests/lock-sync.test.mjs && node tests/no-download.test.mjs && node tests/app-token.test.mjs && node tests/app-token-vectors.test.mjs && node tests/sgx-cookie-vectors.test.mjs && node tests/shelf-owner-load.test.mjs && node tests/upload-chain.test.mjs && node tests/upload-format.test.mjs && node tests/upload-app-epoch.test.mjs && node tests/upload-part-error.test.mjs",
     "test:visual": "playwright test --config=playwright.config.js"
   },
   "devDependencies": {
