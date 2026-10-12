@@ -37,10 +37,12 @@ window.SgxUploadQueue.describe403 = async function(res, isEn){
   /* 注意：调用方 UI 会统一加「上传失败：」前缀，这里只返回错误码本身，避免双前缀 */
   return { reauth: false, msg: code || 'HTTP 403' };
 };
-/* 分片错误解析：返回 {msg, code, retryable, reauth}。
+/* 分片错误解析：返回 {msg, code, retryable, reauth, sessionGone}。
    - 4xx（文件/客户端问题）与服务端已中止会话的错误不重试：重试只会得到 norow，
      掩盖首次真实错误。
    - 只有网络错误、会话保留的可重试错误才重试。
+   - sessionGone：会话已不存在（服务端 abort/过期，或 404/410）。调用方自动从 init
+     重建会话一次，不直接跳授权页——重建时若通行证真失效，init 会返回需授权的 403。
    - msg 不带「上传失败：」前缀，调用方 UI 统一加。 */
 window.SgxUploadQueue.describePartError = async function(res, partNumber, isEn){
   var code = null, detail = null;
@@ -48,14 +50,23 @@ window.SgxUploadQueue.describePartError = async function(res, partNumber, isEn){
     var j = await res.clone().json();
     code = j && j.error; detail = j && j.detail;
   }catch(x){}
-  /* 需重新授权的 403：沿用 describe403；会话类 403 不重试 */
+  /* 会话类错误与 404/410 视为「会话已不存在」，由调用方自动重建 */
+  var sessionGone = (code === 'upload-session-invalid' || code === 'upload-session-expired' ||
+                     res.status === 404 || res.status === 410);
+  /* 需重新授权的 403：沿用 describe403；会话类 403 走 sessionGone，不直接跳授权 */
   if(res.status === 403){
     var d = await window.SgxUploadQueue.describe403(res, isEn);
-    return { msg: d.msg, code: code, retryable: false, reauth: d.reauth };
+    if(sessionGone){
+      return { msg: d.msg, code: code, retryable: false, reauth: false, sessionGone: true };
+    }
+    return { msg: d.msg, code: code, retryable: false, reauth: d.reauth, sessionGone: false };
   }
   var msg = code || ('HTTP ' + res.status);
   var retryable = false;
-  if(code === 'invalid-file-magic'){
+  if(sessionGone){
+    msg = isEn ? 'Upload session lost' : '上传会话已失效';
+    retryable = false; /* 重试无意义，由调用方重建会话 */
+  }else if(code === 'invalid-file-magic'){
     var bytes = detail && detail.bytes;
     msg = isEn ? 'Invalid file header' : '文件头校验失败';
     if(bytes !== undefined && bytes !== null) msg += isEn ? ' (received ' + bytes + ' bytes)' : '（收到 ' + bytes + ' 字节）';
@@ -77,7 +88,7 @@ window.SgxUploadQueue.describePartError = async function(res, partNumber, isEn){
   }else if(res.status >= 500){
     retryable = true; /* 未知 5xx 保守重试 */
   }
-  return { msg: msg, code: code, retryable: retryable, reauth: false };
+  return { msg: msg, code: code, retryable: retryable, reauth: false, sessionGone: sessionGone };
 };
 /* 上传队列开始前（选文件之前）预检：通行证无效返回 false，调用方直接跳复验 */
 window.SgxUploadQueue.appCheck = async function(){
@@ -544,42 +555,84 @@ async function uploadItem(item){
   renderQueue();
   var sleep = function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); };
   try{
-    /* init（含 SHA-256 去重） */
-    var initR = await api('/api/admin/upload/init', {
-      method: 'POST', headers: {'Content-Type': 'application/json'}, signal: signal,
-      body: JSON.stringify({filename: item.file.name, size: item.file.size, sha256: item.sha256, format: item.format.toLowerCase()})
-    });
-    if(initR.status === 409){
-      var j409 = await initR.json().catch(function(){ return {}; });
-      item.status = 'exists'; item.existsInfo = j409.book || null;
-      renderQueue(); return;
-    }
-    if(initR.status === 403){
-      // 403 按错误码给中文提示；需重新授权的直接跳授权页（带 return）
-      var d403 = await window.SgxUploadQueue.describe403(initR, isEn);
-      if(d403.reauth){
-        item.status = 'error'; item.err = d403.msg; renderQueue();
-        window.location.href = window.SgxUploadQueue.appVerifyUrl();
-        return;
+    /* 会话已死（服务端 abort/过期/404）时自动从 init 重来一次；只重来一次，避免死循环。
+       重建时若通行证真失效，init 会返回需授权的 403，走跳授权页逻辑。 */
+    var restarted = false;
+    for(;;){
+      try{
+        await uploadAttempt(item, signal, sleep);
+        break;
+      }catch(e){
+        if(e && e.sessionGone && !restarted && !signal.aborted && !item.cancelled){
+          item.uploadId = null; item.key = null; item.parts = null;
+          restarted = true;
+          item.progress = 0; item.speed = 0; updateProg(item);
+          continue;
+        }
+        throw e;
       }
-      throw new Error(d403.msg);
     }
-    if(!initR.ok) throw new Error('init HTTP ' + initR.status);
-    var init = await initR.json();
-    item.uploadId = init.uploadId; item.key = init.key;
+  }catch(e){
+    if(signal.aborted || item.cancelled){ item.status = 'cancelled'; }
+    else{
+      item.status = 'error'; item.err = (e && e.message) || String(e);
+      /* 只有纯网络错误保留断点续传状态；其他失败（服务端已 abort/4xx/会话问题）
+         清掉续传状态，下次手动重试从 init 重新开始 */
+      if(!(e && e.networkOnly)){ item.uploadId = null; item.key = null; item.parts = null; }
+    }
+    renderQueue();
+  }
+}
+/* 单次上传尝试：init（如需）→ 分片 → 封面 → complete。
+   会话类错误抛带 sessionGone 标记的 Error；纯网络错误耗尽重试后抛带 networkOnly 标记的 Error。 */
+async function uploadAttempt(item, signal, sleep){
+    /* 断点续传：如果已有 uploadId 且有已上传的分片，直接从断点继续，不重新 init。
+       网络瞬断不应导致整本失败，而是自动从失败的分片续传。 */
+    var canResume = item.uploadId && item.key && item.parts && item.parts.length > 0;
+    if(!canResume){
+      /* init（含 SHA-256 去重） */
+      var initR = await api('/api/admin/upload/init', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, signal: signal,
+        body: JSON.stringify({filename: item.file.name, size: item.file.size, sha256: item.sha256, format: item.format.toLowerCase()})
+      });
+      if(initR.status === 409){
+        var j409 = await initR.json().catch(function(){ return {}; });
+        item.status = 'exists'; item.existsInfo = j409.book || null;
+        renderQueue(); return;
+      }
+      if(initR.status === 403){
+        // 403 按错误码给中文提示；需重新授权的直接跳授权页（带 return）
+        var d403 = await window.SgxUploadQueue.describe403(initR, isEn);
+        if(d403.reauth){
+          item.status = 'error'; item.err = d403.msg; renderQueue();
+          item.uploadId = null; item.key = null; item.parts = null; /* 跳授权页前清掉续传状态 */
+          window.location.href = window.SgxUploadQueue.appVerifyUrl();
+          return;
+        }
+        throw new Error(d403.msg);
+      }
+      if(!initR.ok) throw new Error('init HTTP ' + initR.status);
+      var init = await initR.json();
+      item.uploadId = init.uploadId; item.key = init.key;
+      item.parts = [];
+    }
     /* 切片上传：4xx 与服务端已中止的错误不重试（重试只会得到 norow，掩盖首次错误）；
-       只对网络错误/可重试错误重试，最多 3 次；错误显示首次错误码并附重试次数 */
+       只对网络错误/可重试错误重试；网络错误最多 5 次（指数退避），其他可重试错误最多 3 次；
+       错误显示首次错误码并附重试次数 */
     var total = item.file.size, n = Math.max(1, Math.ceil(total / CHUNK));
-    var parts = [];
+    var parts = item.parts || [];
+    var startIdx = parts.length; /* 断点续传：从已上传分片之后开始 */
     var uploadedBytes = 0, lastTime = Date.now(), lastBytes = 0;
     item.speed = 0;
     var retrySuffix = function(k){ return isEn ? ' (retried ' + k + '×)' : '（已重试' + k + '次）'; };
-    for(var i = 0; i < n; i++){
+    for(var i = startIdx; i < n; i++){
       var blob = item.file.slice(i * CHUNK, Math.min(total, (i + 1) * CHUNK));
       var etag = null, firstErrMsg = null, attempts = 0, done = false;
-      while(!done && attempts < 3){
+      var isNetErr = false, allNetErr = true;
+      while(!done){
         attempts++;
         var pr = null, perr = null;
+        isNetErr = false;
         try{
           pr = await api('/api/admin/upload/part?uploadId=' + encodeURIComponent(item.uploadId) +
             '&key=' + encodeURIComponent(item.key) + '&partNumber=' + (i + 1),
@@ -587,7 +640,8 @@ async function uploadItem(item){
         }catch(netErr){
           if(signal.aborted) throw netErr;
           /* 网络错误：可重试 */
-          perr = { msg: (netErr && netErr.message) || 'network error', retryable: true, reauth: false };
+          isNetErr = true;
+          perr = { msg: (netErr && netErr.message) || 'network error', retryable: true, reauth: false, sessionGone: false };
         }
         if(pr){
           if(pr.ok){
@@ -595,20 +649,34 @@ async function uploadItem(item){
             etag = pj.etag; done = true; continue;
           }
           perr = await window.SgxUploadQueue.describePartError(pr, i + 1, isEn);
+          allNetErr = false;
           if(perr.reauth){
+            /* 需要重新授权：清掉续传状态再跳授权页 */
+            item.uploadId = null; item.key = null; item.parts = null;
             window.location.href = window.SgxUploadQueue.appVerifyUrl();
             throw new Error(perr.msg);
           }
+          if(perr.sessionGone){
+            /* 会话已不存在：不重试，抛标记错误由外层自动从 init 重来一次 */
+            var sgErr = new Error(perr.msg);
+            sgErr.sessionGone = true;
+            throw sgErr;
+          }
         }
         if(!firstErrMsg) firstErrMsg = perr.msg;
-        if(!perr.retryable || attempts >= 3){
+        /* 网络错误最多 5 次（指数退避 0.8s/1.6s/3.2s/6.4s），其他可重试错误最多 3 次 */
+        var maxAttempts = isNetErr ? 5 : 3;
+        if(!perr.retryable || attempts >= maxAttempts){
           /* 不可重试，或已达上限：抛首次错误（附重试次数） */
-          throw new Error(firstErrMsg + (attempts > 1 ? retrySuffix(attempts - 1) : ''));
+          var finErr = new Error(firstErrMsg + (attempts > 1 ? retrySuffix(attempts - 1) : ''));
+          if(allNetErr) finErr.networkOnly = true; /* 纯网络错误：保留断点续传状态 */
+          throw finErr;
         }
-        await sleep(800 * attempts);
+        await sleep(800 * Math.pow(2, attempts - 1));
       }
       if(!done) throw new Error(firstErrMsg || 'part failed');
       parts.push({partNumber: i + 1, etag: etag});
+      item.parts = parts; /* 持久化已上传分片，支持断点续传 */
       uploadedBytes += blob.size;
       var now = Date.now(), dt = (now - lastTime) / 1000;
       if(dt >= 1){
@@ -627,6 +695,7 @@ async function uploadItem(item){
       if(cr.status === 403){
         var cd403 = await window.SgxUploadQueue.describe403(cr, isEn);
         if(cd403.reauth){
+          item.uploadId = null; item.key = null; item.parts = null; /* 跳授权页前清掉续传状态 */
           window.location.href = window.SgxUploadQueue.appVerifyUrl();
         }
         throw new Error(cd403.msg);
@@ -648,6 +717,7 @@ async function uploadItem(item){
     if(cr2.status === 403){
       var c2d403 = await window.SgxUploadQueue.describe403(cr2, isEn);
       if(c2d403.reauth){
+        item.uploadId = null; item.key = null; item.parts = null; /* 跳授权页前清掉续传状态 */
         window.location.href = window.SgxUploadQueue.appVerifyUrl();
       }
       throw new Error(c2d403.msg);
@@ -655,6 +725,7 @@ async function uploadItem(item){
     if(!cr2.ok) throw new Error('complete HTTP ' + cr2.status);
     var done = await cr2.json();
     item.status = 'done'; item.progress = 1;
+    item.parts = null; /* 上传完成，清理断点续传状态 */
     item.coverKey = coverKey;
     item.book = {
       id: done.id, title: item.title, author: item.author, lang: item.lang,
@@ -671,11 +742,6 @@ async function uploadItem(item){
       queue = queue.filter(function(q){ return q !== it; });
       renderQueue();
     }, 2500);
-  }catch(e){
-    if(signal.aborted || item.cancelled){ item.status = 'cancelled'; }
-    else{ item.status = 'error'; item.err = (e && e.message) || String(e); }
-    renderQueue();
-  }
 }
 async function cancelItem(item){
   item.cancelled = true;
@@ -688,6 +754,7 @@ async function cancelItem(item){
     }catch(e){}
   }
   item.status = 'cancelled';
+  item.parts = null; item.uploadId = null; /* 取消后会话已 abort，清理断点续传状态 */
   renderQueue();
 }
 /* 从队列移除（上传中只能先取消） */
@@ -822,4 +889,10 @@ window.SgxUploadQueue.helpers = function(isEn){
   return {T: T, esc: esc, fmtSize: fmtSize, fmtDate: fmtDate, api: api,
     toWebp600: toWebp600, switchHTML: switchHTML};
 };
+/* 测试钩子：tests/upload-resume.test.mjs 用 mock fetch 驱动真实上传流程做行为测试。
+   仅当 window.__sgxUploadTest 已设置时生效，生产环境无影响。 */
+if(window.__sgxUploadTest){
+  window.__sgxUploadTest.uploadItem = uploadItem;
+  window.__sgxUploadTest.items = function(){ return queue; };
+}
 };
