@@ -148,7 +148,7 @@ await test('init：token appEpoch=2 与主站一致 → 200', async () => {
   assert.equal(db._sessions.size, 1, '应创建上传会话');
 });
 
-await test('part：会话 app_epoch=1 落后于主站 2 → 403 upload-session-invalid', async () => {
+await test('part：会话 app_epoch=1 落后于主站 2 → 403 upload-session-epoch-stale（DIAG 临时）', async () => {
   _resetEpochCache();
   const db = mockDB();
   const r2 = mockR2();
@@ -164,7 +164,36 @@ await test('part：会话 app_epoch=1 落后于主站 2 → 403 upload-session-i
   const res = await partReq(ctx);
   assert.equal(res.status, 403, 'part 应 403');
   const body = await res.json();
-  assert.equal(body.error, 'upload-session-invalid', '错误码应为 upload-session-invalid');
+  assert.equal(body.error, 'upload-session-epoch-stale', '错误码应为 upload-session-epoch-stale（DIAG 临时）');
+});
+
+await test('集成：init 成功后紧接 part → 200（同一 DB 绑定）', async () => {
+  _resetEpochCache();
+  const db = mockDB();
+  const r2 = mockR2();
+  const key = 'books/12345678-1234-1234-1234-123456789abc.epub';
+  // init
+  const initCtx = ctxFor({
+    db, r2,
+    url: 'https://book.styrigx.com/api/admin/upload/init',
+    body: { filename: 't.epub', size: 273000, sha256: SHA, format: 'epub' },
+    appEpoch: CURRENT_APP_EPOCH,
+  });
+  const initRes = await initReq(initCtx);
+  assert.equal(initRes.status, 200, 'init 应 200');
+  const initBody = await initRes.json();
+  assert.ok(initBody.uploadId, '应返回 uploadId');
+  // 紧接 part（同一 uploadId/key，模拟用户刚选完文件立即上传）
+  const partCtx = ctxFor({
+    db, r2,
+    url: `https://book.styrigx.com/api/admin/upload/part?uploadId=${encodeURIComponent(initBody.uploadId)}&key=${encodeURIComponent(initBody.key)}&partNumber=1`,
+    magic: EPUB_MAGIC,
+    appEpoch: CURRENT_APP_EPOCH,
+  });
+  const partRes = await partReq(partCtx);
+  assert.equal(partRes.status, 200, '紧接的 part 1 应 200');
+  const partBody = await partRes.json();
+  assert.ok(partBody.etag, '应返回 etag');
 });
 
 console.log(`\n${passed} passed`);

@@ -86,6 +86,49 @@ test('admin-upload', async ({ page }) => {
   });
 });
 
+/* 管理页：选中长书名文件后（手机宽度），断言无横向溢出 */
+test('admin-upload-longname', async ({ page }) => {
+  await setup(page, { viewport: MOBILE, theme: 'light', owner: true });
+  await gotoReady(page, '/admin/', '#adm-main:not(.hidden)');
+  const { makeEpub } = require('./fixtures/file-fixtures.js');
+  const longName = '了不起的盖茨比英文原版未删节超长书名测试版本.epub';
+  await page.setInputFiles('#adm-file', {
+    name: longName,
+    mimeType: 'application/epub+zip',
+    buffer: Buffer.from(makeEpub()),
+  });
+  await expect(page.locator('#adm-queue [data-q]')).toBeVisible({ timeout: 15000 });
+  /* 等解析完成（ready 或 error 都会渲染出卡片） */
+  await page.waitForFunction(() => {
+    const el = document.querySelector('#adm-queue [data-q] [data-status]');
+    return el && !el.textContent.includes('解析');
+  }, { timeout: 15000 });
+  await page.evaluate(() => document.fonts.ready);
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow, '页面不应横向溢出').toBeLessThanOrEqual(0);
+  await expect(page).toHaveScreenshot('admin-upload-longname.png', {
+    fullPage: false,
+    animations: 'disabled',
+  });
+});
+
+/* 管理页：滚动后折叠标题只显示当前页标题（手机宽度），断言无横向溢出 */
+test('admin-upload-scrolled', async ({ page }) => {
+  await setup(page, { viewport: MOBILE, theme: 'light', owner: true });
+  await gotoReady(page, '/admin/', '#adm-main:not(.hidden)');
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await page.waitForFunction(() => document.body.classList.contains('subpage-scrolled'), { timeout: 5000 });
+  await page.evaluate(() => document.fonts.ready);
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow, '滚动后页面不应横向溢出').toBeLessThanOrEqual(0);
+  await expect(page).toHaveScreenshot('admin-upload-scrolled.png', {
+    fullPage: false,
+    animations: 'disabled',
+  });
+});
+
 /* EPUB 阅读器：foliate-view 用 closed shadow root，外部拿不到 iframe；
  * 但它的渲染 iframe（blob: URL）会出现在 page.frames() 里。
  * 等 blob frame 正文渲染出文字后截图。 */
