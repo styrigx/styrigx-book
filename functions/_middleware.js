@@ -5,9 +5,10 @@
 // hash/分支预览别名放行，不跳转。
 //
 // SGX_SITE=book 时：
-//   - 检查 sgx-verified cookie（四段式 role.epoch.exp.sig，sig = Ed25519 私钥对
-//     "role.epoch.exp" 的签名，base64url），用 SGX_LOCK_PUBLIC（PEM/SPKI 公钥）验签；
-//   - exp 未过期；epoch >= 主站最新 epoch（内存缓存 TTL 60 秒）；
+//   - 检查 sgx-verified cookie（五段式 by.role.epoch.exp.sig，sig = Ed25519 私钥对
+//     "by.role.epoch.exp" 的签名，base64url），用 SGX_LOCK_PUBLIC（PEM/SPKI 公钥）验签；
+//   - by ∈ {root, owner}；role ∈ {owner, visitor}；exp 未过期；
+//   - epoch >= 主站最新 epoch（内存缓存 TTL 60 秒）；
 //   - 验签逻辑与 functions/_sgx-cookie.js 的 verifySessionCookieStrict 为同一入口；
 //   - owner / visitor 均可进站（visitor 只读）；无效/缺失/过期 → 白名单放行，
 //     其余 302 到主站锁屏。

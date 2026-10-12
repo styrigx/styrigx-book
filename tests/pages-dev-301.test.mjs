@@ -102,28 +102,48 @@ test('未解锁访问 /api/file?id= 回 401 JSON（不 302，避免 fetch 跨域
   assert.ok(!nextCalled, '不应放行到文件接口');
 });
 
-console.log('跨站契约（主站四段式 cookie）:');
-// 用主站 signSessionCookie 同格式生成的测试向量（Ed25519，payload "owner.123.9999999999999"）
+console.log('跨站契约（主站五段式 cookie）:');
+// 用主站 verifyOneCookie 同格式生成的测试向量（Ed25519，payload "owner.owner.123.9999999999999"）
 // 契约测试不依赖主站实时 epoch：桩固定返回 epoch=100（测试向量 epoch=123 ≥ 100 通过；
 // epoch 检查本身由 lock-sync.test.mjs 覆盖）
 globalThis.fetch = async () => ({ ok: true, json: async () => ({ epoch: 100 }) });
-const TEST_PUB = 'MCowBQYDK2VwAyEAWv7c7llhIjEYmCcPZEIBfiWnGDkFKjaukkT7KuRxX/g=';
-const TEST_COOKIE_4SEG = 'owner.123.9999999999999.3Jn5hXQurylZTTxNARqfpHuWqFIl_fLdjuLCCDExzMpww26iSMPaws-BeumGjYr7ZPqH3KaGR2oxRBRX-VRuBQ';
-const TEST_COOKIE_3SEG = '123.9999999999999.<redacted>';
+const TEST_PUB = 'MCowBQYDK2VwAyEAxNYp16H5st9HIVLeiz36yQgiLZVh9lbhVICPWuoa7I8=';
+const TEST_COOKIE_5SEG = 'owner.owner.123.9999999999999.Zc9plh5YLierijJimx3WIm4ViHlzcf1nhSmJ97xf0_SNOudBnGLWkKphODo5uAFDDB81YZuF81zv85OVV34yDw';
+const TEST_COOKIE_ROOT_5SEG = 'root.visitor.123.9999999999999.QMmgSn4pCNI6Vs1TdUvivNy-d4E35E3LBQBNdkyRXqMNuEcxuLfyRDNst6RtwsVxiWcTThSQzJJn1W_woWnRAA';
+const TEST_COOKIE_4SEG = 'owner.123.9999999999999.v0496AV8rewFMhVO6ti2rLXlzUHswRTm3HMSyTEZzSgBntlBDE8Bml4a-K9LqLUwrXaYif04CAoUtBYVJKdWAQ';
+const TEST_COOKIE_BAD_BY = 'admin.owner.123.9999999999999.Zc9plh5YLierijJimx3WIm4ViHlzcf1nhSmJ97xf0_SNOudBnGLWkKphODo5uAFDDB81YZuF81zv85OVV34yDw';
 
-test('四段式 cookie 被 _auth.js 接受（owner）', async () => {
+test('五段式 cookie 被 _auth.js 接受（owner）', async () => {
   const { verifyOwnerCookie } = await import('../functions/api/_auth.js');
   const role = await verifyOwnerCookie(
-    { headers: new Headers({ Cookie: 'sgx-verified=' + TEST_COOKIE_4SEG }) },
+    { headers: new Headers({ Cookie: 'sgx-verified=' + TEST_COOKIE_5SEG }) },
     { SGX_LOCK_PUBLIC: TEST_PUB }
   );
   assert.equal(role, 'owner');
 });
 
-test('三段式 cookie 被 _auth.js 拒绝', async () => {
+test('五段式 cookie（by=root）被 _auth.js 接受（visitor）', async () => {
   const { verifyOwnerCookie } = await import('../functions/api/_auth.js');
   const role = await verifyOwnerCookie(
-    { headers: new Headers({ Cookie: 'sgx-verified=' + TEST_COOKIE_3SEG }) },
+    { headers: new Headers({ Cookie: 'sgx-verified=' + TEST_COOKIE_ROOT_5SEG }) },
+    { SGX_LOCK_PUBLIC: TEST_PUB }
+  );
+  assert.equal(role, 'visitor');
+});
+
+test('旧四段式 cookie 被 _auth.js 拒绝（无兼容层）', async () => {
+  const { verifyOwnerCookie } = await import('../functions/api/_auth.js');
+  const role = await verifyOwnerCookie(
+    { headers: new Headers({ Cookie: 'sgx-verified=' + TEST_COOKIE_4SEG }) },
+    { SGX_LOCK_PUBLIC: TEST_PUB }
+  );
+  assert.equal(role, null);
+});
+
+test('非法 by 的 cookie 被 _auth.js 拒绝', async () => {
+  const { verifyOwnerCookie } = await import('../functions/api/_auth.js');
+  const role = await verifyOwnerCookie(
+    { headers: new Headers({ Cookie: 'sgx-verified=' + TEST_COOKIE_BAD_BY }) },
     { SGX_LOCK_PUBLIC: TEST_PUB }
   );
   assert.equal(role, null);

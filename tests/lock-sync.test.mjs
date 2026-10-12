@@ -9,7 +9,7 @@
 //   3. static/js/sgx-lock-sync.js — 401 处理规则（isLockSignal / checkSession / apiFetch），
 //      网络错误不 reload（fail open）
 //   4. functions/api/_auth.js requireOwner — owner 放行 / visitor 403 / 未登录 401；
-//      三段旧 cookie / 过期 / epoch 过旧 / 伪造签名一律拒绝
+//      四段旧 cookie / 过期 / epoch 过旧 / 伪造签名一律拒绝
 // 运行：node tests/lock-sync.test.mjs
 
 import { generateKeyPairSync, sign } from 'node:crypto';
@@ -48,15 +48,16 @@ const PEM =
   '\n-----END PUBLIC KEY-----';
 
 const EPOCH = 7;
-/* 2.8.0 会话角色分离：四段式 role.epoch.exp.sig，签名 payload 为 role.epoch.exp */
-function makeCookie(role, epoch, exp, key = privateKey) {
-  const msg = `${role}.${epoch}.${exp}`;
+/* 2.11 五段式 by.role.epoch.exp.sig，签名 payload 为 by.role.epoch.exp
+   （与主站 functions/_middleware.js verifyOneCookie 一致） */
+function makeCookie(role, epoch, exp, key = privateKey, by = 'owner') {
+  const msg = `${by}.${role}.${epoch}.${exp}`;
   const sig = sign(null, Buffer.from(msg), key);
   return `${msg}.${sig.toString('base64url')}`;
 }
-/* 旧三段式 epoch.exp.sig（无 role）：一律视为无效，不留兼容层 */
-function makeLegacyCookie(epoch, exp, key = privateKey) {
-  const msg = `${epoch}.${exp}`;
+/* 旧四段式 role.epoch.exp.sig（无 by）：一律视为无效，不留兼容层 */
+function makeLegacyCookie(role, epoch, exp, key = privateKey) {
+  const msg = `${role}.${epoch}.${exp}`;
   const sig = sign(null, Buffer.from(msg), key);
   return `${msg}.${sig.toString('base64url')}`;
 }
@@ -99,8 +100,8 @@ await test('visitor 角色（签名有效）→ 200 {ok:true}（只读，能进�
   assert.deepEqual(await res.json(), { ok: true });
   assert.equal(res.headers.get('Cache-Control'), 'no-store');
 });
-await test('旧三段式 cookie（无 role）→ 一律无效，401', async () => {
-  const res = await sessionCheck({ request: apiReq(makeLegacyCookie(EPOCH, Date.now() + 3600e3)), env: ENV });
+await test('旧四段式 cookie（无 by）→ 一律无效，401', async () => {
+  const res = await sessionCheck({ request: apiReq(makeLegacyCookie('owner', EPOCH, Date.now() + 3600e3)), env: ENV });
   assert.equal(res.status, 401);
   assert.deepEqual(await res.json(), { ok: false });
 });
@@ -108,11 +109,20 @@ await test('非法 role（如 admin）→ 401', async () => {
   const res = await sessionCheck({ request: apiReq(makeCookie('admin', EPOCH, Date.now() + 3600e3)), env: ENV });
   assert.equal(res.status, 401);
 });
+await test('非法 by（如 guest）→ 401', async () => {
+  const res = await sessionCheck({ request: apiReq(makeCookie('owner', EPOCH, Date.now() + 3600e3, privateKey, 'guest')), env: ENV });
+  assert.equal(res.status, 401);
+});
 await test('role 被篡改（owner 签名改写成 visitor）→ 签名对不上，401', async () => {
   const c = goodCookie().split('.');
-  c[0] = 'visitor';
+  c[1] = 'visitor';
   const res = await sessionCheck({ request: apiReq(c.join('.')), env: ENV });
   assert.equal(res.status, 401);
+});
+await test('by=root 的五段式 cookie → 验签通过（owner）', async () => {
+  const res = await sessionCheck({ request: apiReq(makeCookie('owner', EPOCH, Date.now() + 3600e3, privateKey, 'root')), env: ENV });
+  assert.equal(res.status, 200);
+  assert.deepEqual(await res.json(), { ok: true });
 });
 await test('签名伪造 → 401', async () => {
   const other = generateKeyPairSync('ed25519').privateKey;
@@ -183,12 +193,12 @@ await test('visitor cookie（签名有效）→ 只读放行，HTML 带 no-store
   assert.equal(res.headers.get('Cache-Control'), 'private, no-store');
   assert.equal(await res.text(), '<html></html>');
 });
-await test('旧三段式 cookie → 302 到主站锁屏（无兼容层）', async () => {
+await test('旧四段式 cookie → 302 到主站锁屏（无兼容层）', async () => {
   let nextCalled = false;
   const res = await mwOnRequest({
     request: {
       url: 'https://book.styrigx.com/',
-      headers: { get: (n) => (String(n).toLowerCase() === 'cookie' ? `sgx-verified=${makeLegacyCookie(EPOCH, Date.now() + 3600e3)}` : null) },
+      headers: { get: (n) => (String(n).toLowerCase() === 'cookie' ? `sgx-verified=${makeLegacyCookie('owner', EPOCH, Date.now() + 3600e3)}` : null) },
     },
     env: ENV,
     next: async () => { nextCalled = true; },
@@ -327,8 +337,8 @@ await test('无 cookie → 401', async () => {
   const { response } = await requireOwner(authCtx(null));
   assert.equal(response.status, 401);
 });
-await test('旧三段式 cookie（无 role）→ 401', async () => {
-  const { response } = await requireOwner(authCtx(makeLegacyCookie(EPOCH, Date.now() + 3600e3)));
+await test('旧四段式 cookie（无 by）→ 401', async () => {
+  const { response } = await requireOwner(authCtx(makeLegacyCookie('owner', EPOCH, Date.now() + 3600e3)));
   assert.equal(response.status, 401);
 });
 await test('exp 过期 → 401', async () => {

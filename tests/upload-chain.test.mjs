@@ -47,7 +47,7 @@ function makeAppToken() {
 }
 
 function makeSessionCookie() {
-  const payload = `owner.${CURRENT_EPOCH}.${Date.now() + 3600000}`;
+  const payload = `owner.owner.${CURRENT_EPOCH}.${Date.now() + 3600000}`;
   return payload + '.' + b64url(sign(null, Buffer.from(payload), lockPriv));
 }
 
