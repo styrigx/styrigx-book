@@ -3,7 +3,7 @@
 //   1. invalid-file-magic（400）→ 中文提示 + 字节数，不重试
 //   2. part-body-empty（400）→ 可重试
 //   3. part-r2-error（500）→ 不重试
-//   4. 403 upload-session-norow → 中文提示，不重试，不跳授权
+//   4. 403 upload-session-invalid → 跳授权（DIAG 码已删除，统一为正式码）
 //   5. 403 app-token-invalid → 跳授权
 //   6. describe403 兜底不再带「上传失败：」前缀（UI 统一加，避免双前缀）
 // 运行：node tests/upload-part-error.test.mjs
@@ -57,11 +57,11 @@ await test('part-r2-error → 不重试', async () => {
   assert.ok(r.msg.includes('存储服务异常'));
 });
 
-await test('403 upload-session-norow → 中文提示，不重试，不跳授权', async () => {
-  const r = await SQ.describePartError(fakeRes(403, { error: 'upload-session-norow' }), 1, false);
+await test('403 upload-session-invalid → 跳授权', async () => {
+  const r = await SQ.describePartError(fakeRes(403, { error: 'upload-session-invalid' }), 1, false);
   assert.equal(r.retryable, false);
-  assert.equal(r.reauth, false);
-  assert.ok(!r.msg.startsWith('上传失败：'), '不应自带前缀（UI 统一加）：' + r.msg);
+  assert.equal(r.reauth, true);
+  assert.ok(r.msg.includes('重新授权'), '应提示重新授权：' + r.msg);
 });
 
 await test('403 app-token-invalid → 跳授权', async () => {

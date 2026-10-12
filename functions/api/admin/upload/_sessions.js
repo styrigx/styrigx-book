@@ -36,13 +36,7 @@ export async function clearUploadSession(env, uploadId) {
  * - 主站 app epoch 拿不到或登记的 app_epoch 小于当前值 → 403 upload-session-invalid（fail closed）
  *   （2.10.0：删除该应用任一应用类通行密钥时 app-epoch 加一，进行中的任务被掐断）
  */
-/* DIAG（临时诊断，确认 403 分支后删除）：把 403 按分支细分，
-   只输出分支名 + 非敏感数字，不输出任何密钥/token/cookie。 */
-function diagBranch(name, info) {
-  try {
-    console.error('[upload-session-diag]', name, JSON.stringify(info || {}));
-  } catch {}
-}
+/* 下划线开头，不会被 Pages 当作路由。 */
 
 export async function verifyUploadSession(context, uploadId, r2Key) {
   const { env } = context;
@@ -58,16 +52,14 @@ export async function verifyUploadSession(context, uploadId, r2Key) {
     dbError = e && e.message;
   }
   if (dbError) {
-    diagBranch('db-error', { msg: String(dbError).slice(0, 120) });
-    return { response: err('upload-session-db-error', 403) }; // DIAG 临时
+    console.error('[upload-session]', 'db-error', String(dbError).slice(0, 120));
+    return { response: err('upload-session-invalid', 403) };
   }
   if (!row) {
-    diagBranch('norow', { uploadIdLen: (uploadId || '').length });
-    return { response: err('upload-session-norow', 403) }; // DIAG 临时
+    return { response: err('upload-session-invalid', 403) };
   }
   if (row.r2_key !== r2Key) {
-    diagBranch('key-mismatch', { rowKeyLen: (row.r2_key || '').length, reqKeyLen: (r2Key || '').length });
-    return { response: err('upload-session-key-mismatch', 403) }; // DIAG 临时
+    return { response: err('upload-session-invalid', 403) };
   }
   if (Date.now() - row.created_at > SESSION_TTL_MS) {
     await clearUploadSession(env, uploadId);
@@ -75,12 +67,10 @@ export async function verifyUploadSession(context, uploadId, r2Key) {
   }
   const latestAppEpoch = await fetchAppEpoch(APP_AUD);
   if (latestAppEpoch === null || latestAppEpoch === undefined) {
-    diagBranch('epoch-null', { rowAppEpoch: row.app_epoch });
-    return { response: err('upload-session-epoch-null', 403) }; // DIAG 临时
+    return { response: err('upload-session-invalid', 403) };
   }
   if (row.app_epoch < latestAppEpoch) {
-    diagBranch('epoch-stale', { rowAppEpoch: row.app_epoch, latestAppEpoch });
-    return { response: err('upload-session-epoch-stale', 403) }; // DIAG 临时
+    return { response: err('upload-session-invalid', 403) };
   }
   return { ok: true };
 }
