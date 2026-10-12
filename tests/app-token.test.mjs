@@ -335,25 +335,38 @@ await test('verifyUploadSession：DB 异常时 fail closed', async () => {
 
 globalThis.fetch = realFetch;
 
-/* ===== 前端：403 分类（只对 app-token-* 跳复验）===== */
-await test('前端：app-token-required / app-token-invalid 识别为跳转', async () => {
+/* ===== 前端：403 分类（app-token-* / upload-session-invalid 跳复验）===== */
+await test('前端：app-token-required / app-token-invalid / upload-session-invalid 识别为跳转', async () => {
   const src = readFileSync(new URL('../static/js/upload-queue.js', import.meta.url), 'utf8');
   globalThis.window = globalThis;
   eval(src);
-  const { appTokenErrorCode, appVerifyUrl } = globalThis.SgxUploadQueue;
+  const { appTokenErrorCode, appVerifyUrl, describe403 } = globalThis.SgxUploadQueue;
   const fakeRes = (status, error) => ({
     status,
     clone: () => ({ json: async () => ({ error }) }),
   });
   assert.equal(await appTokenErrorCode(fakeRes(403, 'app-token-required')), 'app-token-required');
   assert.equal(await appTokenErrorCode(fakeRes(403, 'app-token-invalid')), 'app-token-invalid');
+  // upload-session-invalid（app-epoch 被加一）也需要重新授权
+  assert.equal(await appTokenErrorCode(fakeRes(403, 'upload-session-invalid')), 'upload-session-invalid');
   // 其他 403 不跳转
   assert.equal(await appTokenErrorCode(fakeRes(403, 'forbidden')), null);
   assert.equal(await appTokenErrorCode(fakeRes(403, 'upload-session-expired')), null);
-  assert.equal(await appTokenErrorCode(fakeRes(403, 'upload-session-invalid')), null);
   // 非 403 不跳转
   assert.equal(await appTokenErrorCode(fakeRes(401, 'unauthorized')), null);
   assert.equal(await appTokenErrorCode(fakeRes(200, null)), null);
+  // describe403 中文提示映射
+  const d1 = await describe403(fakeRes(403, 'upload-session-invalid'), false);
+  assert.equal(d1.reauth, true);
+  assert.equal(d1.msg, '授权已失效，请重新授权');
+  const d2 = await describe403(fakeRes(403, 'upload-session-expired'), false);
+  assert.equal(d2.reauth, false);
+  assert.equal(d2.msg, '上传会话已过期，请重新上传');
+  const d3 = await describe403(fakeRes(403, 'forbidden'), false);
+  assert.equal(d3.reauth, false);
+  assert.equal(d3.msg, '无权限');
+  const d4 = await describe403(fakeRes(403, 'upload-session-invalid'), true);
+  assert.equal(d4.msg, 'Authorization expired, please re-authorize');
   // 复验 URL 格式
   globalThis.location = { href: 'https://book.styrigx.com/shelf' };
   const u = appVerifyUrl();
@@ -363,11 +376,11 @@ await test('前端：app-token-required / app-token-invalid 识别为跳转', as
   delete globalThis.location;
 });
 
-await test('前端：上传中途被拒用 confirm 而非直接跳转', () => {
+await test('前端：上传中途被拒直接跳转（不弹 confirm）', () => {
   const src = readFileSync(new URL('../static/js/upload-queue.js', import.meta.url), 'utf8');
-  assert.ok(src.includes('window.confirm('), '中途被拒应先弹确认框');
-  // 确认框文案
-  assert.ok(src.includes('已完成的不受影响'));
+  // 不再用 window.confirm，直接 location.href 跳授权页
+  assert.ok(!src.includes('window.confirm('), '不应再弹确认框，直接跳转');
+  assert.ok(src.includes('授权已失效，请重新授权'), '应有中文提示文案');
 });
 
 /* 前端：visitor 不渲染 FAB 入口 */

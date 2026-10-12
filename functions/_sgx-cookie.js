@@ -121,18 +121,27 @@ export async function fetchSessionEpoch() {
 }
 
 /* 主站最新 app epoch（2.10.0）：取响应里 app[aud]，如 app.book。
-   缓存 60 秒；拿不到 → null（fail closed 由调用方处理）。缺失 aud 视为 0。 */
-export async function fetchAppEpoch(aud) {
-  const data = await fetchEpochData();
+   缓存 60 秒；拿不到 → null（fail closed 由调用方处理）。缺失 aud 视为 0。
+   force=true 时跳过缓存强制刷新（init 校验用，保证与 part 同一口径）。 */
+export async function fetchAppEpoch(aud, force = false) {
+  const data = await fetchEpochData(force);
   if (!data) return null;
   const v = data.app && typeof data.app[aud] === 'number' ? data.app[aud] : 0;
   return Number.isFinite(v) ? v : 0;
 }
 
-/* 抓取并缓存主站 session-epoch 响应全文（内部用）。 */
-async function fetchEpochData() {
+/* init 专用：强制刷新拿最新 app epoch（不走 60 秒缓存）。
+   避免 init 落在缓存旧值的 isolate 上放行过期 token，
+   而 part 落在新值 isolate 上 403 的跨 isolate 不一致。 */
+export async function fetchAppEpochFresh(aud) {
+  return fetchAppEpoch(aud, true);
+}
+
+/* 抓取并缓存主站 session-epoch 响应全文（内部用）。
+   force=true 时跳过缓存强制刷新（用于 init 等需要与 part 同一口径的场景）。 */
+async function fetchEpochData(force = false) {
   const now = Date.now();
-  if (epochCache.value !== null && now - epochCache.at < EPOCH_TTL_MS) {
+  if (!force && epochCache.value !== null && now - epochCache.at < EPOCH_TTL_MS) {
     return epochCache.value;
   }
   try {
