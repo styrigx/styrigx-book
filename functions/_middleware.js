@@ -131,21 +131,56 @@ async function withNoStoreForHtml(res) {
   });
 }
 
-/* 指纹化 JS 文件名模式：Hugo Pipes fingerprint 产出如
-   upload-queue.min.<sha>.js，中间有一段十六进制哈希。 */
+/* 指纹化静态文件名模式：Hugo Pipes fingerprint 产出如
+   upload-queue.min.<sha>.js、main.min.<sha>.css，中间有一段十六进制哈希。 */
 function isFingerprintedJs(path) {
   return /^\/js\/.+\.[0-9a-f]{8,}\.(js|mjs)$/.test(path);
 }
 
-/* /js/ 下的脚本缓存策略：
+function isFingerprintedCss(path) {
+  return /^\/css\/.+\.[0-9a-f]{8,}\.css$/.test(path);
+}
+
+/* 白名单静态资源守卫：文件不存在时 Pages 会回落到 index.html
+   （Book 有 layouts/404.html 后回落到 404 页，但经过 Functions 的响应
+   仍可能拿到非预期的 HTML），导致两个问题：
+   1. 未解锁访客能拿到页面壳；
+   2. 下面的缓存头逻辑只看路径，浏览器会把 HTML 当 JS/CSS 缓存一年。
+   规则：只有「200 + content-type 与路径扩展名匹配」才算命中静态文件；
+   否则（text/html 回落、非 200 等）一律 404 + no-store + 纯文本空体。 */
+function staticGuard(path, res) {
+  const dot = path.lastIndexOf('.');
+  const ext = dot !== -1 ? path.slice(dot + 1).toLowerCase() : '';
+  const ct = (res.headers.get('content-type') || '').toLowerCase();
+
+  let ok = res.status === 200 && !ct.includes('text/html');
+  if (ok && (ext === 'js' || ext === 'mjs')) ok = ct.includes('javascript');
+  if (ok && ext === 'css') ok = ct.includes('text/css');
+
+  if (ok) return null; /* 命中真实静态文件，交给缓存头逻辑 */
+  return new Response('Not Found', {
+    status: 404,
+    headers: {
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Cache-Control': 'no-store',
+    },
+  });
+}
+
+/* /js/、/css/ 下的静态资源缓存策略（仅在 staticGuard 通过后调用，
+   即已确认是 200 + 类型正确的真实文件）：
    - 已指纹化（文件名带哈希）：public, max-age=31536000, immutable
    - 未指纹化：no-cache（每次重新验证，避免部署后客户端仍跑旧脚本）
    注意：本 middleware 是根目录中间件，静态资源走 isWhitelisted 直接
    return next()，响应仍算「经过 Functions」，Cloudflare Pages 的
    static/_headers 规则对这类响应不生效，所以在这里直接设头。 */
-async function withJsCacheHeaders(path, res) {
+async function withStaticCacheHeaders(path, res) {
   const headers = new Headers(res.headers);
-  if (isFingerprintedJs(path)) {
+  const fingerprinted =
+    path.startsWith('/js/') ? isFingerprintedJs(path)
+    : path.startsWith('/css/') ? isFingerprintedCss(path)
+    : false;
+  if (fingerprinted) {
     headers.set('Cache-Control', 'public, max-age=31536000, immutable');
   } else {
     headers.set('Cache-Control', 'no-cache');
@@ -174,8 +209,20 @@ export async function onRequest(context) {
   const path = url.pathname;
 
   if (isWhitelisted(path)) {
-    if (path.startsWith('/js/')) return withJsCacheHeaders(path, await next());
-    return next();
+    const res = await next();
+    /* /api/* 白名单（session-check、shelf）：动态接口，由接口自己验签、
+       自己返回 401/JSON，原样返回，不做静态守卫 */
+    if (path.startsWith('/api/')) return res;
+    /* 静态资源：先过守卫。文件缺失时 Pages 回落的 text/html、或非 200，
+       一律转成 404 + no-store，避免 HTML 壳被当成 JS/CSS 长期缓存 */
+    const guard = staticGuard(path, res);
+    if (guard) return guard;
+    /* /js/、/css/：命中真实文件后按指纹化与否设缓存头；
+       其余静态扩展名（图片/字体等）原样返回 Pages 默认头 */
+    if (path.startsWith('/js/') || path.startsWith('/css/')) {
+      return withStaticCacheHeaders(path, res);
+    }
+    return res;
   }
 
   const cookies = getCookies(request, COOKIE_NAME);
