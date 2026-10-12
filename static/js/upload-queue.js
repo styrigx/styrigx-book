@@ -395,7 +395,7 @@ async function uploadItem(item){
     /* init（含 SHA-256 去重） */
     var initR = await api('/api/admin/upload/init', {
       method: 'POST', headers: {'Content-Type': 'application/json'}, signal: signal,
-      body: JSON.stringify({filename: item.file.name, size: item.file.size, sha256: item.sha256, format: item.format})
+      body: JSON.stringify({filename: item.file.name, size: item.file.size, sha256: item.sha256, format: item.format.toLowerCase()})
     });
     if(initR.status === 409){
       var j409 = await initR.json().catch(function(){ return {}; });
