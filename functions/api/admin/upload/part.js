@@ -1,9 +1,11 @@
 // POST /api/admin/upload/part?uploadId=&key=&partNumber= — 上传一个分片，需 Access JWT
 // body 为分片二进制（ArrayBuffer）。partNumber=1 时严格校验文件魔数：
-// PDF 须为 %PDF，EPUB 须为 PK\x03\x04；不符 → 400 并 abort 整个上传。
+// PDF 须为 %PDF，EPUB 须为 PK\x03\x04；不符 → 400 invalid-file-magic（附收到字节数）并 abort 整个上传。
+// 空 body → 400 part-body-empty（会话保留，可重试，不 abort）。
+// R2 uploadPart 抛错 → 500 part-r2-error（只打日志不进响应体），abort + 清理会话。
 // 成功 → {etag}
-// 2.10.2：顶层 try/catch —— R2 uploadPart 等未捕获异常不再直接 500，
-// 而是 abort multipart + 清理上传会话后返回短错误码 part-failed（不暴露内部细节）。
+// 2.10.2：顶层 try/catch —— 未捕获异常不再直接 500，
+// 而是 abort multipart + 清理上传会话后返回短错误码（不暴露内部细节）。
 // 鉴权/会话校验异常只返回 part-auth-error，不触发 abort（未鉴权时不得写操作）。
 // abortAndClear 内部对 clearUploadSession 也包 try/catch，避免二次抛错。
 // 日志：每个 catch 先 console.error 打出 [upload-part] e.name + e.message（不打 key 以外的
@@ -70,15 +72,31 @@ export async function onRequest(context) {
 
     const format = key.endsWith('.pdf') ? 'pdf' : 'epub';
     const buf = await request.arrayBuffer();
+    /* 空 body：大概率网络/客户端异常，会话保留、可重试，不 abort */
+    if (buf.byteLength === 0) {
+      console.error('[upload-part]', 'part-body-empty', 'partNumber=' + partNumber);
+      return err('part-body-empty', 400);
+    }
     if (partNumber === 1 && !checkMagic(buf, format)) {
       await abortAndClear(env, key, uploadId);
-      return err('invalid file magic', 400);
+      console.error('[upload-part]', 'invalid-file-magic', 'bytes=' + buf.byteLength, 'format=' + format);
+      return json({ error: 'invalid-file-magic', detail: { bytes: buf.byteLength } }, 400);
     }
 
-    const part = await env.BOOKS.uploadPart(key, uploadId, partNumber, buf);
+    let part;
+    try {
+      part = await env.BOOKS.uploadPart(key, uploadId, partNumber, buf);
+    } catch (e) {
+      /* R2 异常：日志保留真实错误（不进响应体），中止上传、清理会话 */
+      console.error('[upload-part]', 'part-r2-error', e && e.name, e && e.message);
+      if (authed) {
+        await abortAndClear(env, key, uploadId);
+      }
+      return err('part-r2-error', 500);
+    }
     return json({ etag: part.etag });
   } catch (e) {
-    // 未捕获异常（如 R2 uploadPart 抛错）：日志保留真实错误，中止上传、清理会话，返回短错误码
+    // 未捕获异常：日志保留真实错误，中止上传、清理会话，返回短错误码
     // 仅在鉴权通过后才会 abort，未鉴权时不写操作
     console.error('[upload-part]', e && e.name, e && e.message);
     if (authed) {

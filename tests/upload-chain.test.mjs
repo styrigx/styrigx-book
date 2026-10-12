@@ -2,7 +2,7 @@
 // 覆盖：
 //   1. EPUB 全链路 200，会话在 complete 后清理
 //   2. PDF 全链路 200
-//   3. part 时 R2 uploadPart 抛错 → 500 part-failed，且 abort 被调用、会话被清理
+//   3. part 时 R2 uploadPart 抛错 → 500 part-r2-error，且 abort 被调用、会话被清理
 //   4. complete 时 R2 completeMultipartUpload 抛错 → 400 complete-failed，且 abort 被调用、会话被清理
 //   5. complete 时发生未捕获异常（如 head 抛错）→ 500 complete-failed，且 abort 被调用、会话被清理
 //   6. R2 uploadPart 抛 Error('boom') → console.error 被调用且包含 'boom'，响应体不包含 'boom'
@@ -259,13 +259,13 @@ await test('PDF 全链路：init → part → complete 均为 200', async () => 
   assert.equal(db._sessions.has('mpu-1'), false);
 });
 
-await test('part：R2 uploadPart 抛错 → 500 part-failed，abort 被调用，会话被清理', async () => {
+await test('part：R2 uploadPart 抛错 → 500 part-r2-error，abort 被调用，会话被清理', async () => {
   const db = mockDB();
   const r2 = mockR2({ async uploadPart() { throw new Error('r2 boom'); } });
   const init = await doInit(db, r2, 'epub');
   const pr = await doPart(db, r2, init.key, EPUB_MAGIC);
   assert.equal(pr.status, 500);
-  assert.equal((await pr.json()).error, 'part-failed');
+  assert.equal((await pr.json()).error, 'part-r2-error');
   assert.equal(r2._calls.abort, 1, '应 abort multipart');
   assert.equal(db._sessions.has('mpu-1'), false, '会话应被清理');
 });
@@ -286,7 +286,7 @@ await test("R2 uploadPart 抛 Error('boom') → console.error 含 boom，响应�
   }
   assert.equal(pr.status, 500);
   const bodyText = JSON.stringify(await pr.json());
-  assert.equal(JSON.parse(bodyText).error, 'part-failed');
+  assert.equal(JSON.parse(bodyText).error, 'part-r2-error');
   assert.ok(logged.some((m) => m.includes('boom')), 'console.error 应包含 boom');
   assert.ok(!bodyText.includes('boom'), '响应体不应包含 boom（不暴露内部细节）');
 });
@@ -317,7 +317,7 @@ await test('complete：未捕获异常（如 head 抛错）→ 500 complete-fail
   assert.equal(db._sessions.has('mpu-1'), false, '会话应被清理');
 });
 
-await test('part：abortAndClear 内 clearUploadSession 抛错 → 仍返回 500 part-failed，不抛未捕获异常', async () => {
+await test('part：abortAndClear 内 clearUploadSession 抛错 → 仍返回 500 part-r2-error，不抛未捕获异常', async () => {
   const db = mockDB();
   // 让 DELETE 抛错 → clearUploadSession 内部抛错（绕过其自带的 try/catch，模拟极端情况）
   const origPrepare = db.prepare.bind(db);
@@ -341,8 +341,60 @@ await test('part：abortAndClear 内 clearUploadSession 抛错 → 仍返回 500
   }
   assert.equal(threw, false, '不应有未捕获异常');
   assert.equal(pr.status, 500);
-  assert.equal((await pr.json()).error, 'part-failed');
+  assert.equal((await pr.json()).error, 'part-r2-error');
   assert.equal(r2._calls.abort, 1, '应 abort multipart');
+});
+
+
+await test('part：空 body → 400 part-body-empty，会话保留（可重试，不 abort）', async () => {
+  const db = mockDB();
+  const r2 = mockR2();
+  const init = await doInit(db, r2, 'epub');
+  const ctx = ctxFor({ db, r2, url: partUrl(init.key), magic: new ArrayBuffer(0) });
+  const pr = await partReq(ctx);
+  assert.equal(pr.status, 400);
+  assert.equal((await pr.json()).error, 'part-body-empty');
+  assert.equal(r2._calls.abort, 0, '空 body 不应 abort');
+  assert.equal(db._sessions.has('mpu-1'), true, '会话应保留，可重试');
+});
+
+await test('part：魔数错误 → 400 invalid-file-magic（附字节数），abort，会话清理', async () => {
+  const db = mockDB();
+  const r2 = mockR2();
+  const init = await doInit(db, r2, 'epub');
+  const badMagic = new Uint8Array([0x00, 0x01, 0x02, 0x03, 0x04, 0x05]).buffer;
+  const ctx = ctxFor({ db, r2, url: partUrl(init.key), magic: badMagic });
+  const pr = await partReq(ctx);
+  assert.equal(pr.status, 400);
+  const body = await pr.json();
+  assert.equal(body.error, 'invalid-file-magic');
+  assert.equal(body.detail && body.detail.bytes, 6, '应附上收到字节数');
+  assert.equal(r2._calls.abort, 1, '应 abort multipart');
+  assert.equal(db._sessions.has('mpu-1'), false, '会话应被清理');
+});
+
+await test('4.7MB EPUB 全链路：init → part → complete 均为 200', async () => {
+  const db = mockDB();
+  const r2 = mockR2();
+  const size = Math.round(4.7 * 1024 * 1024);
+  const big = new Uint8Array(size);
+  big[0] = 0x50; big[1] = 0x4b; big[2] = 0x03; big[3] = 0x04; // PK\x03\x04
+  const initCtx = ctxFor({
+    db, r2,
+    url: 'https://book.styrigx.com/api/admin/upload/init',
+    body: { filename: 'gatsby.epub', size, sha256: SHA, format: 'epub' },
+  });
+  const initRes = await initReq(initCtx);
+  assert.equal(initRes.status, 200, 'init 应 200');
+  const init = await initRes.json();
+  assert.ok(init.uploadId, '应返回 uploadId');
+  const partCtx = ctxFor({ db, r2, url: partUrl(init.key), magic: big.buffer });
+  const pr = await partReq(partCtx);
+  assert.equal(pr.status, 200, 'part 1 应 200');
+  assert.ok((await pr.json()).etag, '应返回 etag');
+  const cr = await doComplete(db, r2, init.key);
+  assert.equal(cr.status, 200, 'complete 应 200');
+  assert.equal(db._sessions.has('mpu-1'), false, 'complete 后会话应清理');
 });
 
 console.log(`\n  ${passed} passed`);
