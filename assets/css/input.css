@@ -284,6 +284,8 @@ html { scroll-padding-top: calc(var(--nav-h) + 16px); }
 .subpage-title{font-size:40px;font-weight:800;letter-spacing:-0.02em;line-height:1.15;color:var(--m-primary)}
 .subpage-sub{margin-top:10px;font-size:14px;color:var(--m-on-surface-variant)}
 .subpage-actions{position:absolute;right:16px;top:calc(12px + env(safe-area-inset-top,0px));display:flex;gap:8px;flex-shrink:0;z-index:2}
+/* 上传页（bk-admin）：压缩标题区大留白，让拖放区进首屏上半部（默认 42svh 标题区） */
+.bk-admin .subpage-head{min-height:230px;padding-top:calc(var(--nav-h,64px) + 8px + env(safe-area-inset-top,0px));padding-bottom:20px}
 /* 滚过标题区后的顶部居中小标题 */
 .subpage-mini-title{position:fixed;left:50%;top:calc(16px + env(safe-area-inset-top,0px));z-index:54;
   transform:translateX(-50%) translateY(-8px);opacity:0;pointer-events:none;
@@ -484,6 +486,8 @@ body.subpage-scrolled #site-nav > span{opacity:0;pointer-events:none;transition:
 .sheet-opt{display:flex;align-items:center;gap:12px;width:100%;padding:14px 20px;min-height:56px;text-align:left;border-radius:1rem}
 .sheet-opt:active{background:var(--m-container)}
 .sheet-opt + .sheet-opt{border-top:1px solid color-mix(in srgb,var(--m-outline) 45%,transparent)}
+/* 详情弹层：内容区滚动、操作按钮固定底部（#sheet-actions） */
+#sheet-body{flex:1 1 auto;min-height:0}
 
 /* #search-modal 已删除（搜索并入 /browser/） */
 
@@ -884,8 +888,15 @@ mark.smk{background:var(--m-primary-container);color:var(--m-on-primary-containe
 .bk-cover{container-type:inline-size}
 /* 排版封面：居中、内边距 ≥ 封面宽 10%、书名最多两行省略 */
 .bk-gen{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:12%;gap:6%;overflow:hidden}
-.bk-gen-title{font-weight:800;line-height:1.35;color:#fff;text-wrap:balance;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:15px;font-size:13cqw}
-.bk-gen-author{font-size:12px;font-size:10cqw;line-height:1.3;color:rgba(255,255,255,.78);display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;text-wrap:balance}
+.bk-gen-title{font-weight:800;line-height:1.35;color:#fff;text-wrap:balance;word-break:keep-all;line-break:strict;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:15px}
+.bk-gen-author{font-size:12px;line-height:1.3;color:rgba(255,255,255,.78);display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;text-wrap:balance;word-break:keep-all}
+/* 封面盒子内（容器查询）按封面宽缩放字号；cqw 在无容器祖先时回退到视口单位，
+ * 会把 FAB 缩略图标题撑到 46px 撑爆并被裁掉，故 cqw 只在 .bk-cover 内生效 */
+.bk-cover .bk-gen-title{font-size:13cqw}
+.bk-cover .bk-gen-author{font-size:10cqw}
+/* FAB 缩略图 40×52 太小放不下标题：只留渐变底色，书名由旁边的 FAB 标题承载 */
+#bk-fab-thumb .bk-gen-title{display:none}
+#bk-fab-thumb .bk-gen{padding:4px}
 .bk-gen-sm .bk-gen-author{display:none}
 
 /* 封面角标（Owner 专属，封面右下）：百分比黑胶囊 / 已读绿勾圆 */

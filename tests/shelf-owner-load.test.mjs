@@ -34,7 +34,7 @@ assert.ok(!/localStorage\[.bk-progress-/.test(src), '书架不应再读 localSto
 
 // 3. 纯函数 readState 边界（提取 pctOf / readState / statusLabel 跑 vm）
 const fnNames = ['pctOf', 'readState', 'statusLabel'];
-let testSrc = 'var READ_DONE = 99;\nvar T = { unread: "未读", read: "已读" };\n';
+let testSrc = 'var READ_DONE = 99;\nvar T = { unread: "未读", read: "已读", readingPct: function(p){ return "在读 " + p + "%"; } };\n';
 for (const name of fnNames) {
   const fnRe = new RegExp(`function\\s+${name}\\s*\\([^)]*\\)\\s*\\{`, 'g');
   const match = fnRe.exec(src);
@@ -64,7 +64,7 @@ assert.equal(readState({ percent: 42 }), 'reading', 'percent 42 → 在读');
 assert.equal(readState({ percent: 98.9 }), 'reading', 'percent 98.9 → 在读');
 assert.equal(readState({ percent: 99 }), 'read', 'percent 99 → 已读');
 assert.equal(readState({ percent: 100 }), 'read', 'percent 100 → 已读');
-assert.equal(statusLabel({ percent: 42 }), '42%', '在读显示百分比');
+assert.equal(statusLabel({ percent: 42 }), '在读 42%', '在读显示在读 + 百分比');
 assert.equal(statusLabel({ percent: 100 }), '已读', '已读显示已读');
 assert.equal(statusLabel({ percent: 0 }), '未读', '未读显示未读');
 

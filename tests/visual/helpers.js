@@ -29,14 +29,23 @@ function coverColor(key) {
 }
 
 function coverSVG(key, title) {
-  const initial = String(title || '?').trim().charAt(0) || '?';
+  /* 测试替身封面：与排版封面同一风格（居中标题、最多两行、按 key 取色渐变），
+   * 不再用单字首字，避免截图里出现「两套样式」。生产真实封面不受影响。 */
   const bg = coverColor(key);
-  const esc = String(initial).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const dark = bg.replace('42%', '28%');
+  const t = String(title || '?');
+  const per = 9;
+  const l1 = t.slice(0, per);
+  let l2 = t.length > per ? t.slice(per, per * 2) : '';
+  if (t.length > per * 2) l2 = l2.slice(0, per - 1) + '…';
+  const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const y1 = l2 ? 290 : 315;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="600" viewBox="0 0 400 600">` +
-    `<rect width="400" height="600" fill="${bg}"/>` +
-    `<rect x="24" y="24" width="352" height="552" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="3"/>` +
-    `<text x="200" y="330" text-anchor="middle" font-family="sans-serif" font-size="150" font-weight="700" fill="rgba(255,255,255,.92)">${esc}</text>` +
-    `</svg>`;
+    `<defs><linearGradient id="g" x1="0" y1="0" x2="0.6" y2="1"><stop offset="0" stop-color="${bg}"/><stop offset="1" stop-color="${dark}"/></linearGradient></defs>` +
+    `<rect width="400" height="600" fill="url(#g)"/>` +
+    `<text x="200" y="${y1}" text-anchor="middle" font-family="sans-serif" font-size="30" font-weight="700" fill="rgba(255,255,255,.95)">${esc(l1)}</text>` +
+    (l2 ? `<text x="200" y="${y1 + 44}" text-anchor="middle" font-family="sans-serif" font-size="30" font-weight="700" fill="rgba(255,255,255,.95)">${esc(l2)}</text>` : '') +
+  `</svg>`;
 }
 
 const EPUB_BUF = makeEpub();

@@ -2,8 +2,8 @@
 {{ $isEn := or (eq .Lang "en") (hasPrefix .RelPermalink "/en/") }}
 {{/* 3.0：旧管理页下线，本页只剩上传（上传区 + 上传队列，与书架 ⋮ 菜单共用 upload-queue.js）。
    书籍管理（编辑 / 换封面 / 公开 / 放进主站书单 / 删除）已移到书架详情弹层。 */}}
-<main class="max-w-4xl mx-auto px-4 sm:px-6 pb-16">
-  {{ partial "subpage-head.html" (dict "title" (cond $isEn "Upload books" "上传书籍") "sub" "—" "isEn" $isEn) }}
+<main class="bk-admin max-w-4xl mx-auto px-4 sm:px-6 pb-16">
+  {{ partial "subpage-head.html" (dict "title" (cond $isEn "Upload books" "上传书籍") "sub" "" "isEn" $isEn) }}
 
   {{/* 未登录提示（/api/private/me 未返回 role=owner 时显示） */}}
   <div id="adm-auth" class="hidden text-center py-20">
@@ -59,6 +59,17 @@ async function boot(){
     var j = await r.json();
     if(!j || j.role !== 'owner'){ auth.classList.remove('hidden'); return; }
     main.classList.remove('hidden');
+    /* 标题下统计：有数据才显示「共 N 本 · 已用 X MB」，没有就不显示 */
+    try{
+      var br = await api('/api/admin/books');
+      if(br.ok){
+        var bj = await br.json();
+        if(bj && bj.total > 0){
+          var hero = document.querySelector('.subpage-hero');
+          if(hero) hero.insertAdjacentHTML('beforeend', '<p class="subpage-sub">' + (isEn ? 'Total ' + bj.total + ' books · ' + H.fmtSize(bj.bytes || 0) + ' used' : '共 ' + bj.total + ' 本 · 已用 ' + H.fmtSize(bj.bytes || 0)) + '</p>');
+        }
+      }
+    }catch(e){}
   }catch(e){
     auth.classList.remove('hidden');
   }

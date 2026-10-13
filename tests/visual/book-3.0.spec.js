@@ -117,6 +117,25 @@ test('owner：角标（42% 胶囊 / 已读勾）+ 最近阅读条 5 本 + FAB（
   await expect(fab).toHaveAttribute('aria-label', '继续阅读 《塞尔达传说：旷野之息设定集》');
   await expect(page.locator('#bk-fab-title')).toHaveText('塞尔达传说：旷野之息设定集');
   await expect(page.locator('#bk-fab-sub')).toContainText('继续阅读 · 2%');
+  /* FAB 展开态：小封面可见（排版封面被包在缩略图内，不再铺满整个 FAB） */
+  const thumbBox = await page.locator('#bk-fab-thumb').boundingBox();
+  const genBox = await page.locator('#bk-fab-thumb .bk-gen').boundingBox();
+  expect(thumbBox).not.toBeNull();
+  expect(genBox).not.toBeNull();
+  expect(genBox.width).toBeLessThanOrEqual(thumbBox.width + 1);
+  expect(genBox.height).toBeLessThanOrEqual(thumbBox.height + 1);
+  /* FAB 收起态：滚动时缩成 56px 圆钮（只留书本图标），停下恢复展开 */
+  await page.evaluate(() => window.scrollTo(0, 300));
+  expect(await page.evaluate(() => !document.querySelector('#bk-fab-collapsed').classList.contains('hidden'))).toBe(true);
+  const collapsedBox = await page.locator('#bk-fab-collapsed:not(.hidden)').boundingBox();
+  expect(collapsedBox).not.toBeNull();
+  expect(collapsedBox.width).toBe(56);
+  expect(collapsedBox.height).toBe(56);
+  await page.waitForFunction(() => {
+    const c = document.querySelector('#bk-fab-collapsed');
+    return c && c.classList.contains('hidden');
+  }, { timeout: 5000 });
+  await expect(page.locator('#bk-fab-expanded:not(.hidden)')).toHaveCount(1);
 
   /* ⋮ 菜单：3 项文字 */
   await page.locator('#bk-menu-btn').click();
@@ -317,13 +336,19 @@ test('owner：⋮ 菜单「为无封面的书提取封面」调 backfill 接口�
   await expect(page.locator('#bk-toast:not(.hidden)')).toContainText('已为 2 本书补齐封面（共检查 6 本）。', { timeout: 10000 });
 });
 
-test('空状态：owner 有上传按钮', async ({ page }) => {
+test('空状态：owner 有上传按钮，排序胶囊隐藏', async ({ page }) => {
   await setup(page, { viewport: MOBILE, owner: true, books: [] });
   await gotoReady(page, '/', '#bk-empty:not(.hidden)');
   await expect(page.locator('#bk-empty')).toContainText('书架还是空的。');
   await expect(page.locator('#bk-empty')).toContainText('上传第一本书，开始你的阅读。');
   await expect(page.locator('#bk-empty-cta:not(.hidden)')).toHaveCount(1);
   await expect(page.locator('#bk-empty-cta')).toHaveAttribute('href', '/admin/');
+  /* 书架为空时不显示排序胶囊（画布 12 里没有） */
+  await expect(page.locator('#bk-chips:not(.hidden)')).toHaveCount(0);
+  /* 空状态插画居中：120px 描边书本的中心 ≈ 视口中心（390/2=195） */
+  const svgBox = await page.locator('#bk-empty svg').boundingBox();
+  expect(svgBox).not.toBeNull();
+  expect(Math.abs((svgBox.x + svgBox.width / 2) - 195)).toBeLessThan(2);
 });
 
 test('空状态：visitor 只有说明，无上传按钮', async ({ page }) => {
@@ -331,4 +356,27 @@ test('空状态：visitor 只有说明，无上传按钮', async ({ page }) => {
   await gotoReady(page, '/', '#bk-empty:not(.hidden)');
   await expect(page.locator('#bk-empty')).toContainText('书架还是空的。');
   await expect(page.locator('#bk-empty-cta:not(.hidden)')).toHaveCount(0);
+  await expect(page.locator('#bk-chips:not(.hidden)')).toHaveCount(0);
+});
+
+test('owner：详情弹层 360 宽（操作按钮固定底部，在视口内；文案「在读 42%」）', async ({ page }) => {
+  await setup(page, { viewport: NARROW, owner: true, books: OWNER_BOOKS });
+  await gotoReady(page, '/', '#bk-grid:not(.hidden)');
+  await waitShelf(page);
+
+  await page.locator('#bk-grid [data-book="epub1"]').click();
+  const sheet = page.locator('#sheet-wrap.open');
+  await expect(sheet).toHaveCount(1);
+  await expect(sheet).toContainText('在读 42%');
+  await expect(sheet).not.toContainText('已读 42%');
+
+  /* 操作按钮固定在弹层底部，不随内容滚动 → 在视口内 */
+  const actionsBox = await page.locator('#sheet-actions').boundingBox();
+  expect(actionsBox).not.toBeNull();
+  expect(actionsBox.y + actionsBox.height).toBeLessThanOrEqual(740);
+  /* 编辑态按钮同样在视口内 */
+  await page.locator('#bk-sheet-edit').click();
+  const editBox = await page.locator('#sheet-actions').boundingBox();
+  expect(editBox).not.toBeNull();
+  expect(editBox.y + editBox.height).toBeLessThanOrEqual(740);
 });
