@@ -704,15 +704,15 @@ async function uploadAttempt(item, signal, sleep){
       coverKey = (await cr.json()).key || null;
     }
     item.progress = 0.95; updateProg(item);
-    /* complete */
+    /* complete：coverKey 在请求体顶层（见 complete.js 契约注释），pages 在 meta 里 */
     var meta = {
-      title: item.title, author: item.author, lang: item.lang,
+      title: item.title, author: item.author, lang: item.lang, pages: item.pages,
       tags: item.tags.split(/[,，]/).map(function(s){ return s.trim(); }).filter(Boolean),
-      visibility: item.visibility, in_shelf: item.inShelf ? 1 : 0, coverKey: coverKey
+      visibility: item.visibility, in_shelf: item.inShelf ? 1 : 0
     };
     var cr2 = await api('/api/admin/upload/complete', {
       method: 'POST', headers: {'Content-Type': 'application/json'}, signal: signal,
-      body: JSON.stringify({uploadId: item.uploadId, key: item.key, parts: parts, sha256: item.sha256, meta: meta})
+      body: JSON.stringify({uploadId: item.uploadId, key: item.key, parts: parts, sha256: item.sha256, meta: meta, coverKey: coverKey})
     });
     if(cr2.status === 403){
       var c2d403 = await window.SgxUploadQueue.describe403(cr2, isEn);
