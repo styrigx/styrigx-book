@@ -30,6 +30,11 @@
         <h2 class="text-sm font-bold text-m-on-surface-variant">{{ if $isEn }}Manage books{{ else }}书籍管理{{ end }}</h2>
         <p id="adm-stats" class="text-xs text-m-on-surface-variant"></p>
       </div>
+      {{/* 补齐封面：对 cover_key 为空的书 head R2 的 covers/<id>.webp，存在则写回（只改 cover_key） */}}
+      <div class="flex items-center gap-2 mb-3 px-1">
+        <button type="button" id="adm-backfill-covers" class="h-9 px-3 rounded-full text-xs font-bold bg-m-container text-m-on-surface">{{ if $isEn }}Backfill covers{{ else }}补齐封面{{ end }}</button>
+        <p id="adm-backfill-result" class="text-xs text-m-on-surface-variant"></p>
+      </div>
       <div id="adm-list" class="space-y-3"></div>
       <div id="adm-list-empty" class="hidden text-center py-12 text-sm text-m-on-surface-variant">{{ if $isEn }}No books yet.{{ else }}还没有书。{{ end }}</div>
     </section>
@@ -170,6 +175,30 @@ document.getElementById('adm-cover-input').addEventListener('change', async func
     b.cover_key = ck; b.updated_at = new Date().toISOString();
     renderList();
   }catch(err){ alert(T.saveFail + ': ' + ((err && err.message) || err)); }
+});
+
+/* ============ 补齐封面 ============ */
+document.getElementById('adm-backfill-covers').addEventListener('click', async function(){
+  var btn = this, out = document.getElementById('adm-backfill-result');
+  btn.disabled = true;
+  out.textContent = isEn ? 'Checking…' : '正在检查…';
+  try{
+    var r = await api('/api/admin/books/backfill-covers', {method: 'POST'});
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+    var j = await r.json();
+    out.textContent = isEn
+      ? ('Checked ' + j.checked + ', backfilled ' + j.fixed + '.')
+      : ('已扫描 ' + j.checked + ' 本，补上 ' + j.fixed + ' 本。');
+    if(j.fixed > 0){
+      /* 重新拉列表，让补上的封面显示出来 */
+      var r2 = await api('/api/admin/books');
+      if(r2.ok){ var j2 = await r2.json(); adminBooks = (j2 && j2.books) || []; renderList(); renderStats(); }
+    }
+  }catch(e){
+    out.textContent = isEn ? 'Failed, please retry.' : '失败，请重试。';
+  }finally{
+    btn.disabled = false;
+  }
 });
 
 /* ============ 编辑对话框 ============ */

@@ -41,7 +41,9 @@ export async function onRequest(context) {
   } catch {
     return err('invalid json', 400);
   }
-  const { uploadId, key, parts, sha256, meta = {}, coverKey = null } = body || {};
+  const { uploadId, key, parts, sha256, meta = {}, coverKey: topCoverKey = null } = body || {};
+  // 兼容旧客户端：coverKey 也可能在 meta 里；顶层优先。
+  const coverKey = topCoverKey ?? meta.coverKey ?? null;
   if (!uploadId) return err('missing uploadId', 400);
   if (!key || !BOOK_KEY_RE.test(key)) return err('invalid key', 400);
 
