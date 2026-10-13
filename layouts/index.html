@@ -1,614 +1,1092 @@
 {{ define "main" }}
 {{ $isEn := or (eq .Lang "en") (hasPrefix .RelPermalink "/en/") }}
-<main class="max-w-6xl mx-auto px-4 sm:px-6 pb-16">
-  {{ partial "subpage-head.html" (dict "title" (cond $isEn "Bookshelf" "书架") "sub" (cond $isEn "Loading…" "加载中…") "isEn" $isEn) }}
-
-  {{/* 1.0.1：搜索框移到底部悬浮胶囊，过滤逻辑与 1.0 一致 */}}
-
-  {{/* 继续阅读：localStorage bk-progress-<id> */}}
-  <section id="bk-continue-sec" class="mb-8 hidden">
-    <h2 class="text-sm font-bold text-m-on-surface-variant mb-3 px-1">{{ if $isEn }}Continue reading{{ else }}继续阅读{{ end }}</h2>
-    <div id="bk-continue" class="flex gap-3 overflow-x-auto pb-2 -mx-4 px-4 sm:mx-0 sm:px-0"></div>
+{{ $shelfBase := cond $isEn "/en/book/" "/book/" }}
+{{ $readBase := cond $isEn "/en/read/" "/read/" }}
+{{ $adminBase := cond $isEn "/en/admin/" "/admin/" }}
+{{/* 3.0 书架首页：页头（书库 ▾ + 搜索/筛选/⋮）+ 胶囊 + 最近阅读/最近添加条 +
+   书架网格（列表/网格/大封面）+ 继续阅读 FAB + 详情弹层 + 筛选弹层。
+   PR 2 起的入口（收藏、阅读统计、书签与笔记、多选）不渲染。 */}}
+<main id="bk-main" class="w-full max-w-7xl mx-auto px-4 sm:px-6 pb-6">
+  {{/* ===== 页头：书库 ▾ + 搜索 / 筛选 / ⋮ ===== */}}
+  <section class="relative flex items-center justify-between pt-2 pb-3">
+    <h1 class="min-w-0">
+      <button id="bk-group-btn" type="button" class="flex items-center gap-1 text-[26px] leading-none font-extrabold tracking-tight text-m-on-surface py-2 pr-2" aria-haspopup="menu" aria-expanded="false">
+        <span>{{ if $isEn }}Library{{ else }}书库{{ end }}</span>
+        <span class="text-[15px] text-m-on-surface-variant translate-y-[1px]">▾</span>
+      </button>
+    </h1>
+    <div class="flex items-center gap-0.5 shrink-0">
+      <button id="bk-search-btn" type="button" class="bk-icbtn" aria-label="{{ if $isEn }}Search{{ else }}搜索{{ end }}">{{ partial "icon.html" (dict "name" "search" "uid" "head-search") }}</button>
+      <button id="bk-filter-btn" type="button" class="bk-icbtn" aria-label="{{ if $isEn }}Sort and filter{{ else }}排序与筛选{{ end }}">{{ partial "icon.html" (dict "name" "sliders" "uid" "head-filter") }}</button>
+      <button id="bk-menu-btn" type="button" class="bk-icbtn hidden" aria-label="{{ if $isEn }}More{{ else }}更多{{ end }}">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg>
+      </button>
+    </div>
+    {{/* 分组下拉：全部书籍 / 在读（Owner）/ 主站书单 */}}
+    <div id="bk-group-menu" class="bk-menu hidden" role="menu"></div>
+    {{/* ⋮ 菜单：上传书籍 / 随机打开一本 / 为无封面的书提取封面 */}}
+    <div id="bk-more-menu" class="bk-menu hidden" role="menu"></div>
   </section>
 
-  {{/* 筛选芯片 + 排序 */}}
-  <div class="flex items-center gap-2 mb-5">
-    <div id="bk-chips" class="brw-cats flex-1 min-w-0" role="tablist" aria-label="{{ if $isEn }}Filter{{ else }}筛选{{ end }}"></div>
-    <select id="bk-sort" aria-label="{{ if $isEn }}Sort{{ else }}排序{{ end }}"
-      class="flex-shrink-0 h-11 px-3 rounded-full bg-m-container text-m-on-surface-variant text-[13px] font-semibold outline-none border border-transparent">
-      <option value="added">{{ if $isEn }}Recently added{{ else }}最近添加{{ end }}</option>
-      <option value="read" data-owner-only>{{ if $isEn }}Recently read{{ else }}最近阅读{{ end }}</option>
-      <option value="title">{{ if $isEn }}Title{{ else }}书名{{ end }}</option>
-    </select>
+  {{/* ===== 搜索条（点搜索图标展开） ===== */}}
+  <div id="bk-searchbar" class="hidden items-center gap-2 pb-3">
+    <div class="flex-1 flex items-center gap-2 rounded-full bg-m-container px-4 h-12">
+      {{ partial "icon.html" (dict "name" "search" "uid" "searchbar") }}
+      <input id="bk-search-input" type="search" class="flex-1 min-w-0 bg-transparent outline-none text-[15px] placeholder:text-m-on-surface-variant" placeholder="{{ if $isEn }}Search by title or author{{ else }}搜索书名或作者{{ end }}" autocomplete="off">
+    </div>
+    <button id="bk-search-close" type="button" class="bk-icbtn" aria-label="{{ if $isEn }}Close search{{ else }}关闭搜索{{ end }}">{{ partial "icon.html" (dict "name" "x-mark" "uid" "search-close") }}</button>
   </div>
 
-  {{/* 加载骨架 */}}
-  <div id="bk-loading" class="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-5" aria-hidden="true">
-    {{ range seq 12 }}
-    <div class="animate-pulse"><div class="aspect-[2/3] rounded-xl bg-m-container"></div><div class="h-3 rounded bg-m-container mt-2 w-4/5"></div><div class="h-3 rounded bg-m-container mt-1.5 w-3/5"></div></div>
-    {{ end }}
-  </div>
+  {{/* ===== 选中条件胶囊 ===== */}}
+  <div id="bk-chips" class="flex flex-wrap gap-2 pb-3"></div>
 
-  {{/* 封面网格 */}}
-  <div id="bk-grid" class="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-5 hidden"></div>
+  {{/* ===== 最近阅读（Owner）/ 最近添加（Visitor）条，手机 ===== */}}
+  <section id="bk-strip" class="lg:hidden hidden mb-5"></section>
 
-  {{/* 空态 */}}
-  <div id="bk-empty" class="hidden text-center py-20">
-    <div class="w-16 h-16 mx-auto mb-4 opacity-60">{{ partial "icon.html" (dict "name" "book" "uid" "empty") }}</div>
-    <p class="text-base font-bold mb-1" id="bk-empty-title">{{ if $isEn }}No books yet{{ else }}书架空空如也{{ end }}</p>
-    <p id="bk-empty-sub" class="text-sm text-m-on-surface-variant"></p>
-    <a id="bk-empty-cta" href="{{ if $isEn }}/en/admin/{{ else }}/admin/{{ end }}" class="hidden mt-5 inline-flex h-11 px-6 items-center justify-center rounded-full bg-m-primary text-m-on-primary text-sm font-bold">{{ if $isEn }}Add your first book{{ else }}添加第一本书{{ end }}</a>
+  {{/* ===== 内容区：书架 + 桌面右侧栏 ===== */}}
+  <div class="lg:flex lg:gap-6 lg:items-start">
+    <div class="flex-1 min-w-0">
+      <div id="bk-grid" class="hidden"></div>
+      <p id="bk-no-results" class="hidden text-center py-16 text-sm text-m-on-surface-variant">{{ if $isEn }}No books match your filters.{{ else }}没有符合条件的书。{{ end }}</p>
+      <div id="bk-empty" class="hidden text-center py-20">
+        <div class="w-24 h-24 mx-auto mb-6 text-m-outline">{{ partial "icon.html" (dict "name" "book-line" "uid" "empty") }}</div>
+        <p id="bk-empty-text" class="text-[15px] text-m-on-surface-variant leading-relaxed"></p>
+        <a id="bk-empty-cta" href="{{ $adminBase }}" class="hidden mt-6 inline-flex items-center justify-center h-12 px-7 rounded-full bg-m-primary text-m-on-primary text-[15px] font-bold">{{ if $isEn }}Upload books{{ else }}上传书籍{{ end }}</a>
+      </div>
+      <div id="bk-loading" class="text-center py-16 text-sm text-m-on-surface-variant">{{ if $isEn }}Loading…{{ else }}加载中…{{ end }}</div>
+    </div>
+    {{/* 桌面右侧栏：仅最近阅读卡（PR 2 的统计/书签卡不渲染） */}}
+    <aside id="bk-side" class="hidden lg:block w-[280px] shrink-0"></aside>
   </div>
-
-  {{/* 错误态 */}}
-  <div id="bk-error" class="hidden text-center py-20">
-    <p class="text-sm text-m-on-surface-variant mb-3" id="bk-error-msg"></p>
-    <button type="button" id="bk-retry" class="h-11 px-6 rounded-full bg-m-primary text-m-on-primary text-sm font-bold">
-      {{ if $isEn }}Retry{{ else }}重试{{ end }}
-    </button>
-  </div>
+  {{/* FAB 占位：页面底部留 FAB 高度 + 16px 空白 */}}
+  <div id="bk-fab-spacer" class="hidden lg:hidden h-24"></div>
 </main>
 
-{{/* 书籍详情：bottom sheet（手机）/ 居中弹窗（DeX） */}}
-<div id="sheet-wrap" class="fixed inset-0 z-[60]" role="dialog" aria-modal="true" aria-hidden="true">
-  <div id="sheet-bg" class="absolute inset-0 bg-black/45"></div>
-  <div id="sheet-panel">
-    <div class="sheet-handle" id="sheet-handle"></div>
-    <div id="sheet-body" class="overflow-y-auto px-5 pb-8 pt-1"></div>
+{{/* ===== 继续阅读 FAB（Owner，手机） ===== */}}
+<button id="bk-fab" type="button" class="hidden fixed z-40 right-4 bottom-4 lg:hidden" aria-label="">
+  <span id="bk-fab-expanded" class="flex items-center gap-3 rounded-full bg-m-primary text-m-on-primary shadow-lg pl-2 pr-5 py-2 max-w-[calc(100vw-2rem)]">
+    <span id="bk-fab-thumb" class="block w-10 h-[52px] shrink-0 rounded-lg overflow-hidden bg-m-container-high"></span>
+    <span class="min-w-0 text-left">
+      <span id="bk-fab-title" class="block truncate text-[15px] font-bold leading-tight"></span>
+      <span id="bk-fab-sub" class="block text-[13px] opacity-80 leading-tight mt-0.5"></span>
+    </span>
+  </span>
+  <span id="bk-fab-collapsed" class="hidden w-14 h-14 rounded-full bg-m-primary text-m-on-primary shadow-lg overflow-hidden items-center justify-center"></span>
+</button>
+<span id="bk-fab-icon" class="hidden">{{ partial "icon.html" (dict "name" "book-line" "uid" "fab") }}</span>
+
+{{/* ===== 详情弹层（沿用 #sheet-wrap，顶部已有拖动条） ===== */}}
+<div id="sheet-wrap" class="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="{{ if $isEn }}Book details{{ else }}书籍详情{{ end }}">
+  <div id="sheet-backdrop" class="absolute inset-0 bg-black/40"></div>
+  <div id="sheet-panel" class="bg-m-container-lowest text-m-on-surface shadow-2xl">
+    <div id="sheet-handle" class="sheet-handle"></div>
+    <div id="sheet-body" class="overflow-y-auto overscroll-contain px-5 pb-6"></div>
   </div>
 </div>
 
-{{/* 更换封面：隐藏文件选择器（owner，书架页内联实现） */}}
-<input type="file" id="bk-cover-input" accept="image/*" class="hidden" tabindex="-1" aria-hidden="true">
-
-{{/* 上传 FAB + 弹层（仅 owner，visitor 不渲染） */}}
-{{ partial "upload-fab.html" (dict "isEn" $isEn) }}
-
-{{/* 删除二次确认（One UI 样式） */}}
-<div id="del-wrap" class="fixed inset-0 z-[70] hidden items-center justify-center p-6" role="alertdialog" aria-modal="true">
-  <div class="absolute inset-0 bg-black/50" data-del-cancel></div>
-  <div class="relative w-full max-w-sm rounded-[1.75rem] bg-m-surface p-6 shadow-xl">
-    <h3 id="del-title" class="text-lg font-extrabold text-m-on-surface"></h3>
-    <p id="del-body" class="text-sm text-m-on-surface-variant mt-2 leading-relaxed"></p>
-    <div class="flex gap-2 mt-6">
-      <button type="button" data-del-cancel class="flex-1 h-12 rounded-full bg-m-container text-m-on-surface text-sm font-bold"></button>
-      <button type="button" id="del-confirm" class="flex-1 h-12 rounded-full bg-m-rose text-m-on-rose text-sm font-bold"></button>
+{{/* ===== 排序与筛选弹层 ===== */}}
+<div id="filter-wrap" class="bk-overlay fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="{{ if $isEn }}Sort and filter{{ else }}排序与筛选{{ end }}">
+  <div class="bk-overlay-backdrop absolute inset-0 bg-black/40" data-close="filter"></div>
+  <div class="bk-panel bg-m-container-lowest text-m-on-surface shadow-2xl">
+    <div class="sheet-handle"></div>
+    <div class="flex items-start justify-between px-5 pt-1">
+      <h2 class="text-lg font-extrabold">{{ if $isEn }}Sort and filter{{ else }}排序与筛选{{ end }}</h2>
+      <button type="button" class="bk-icbtn -mr-2 -mt-1" id="filter-gear" aria-label="{{ if $isEn }}Library settings{{ else }}书库设置{{ end }}">{{ partial "icon.html" (dict "name" "gear" "uid" "filter-gear") }}</button>
+    </div>
+    <div id="filter-body" class="overflow-y-auto overscroll-contain px-5 pb-4"></div>
+    <div class="shrink-0 px-5 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] border-t border-m-outline/30 bg-m-container-lowest flex gap-3">
+      <button id="filter-clear" type="button" class="flex-1 h-12 rounded-full bg-m-container text-m-on-surface text-[15px] font-bold">{{ if $isEn }}Clear all{{ else }}清除全部{{ end }}</button>
+      <button id="filter-done" type="button" class="flex-1 h-12 rounded-full bg-m-primary text-m-on-primary text-[15px] font-bold">{{ if $isEn }}Done{{ else }}完成{{ end }}</button>
     </div>
   </div>
 </div>
 
-{{/* 底部搜索胶囊（1.0.1）：只保留胶囊 + 键盘贴合，无独立搜索页、无历史/筛选 */}}
-<div id="bk-pill" class="sgx-pill" role="button" tabindex="0" aria-label="{{ if $isEn }}Search title / author{{ else }}搜索书名 / 作者{{ end }}">
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
-  <span class="sgx-pill-label">{{ if $isEn }}Search{{ else }}搜索{{ end }}</span>
-  <input id="bk-pill-input" class="sgx-pill-input" type="search" autocomplete="off" enterkeyhint="search"
-    placeholder="{{ if $isEn }}Search title / author{{ else }}搜索书名 / 作者{{ end }}"
-    aria-label="{{ if $isEn }}Search title / author{{ else }}搜索书名 / 作者{{ end }}" tabindex="-1">
+{{/* ===== 换封面子菜单 ===== */}}
+<div id="cover-wrap" class="bk-overlay fixed inset-0 z-[60]" role="dialog" aria-modal="true" aria-label="{{ if $isEn }}Change cover{{ else }}换封面{{ end }}">
+  <div class="bk-overlay-backdrop absolute inset-0 bg-black/40" data-close="cover"></div>
+  <div class="bk-panel bg-m-container-lowest text-m-on-surface shadow-2xl">
+    <div class="sheet-handle"></div>
+    <div class="px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+      <h2 class="text-lg font-extrabold mb-3">{{ if $isEn }}Change cover{{ else }}换封面{{ end }}</h2>
+      <button id="cover-upload" type="button" class="sheet-opt text-[15px]">{{ if $isEn }}Upload image{{ else }}上传图片{{ end }}</button>
+      <button id="cover-reextract" type="button" class="sheet-opt text-[15px]">{{ if $isEn }}Re-extract from book{{ else }}从书里重新提取{{ end }}</button>
+      <button type="button" class="sheet-opt justify-center text-[15px] font-bold" data-close="cover">{{ if $isEn }}Cancel{{ else }}取消{{ end }}</button>
+    </div>
+  </div>
 </div>
+
+{{/* ===== 书库设置（筛选弹层齿轮）：主题 ===== */}}
+<div id="settings-wrap" class="bk-overlay fixed inset-0 z-[60]" role="dialog" aria-modal="true" aria-label="{{ if $isEn }}Library settings{{ else }}书库设置{{ end }}">
+  <div class="bk-overlay-backdrop absolute inset-0 bg-black/40" data-close="settings"></div>
+  <div class="bk-panel bg-m-container-lowest text-m-on-surface shadow-2xl">
+    <div class="sheet-handle"></div>
+    <div class="px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+      <h2 class="text-lg font-extrabold mb-4">{{ if $isEn }}Library settings{{ else }}书库设置{{ end }}</h2>
+      <p class="text-sm text-m-on-surface-variant mb-3">{{ if $isEn }}Theme{{ else }}主题{{ end }}</p>
+      <div class="flex flex-col gap-1" role="radiogroup" aria-label="{{ if $isEn }}Theme{{ else }}主题{{ end }}">
+        <button type="button" class="sheet-opt text-[15px] bk-theme-opt" data-theme="system">{{ if $isEn }}Follow system{{ else }}跟随系统{{ end }}</button>
+        <button type="button" class="sheet-opt text-[15px] bk-theme-opt" data-theme="light">{{ if $isEn }}Light{{ else }}浅色{{ end }}</button>
+        <button type="button" class="sheet-opt text-[15px] bk-theme-opt" data-theme="dark">{{ if $isEn }}Dark{{ else }}深色{{ end }}</button>
+      </div>
+      <button type="button" class="sheet-opt justify-center text-[15px] font-bold mt-2" data-close="settings">{{ if $isEn }}Close{{ else }}关闭{{ end }}</button>
+    </div>
+  </div>
+</div>
+
+{{/* ===== 确认弹层（删除二次确认） ===== */}}
+<div id="confirm-wrap" class="bk-overlay fixed inset-0 z-[70]" role="alertdialog" aria-modal="true" aria-label="{{ if $isEn }}Confirm{{ else }}确认{{ end }}">
+  <div class="bk-overlay-backdrop absolute inset-0 bg-black/40" data-close="confirm"></div>
+  <div class="bk-panel bk-dialog bg-m-container-lowest text-m-on-surface shadow-2xl">
+    <div class="px-6 pt-6 pb-5">
+      <p id="confirm-msg" class="text-[15px] leading-relaxed text-center"></p>
+      <div class="flex gap-3 mt-5">
+        <button id="confirm-cancel" type="button" class="flex-1 h-12 rounded-full bg-m-container text-m-on-surface text-[15px] font-bold">{{ if $isEn }}Cancel{{ else }}取消{{ end }}</button>
+        <button id="confirm-ok" type="button" class="flex-1 h-12 rounded-full bg-m-error text-m-on-error text-[15px] font-bold">{{ if $isEn }}Delete{{ else }}删除{{ end }}</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{{/* ===== Toast ===== */}}
+<div id="bk-toast" class="hidden fixed left-1/2 -translate-x-1/2 bottom-6 z-[80] max-w-[calc(100vw-2rem)] px-4 py-3 rounded-2xl bg-m-inverse-surface text-m-inverse-on-surface text-sm shadow-lg"></div>
+
+<input type="file" id="bk-cover-input" class="hidden" accept="image/*">
 {{ end }}
 
 {{ define "pagejs" }}
 {{ $isEn := or (eq .Lang "en") (hasPrefix .RelPermalink "/en/") }}
+{{ $shelfBase := cond $isEn "/en/book/" "/book/" }}
+{{ $readBase := cond $isEn "/en/read/" "/read/" }}
+{{ $adminBase := cond $isEn "/en/admin/" "/admin/" }}
+<script src="{{ (resources.Get "js/upload-queue.js" | minify | fingerprint).RelPermalink }}"></script>
 <script>
 (function(){
 "use strict";
 var isEn = {{ if $isEn }}true{{ else }}false{{ end }};
-var readBase = {{ if $isEn }}'/en/read/'{{ else }}'/read/'{{ end }};
-var adminBase = {{ if $isEn }}'/en/admin/'{{ else }}'/admin/'{{ end }};
+var readBase = {{ $readBase | jsonify }};
+var adminBase = {{ $adminBase | jsonify }};
 
-/* 文案 */
-var T = {
-  count: function(n){ return isEn ? (n + ' book' + (n === 1 ? '' : 's')) : ('共 ' + n + ' 本'); },
-  loading: isEn ? 'Loading…' : '加载中…',
-  loadFail: isEn ? 'Failed to load. Check your connection and retry.' : '加载失败，请检查网络后重试。',
-  noResult: isEn ? 'No books match your search.' : '没有匹配的书。',
-  noBookLogin: isEn ? 'Sign in to see your private books.' : '登录后可查看私有书籍。',
-  noBookAdmin: isEn ? 'Go to Admin to upload your first book.' : '去后台上传第一本书吧。',
-  noBookAdminLink: isEn ? 'No books yet. <a href="' + adminBase + '" class="text-m-primary font-bold">Upload your first book</a>' : '还没有书。<a href="' + adminBase + '" class="text-m-primary font-bold">去上传第一本书</a>',
-  noBookVisitor: isEn ? 'No public books yet.' : '暂时没有公开的书。',
-  unknownAuthor: isEn ? 'Unknown author' : '未知作者',
-  cont: isEn ? 'Continue reading' : '继续阅读',
-  start: isEn ? 'Start reading' : '开始阅读',
-  edit: isEn ? 'Edit info' : '编辑信息',
-  cover: isEn ? 'Change cover' : '更换封面',
-  coverFail: isEn ? 'Failed to replace cover' : '更换封面失败',
-  del: isEn ? 'Delete' : '删除',
-  delTitle: isEn ? 'Delete book?' : '删除书籍？',
-  delBody: isEn ? 'This will delete the book file and reading progress. This cannot be undone.' : '将同时删除书籍文件和阅读进度，此操作不可撤销。',
-  cancel: isEn ? 'Cancel' : '取消',
-  confirmDel: isEn ? 'Delete' : '删除',
-  pages: isEn ? 'pages' : '页',
-  size: isEn ? 'Size' : '大小',
-  tags: isEn ? 'Tags' : '标签',
-  addedOn: isEn ? 'Added' : '添加日期',
-  progress: isEn ? 'Progress' : '阅读进度',
-  all: isEn ? 'All' : '全部',
-  close: isEn ? 'Close' : '关闭',
-  noTags: isEn ? 'None' : '无'
+/* ================= 文案 ================= */
+var T = isEn ? {
+  all:'All books', reading:'Reading', shelf:'Featured shelf',
+  search:'Search', searchPh:'Search by title or author', closeSearch:'Close search',
+  sortFilter:'Sort and filter', sort:'Sort', sortTitle:'Title', sortAuthor:'Author',
+  sortAdded:'Date added', sortRecent:'Recently read',
+  status:'Reading status (multi-select, Owner only)',
+  unread:'Unread', readingSt:'Reading', read:'Read',
+  layout:'Layout', layoutList:'List', layoutGrid:'Grid', layoutLarge:'Large covers',
+  format:'Format', clearAll:'Clear all', done:'Done', settings:'Library settings',
+  recentRead:'Recently read', recentlyAdded:'Recently added',
+  continueReading:'Continue reading', startReading:'Start reading',
+  publicToVisitors:'Public to visitors', inShelf:'Feature on main site shelf',
+  changeCover:'Change cover', uploadImage:'Upload image', reextract:'Re-extract from book',
+  edit:'Edit', save:'Save', cancel:'Cancel', deleteBook:'Delete this book',
+  deleteConfirm:'Delete this book? This cannot be undone.',
+  title:'Title', author:'Author', pages:'pages',
+  noResults:'No books match your filters.',
+  empty:'The shelf is empty.', emptySub:'Upload your first book to start reading.',
+  emptyVisitor:'The shelf is empty.',
+  uploadBooks:'Upload books', randomOpen:'Open a random book',
+  backfill:'Extract covers for books without covers',
+  backfillDone:function(c,f){ return 'Covers extracted for ' + c + ' books (checked ' + f + ').'; },
+  backfillNone:'No books need cover extraction.',
+  coverUpdated:'Cover updated.', coverNotFound:'No cover found in this book.',
+  deleted:'Book deleted.', saved:'Saved.', failed:'Something went wrong. Please try again.',
+  more:'More', readPct:function(p){ return 'Read ' + p + '%'; },
+  readDone:'Read', uploadFirst:'Upload your first book'
+} : {
+  all:'全部书籍', reading:'在读', shelf:'主站书单',
+  search:'搜索', searchPh:'搜索书名或作者', closeSearch:'关闭搜索',
+  sortFilter:'排序与筛选', sort:'排序', sortTitle:'书名', sortAuthor:'作者',
+  sortAdded:'添加时间', sortRecent:'最近阅读',
+  status:'阅读状态（多选，仅 Owner）',
+  unread:'未读', readingSt:'在读', read:'已读',
+  layout:'布局', layoutList:'列表', layoutGrid:'网格', layoutLarge:'大封面',
+  format:'格式', clearAll:'清除全部', done:'完成', settings:'书库设置',
+  recentRead:'最近阅读', recentlyAdded:'最近添加',
+  continueReading:'继续阅读', startReading:'开始阅读',
+  publicToVisitors:'公开给访客', inShelf:'放进主站书单',
+  changeCover:'换封面', uploadImage:'上传图片', reextract:'从书里重新提取',
+  edit:'编辑', save:'保存', cancel:'取消', deleteBook:'删除这本书',
+  deleteConfirm:'确定删除这本书吗？删除后无法恢复。',
+  title:'书名', author:'作者', pages:'页',
+  noResults:'没有符合条件的书。',
+  empty:'书架还是空的。', emptySub:'上传第一本书，开始你的阅读。',
+  emptyVisitor:'书架还是空的。',
+  uploadBooks:'上传书籍', randomOpen:'随机打开一本',
+  backfill:'为无封面的书提取封面',
+  backfillDone:function(c,f){ return '已为 ' + c + ' 本书补齐封面（共检查 ' + f + ' 本）。'; },
+  backfillNone:'没有需要补齐封面的书。',
+  coverUpdated:'封面已更新。', coverNotFound:'书里没有找到封面。',
+  deleted:'已删除。', saved:'已保存。', failed:'出了点问题，请再试一次。',
+  more:'更多', readPct:function(p){ return '已读 ' + p + '%'; },
+  readDone:'已读', uploadFirst:'上传第一本书'
 };
 
-function esc(s){
-  return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
-    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
-  });
-}
-function fmtSize(b){
-  b = Number(b) || 0;
-  if(b < 1024) return b + ' B';
-  if(b < 1048576) return (b / 1024).toFixed(1) + ' KB';
-  if(b < 1073741824) return (b / 1048576).toFixed(1) + ' MB';
-  return (b / 1073741824).toFixed(2) + ' GB';
-}
-function fmtDate(s){
-  if(!s) return '—';
-  try{ return new Date(s).toLocaleDateString(isEn ? 'en-US' : 'zh-CN', {year:'numeric', month:'short', day:'numeric'}); }
-  catch(e){ return '—'; }
-}
-function fmtPct(p){ return Math.round((Number(p) || 0) * 100) + '%'; }
-
-/* ---- 状态（fail closed：只有 /api/private/me 明确返回 role=owner 才视为 owner） ---- */
-var isOwner = false;
-var books = [];
-var bookById = {};
-var filter = 'all';      /* all | EPUB | PDF | tag:<name> */
-var sortMode = 'added';  /* added | read | title */
+/* ================= 状态 =================
+ * 进度只从 /api/private/books 的 percent / progress_updated_at 读
+ * （一次请求带出全部进度，不逐本查 /api/private/progress）。
+ * 已读判定：percent >= 99（EPUB 末页 fraction 极少恰好 100，99 起算已读；PDF 末页为 100）。
+ * 在读：0 < percent < 99；未读：percent 为 null 或 0。 */
+var READ_DONE = 99;
+var owner = false;
+var books = [];           // 全部书（owner：private/books 含进度；visitor：books 无进度）
+var group = 'all';        // all | reading | shelf
+var sort = 'recent';      // title | author | added | recent（visitor 默认 added）
+var statuses = new Set(); // unread | reading | read（Owner 专属）
+var formats = new Set();  // EPUB | PDF
+var layout = 'grid';      // list | grid | large
 var query = '';
-var progressMap = {};    /* id -> {p, t, title, author, cover} */
+var sheetBook = null;     // 详情弹层当前书
+var confirmCb = null;
+var toastTimer = null;
+var fabTimer = null;
 
-var coverRev = {};    /* id -> 换封面后的缓存破坏时间戳（同 key 覆盖时刷新浏览器缓存） */
-function coverURL(b){
+var H = window.SgxUploadQueue.helpers(isEn);
+var api = H.api;
+var $ = function(sel){ return document.querySelector(sel); };
+function esc(s){ return H.esc(String(s == null ? '' : s)); }
+function fmtSize(n){ return H.fmtSize(n); }
+function fmtDate(v){
+  if(!v) return '';
+  var d = new Date(typeof v === 'number' ? v : v);
+  return isNaN(d.getTime()) ? '' : d.toLocaleDateString(isEn ? 'en-US' : 'zh-CN', {year:'numeric', month:'numeric', day:'numeric'});
+}
+function coverUrl(b){
   if(!b || !b.cover_key) return '';
-  var u = (isOwner ? '/api/private/cover?key=' : '/api/cover?key=') + encodeURIComponent(b.cover_key);
-  if(coverRev[b.id]) u += '&_=' + coverRev[b.id];
-  return u;
+  if(/^https?:\/\//.test(b.cover_key)) return b.cover_key;
+  return '/api/cover?key=' + encodeURIComponent(b.cover_key);
 }
+function pctOf(b){
+  var p = b && b.percent;
+  if(p == null || isNaN(Number(p))) return null;
+  return Math.max(0, Math.min(100, Number(p)));
+}
+function readState(b){
+  var p = pctOf(b);
+  if(p == null || p <= 0) return 'unread';
+  if(p >= READ_DONE) return 'read';
+  return 'reading';
+}
+function statusLabel(b){
+  var p = pctOf(b);
+  if(p == null || p <= 0) return T.unread;
+  if(p >= READ_DONE) return T.read;
+  return Math.round(p) + '%';
+}
+function readUrl(b){ return readBase + '?id=' + encodeURIComponent(b.id); }
 
-/* ---- 阅读进度（localStorage bk-progress-<id>） ---- */
-function loadProgress(){
-  progressMap = {};
-  try{
-    for(var i = 0; i < localStorage.length; i++){
-      var k = localStorage.key(i);
-      if(k && k.indexOf('bk-progress-') === 0){
-        try{
-          var v = JSON.parse(localStorage.getItem(k));
-          if(v && typeof v.p === 'number'){
-            progressMap[k.slice('bk-progress-'.length)] = v;
-          }
-        }catch(e){}
-      }
-    }
-  }catch(e){}
+/* ================= 排版封面 =================
+ * 无封面书按书名哈希取色（主站配色），与真实封面同尺寸。
+ * 居中、内边距 ≥ 封面宽 10%、书名最多两行省略、小尺寸只显示书名。
+ * text-wrap: balance 避免第二行只剩一个字。 */
+var GEN_COLORS = [
+  ['#6FA8DC','#4A7DBB'], ['#2C3E50','#1A2530'], ['#7CB873','#5A9E5C'],
+  ['#D97B7B','#B85C5C'], ['#B48CE8','#8E63C8'], ['#D2A06B','#B07D4A'],
+  ['#6FC3B8','#4AA89D'], ['#E8B44A','#C8922E']
+];
+function genColors(title){
+  var h = 0;
+  var s = String(title || '');
+  for(var i = 0; i < s.length; i++){ h = (h * 31 + s.charCodeAt(i)) >>> 0; }
+  return GEN_COLORS[h % GEN_COLORS.length];
 }
-function progressOf(id){
-  var v = progressMap[id];
-  return v ? v.p : 0;
+/* size: 'md'（网格/详情：书名+作者）| 'sm'（条/侧栏小尺寸：只书名） */
+function genCoverHTML(b, size){
+  var c = genColors(b.title);
+  var cls = size === 'sm' ? 'bk-gen bk-gen-sm' : 'bk-gen';
+  var author = (size !== 'sm' && b.author) ? '<span class="bk-gen-author">' + esc(b.author) + '</span>' : '';
+  return '<div class="' + cls + '" style="background:linear-gradient(160deg,' + c[0] + ',' + c[1] + ')">'
+    + '<span class="bk-gen-title">' + esc(b.title) + '</span>' + author + '</div>';
 }
-function lastReadOf(id){
-  var v = progressMap[id];
-  return (v && v.t) ? v.t : 0;
-}
-function lastReadLabel(t){
-  return (isEn ? 'Last read ' : '最近阅读 ') + fmtDate(t);
-}
-
-/* ---- 数据 ---- */
-function subEl(){ return document.querySelector('[data-subpage-head] .subpage-sub'); }
-async function checkLogin(){
-  var owner = false;
-  try{
-    var r = await fetch('/api/private/me', {credentials: 'same-origin'});
-    if(r.ok){
-      var j = await r.json();
-      owner = !!(j && j.role === 'owner');
-    }
-  }catch(e){
-    owner = false;
+function coverHTML(b, size){
+  var url = coverUrl(b);
+  if(url){
+    return '<img src="' + esc(url) + '" alt="" loading="lazy" class="absolute inset-0 w-full h-full object-cover" draggable="false">';
   }
-  if(owner !== isOwner){
-    isOwner = owner;
-    await loadBooks();
-  }
-  if(window.BkShowFab) window.BkShowFab(owner);
-}
-async function loadBooks(){
-  var loading = document.getElementById('bk-loading');
-  var grid = document.getElementById('bk-grid');
-  var empty = document.getElementById('bk-empty');
-  var err = document.getElementById('bk-error');
-  loading.classList.remove('hidden'); grid.classList.add('hidden');
-  empty.classList.add('hidden'); err.classList.add('hidden');
-  var sub = subEl(); if(sub) sub.textContent = T.loading;
-  try{
-    /* 数据接口 401 视为已锁定：sgxLockSync.apiFetch 会 reload 走锁屏流程，
-       这里直接 return，不展示「加载失败」；网络错误才走错误态 */
-    var r = await sgxLockSync.apiFetch(isOwner ? '/api/private/books' : '/api/books');
-    if(!r.ok) throw new Error('HTTP ' + r.status);
-    var j = await r.json();
-    books = (j && j.books) || [];
-    bookById = {};
-    books.forEach(function(b){ bookById[b.id] = b; });
-    if(sub) sub.textContent = T.count(books.length);
-    renderChips(); renderContinue(); renderGrid();
-  }catch(e){
-    if(e && e.sgxLocked) return; /* 已触发 reload，页面即将跳转锁屏 */
-    console.error('[book] loadBooks failed:', e);
-    loading.classList.add('hidden');
-    err.classList.remove('hidden');
-    document.getElementById('bk-error-msg').textContent = T.loadFail;
-    if(sub) sub.textContent = '';
-  }
+  return genCoverHTML(b, size);
 }
 
-/* ---- 继续阅读（仅 owner；visitor 不显示阅读记录） ---- */
-function renderContinue(){
-  var sec = document.getElementById('bk-continue-sec');
-  if(!isOwner){ sec.classList.add('hidden'); return; }
-  loadProgress();
-  var box = document.getElementById('bk-continue');
-  var items = Object.keys(progressMap).map(function(id){
-    var v = progressMap[id];
-    return {id: id, p: v.p, t: v.t || 0, title: v.title, author: v.author, cover: v.cover};
-  }).filter(function(x){ return x.p > 0 && x.p < 1; })
-    .sort(function(a, b){ return b.t - a.t; })
-    .slice(0, 3);
-  if(!items.length){ sec.classList.add('hidden'); return; }
-  sec.classList.remove('hidden');
-  box.innerHTML = items.map(function(x){
-    var b = bookById[x.id];
-    var title = x.title || (b && b.title) || '';
-    var author = x.author || (b && b.author) || T.unknownAuthor;
-    var cv = x.cover || (b && coverURL(b)) || '';
-    var img = cv
-      ? '<img src="' + esc(cv) + '" alt="" loading="lazy" class="w-12 h-[72px] rounded-lg object-cover bg-m-container flex-shrink-0">'
-      : '<div class="w-12 h-[72px] rounded-lg bg-m-container flex items-center justify-center flex-shrink-0 text-m-on-surface-variant text-lg font-bold">' + esc(String(title).slice(0,1)) + '</div>';
-    return '<a href="' + readBase + '?id=' + encodeURIComponent(x.id) + '" class="flex-shrink-0 w-64 flex gap-3 p-3 rounded-2xl bg-m-container-lowest border border-m-outline/40 hover:border-m-primary/60">' +
-      img +
-      '<div class="min-w-0 flex-1">' +
-        '<p class="text-sm font-semibold line-clamp-2 text-m-on-surface">' + esc(title) + '</p>' +
-        '<p class="text-xs text-m-on-surface-variant line-clamp-1 mt-0.5">' + esc(author) + '</p>' +
-        '<div class="h-1.5 rounded-full bg-m-container mt-2 overflow-hidden"><div class="h-full rounded-full bg-m-primary" style="width:' + fmtPct(x.p) + '"></div></div>' +
-        '<p class="text-[11px] text-m-on-surface-variant mt-1">' + fmtPct(x.p) + '</p>' +
-      '</div></a>';
-  }).join('');
+/* ================= 角标（Owner 专属，封面右下） ================= */
+var CHECK_SVG = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5"/></svg>';
+function badgeHTML(b){
+  if(!owner) return '';
+  var p = pctOf(b);
+  if(p == null || p <= 0) return '';
+  if(p >= READ_DONE) return '<span class="bk-badge bk-badge-done">' + CHECK_SVG + '</span>';
+  return '<span class="bk-badge bk-badge-pct">' + Math.round(p) + '%</span>';
+}
+function coverBoxHTML(b, size){
+  return '<div class="bk-cover relative aspect-[2/3] overflow-hidden bg-m-container rounded-xl">'
+    + coverHTML(b, size) + badgeHTML(b) + '</div>';
 }
 
-/* ---- 筛选芯片 ---- */
-function allTags(){
-  var m = {};
-  books.forEach(function(b){
-    (b.tags || []).forEach(function(t){ if(t) m[t] = (m[t] || 0) + 1; });
-  });
-  return Object.keys(m).sort(function(a, b){ return m[b] - m[a]; });
+/* ================= Toast ================= */
+function toast(msg){
+  var el = $('#bk-toast');
+  el.textContent = msg;
+  el.classList.remove('hidden');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function(){ el.classList.add('hidden'); }, 2600);
 }
-function renderChips(){
-  var box = document.getElementById('bk-chips');
-  var chips = [{k: 'all', label: T.all}, {k: 'EPUB', label: 'EPUB'}, {k: 'PDF', label: 'PDF'}];
-  allTags().forEach(function(t){ chips.push({k: 'tag:' + t, label: t}); });
-  box.innerHTML = chips.map(function(c){
-    return '<button type="button" role="tab" aria-selected="' + (filter === c.k) + '" data-filter="' + esc(c.k) + '"' +
-      ' class="brw-cat flex-shrink-0' + (filter === c.k ? ' on' : '') + '">' + esc(c.label) + '</button>';
-  }).join('');
-  /* visitor 隐藏"最近阅读"排序 */
-  var sortSel = document.getElementById('bk-sort');
-  var readOpt = sortSel.querySelector('option[data-owner-only]');
-  if(readOpt) readOpt.style.display = isOwner ? '' : 'none';
-  if(!isOwner && sortMode === 'read'){ sortMode = 'added'; sortSel.value = 'added'; }
+
+/* 开关（与 upload-queue.js 的 switchHTML 同款式，行内用不包 label） */
+function switchInputHTML(fid, checked){
+  return '<input type="checkbox" data-f="' + fid + '"' + (checked ? ' checked' : '')
+    + ' class="peer sr-only">'
+    + '<span class="shrink-0 w-12 h-7 rounded-full bg-m-container peer-checked:bg-m-primary relative transition-colors '
+    + 'after:content-[\'\'] after:absolute after:top-1 after:left-1 after:w-5 after:h-5 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:after:translate-x-5"></span>';
 }
-document.getElementById('bk-chips').addEventListener('click', function(e){
-  var b = e.target.closest('[data-filter]');
-  if(!b) return;
-  filter = b.getAttribute('data-filter');
-  renderChips(); renderGrid();
+function openOverlay(id){
+  var el = document.getElementById(id);
+  if(!el) return;
+  el.classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+function closeOverlay(id){
+  var el = document.getElementById(id);
+  if(!el) return;
+  el.classList.remove('open');
+  if(!document.querySelector('.bk-overlay.open') && !$('#sheet-wrap.open')){
+    document.body.style.overflow = '';
+  }
+}
+function closeAllMenus(){
+  $('#bk-group-menu').classList.add('hidden');
+  $('#bk-more-menu').classList.add('hidden');
+  $('#bk-group-btn').setAttribute('aria-expanded', 'false');
+}
+document.addEventListener('click', function(e){
+  if(!e.target.closest('#bk-group-menu') && !e.target.closest('#bk-group-btn')) closeAllMenus();
+  if(!e.target.closest('#bk-more-menu') && !e.target.closest('#bk-menu-btn')) $('#bk-more-menu').classList.add('hidden');
+});
+document.addEventListener('keydown', function(e){
+  if(e.key !== 'Escape') return;
+  /* Esc 只关最上层：弹层开着时关弹层（不连详情弹层一起关），否则关菜单/详情弹层 */
+  if(document.querySelector('.bk-overlay.open')){
+    closeOverlay('filter-wrap'); closeOverlay('cover-wrap');
+    closeOverlay('settings-wrap'); closeOverlay('confirm-wrap');
+    return;
+  }
+  closeAllMenus();
+  closeSheet();
+});
+document.querySelectorAll('.bk-overlay-backdrop').forEach(function(bd){
+  bd.addEventListener('click', function(){ closeOverlay(bd.dataset.close + '-wrap'); });
+});
+document.querySelectorAll('[data-close]').forEach(function(btn){
+  if(btn.classList.contains('bk-overlay-backdrop')) return;
+  btn.addEventListener('click', function(){ closeOverlay(btn.dataset.close + '-wrap'); });
 });
 
-/* ---- 排序 + 过滤 + 渲染网格 ---- */
-function visibleBooks(){
-  var q = query.trim().toLowerCase();
-  var list = books.filter(function(b){
-    if(filter === 'EPUB' || filter === 'PDF'){
-      if((b.format || '').toUpperCase() !== filter) return false;
-    }else if(filter.indexOf('tag:') === 0){
-      var tag = filter.slice(4);
-      if(!(b.tags || []).includes(tag)) return false;
-    }
-    if(q){
-      var hay = ((b.title || '') + ' ' + (b.author || '')).toLowerCase();
-      if(hay.indexOf(q) === -1) return false;
-    }
-    return true;
-  });
-  if(sortMode === 'title'){
-    var loc = isEn ? 'en' : 'zh';
-    list.sort(function(a, b){ return String(a.title || '').localeCompare(String(b.title || ''), loc); });
-  }else if(sortMode === 'read'){
-    list.sort(function(a, b){
-      var ta = (progressMap[a.id] && progressMap[a.id].t) || 0;
-      var tb = (progressMap[b.id] && progressMap[b.id].t) || 0;
-      return tb - ta;
+/* ================= 分组下拉 ================= */
+function renderGroupMenu(){
+  var items = [
+    { key: 'all', label: T.all },
+    { key: 'shelf', label: T.shelf }
+  ];
+  if(owner) items.splice(1, 0, { key: 'reading', label: T.reading });
+  $('#bk-group-menu').innerHTML = items.map(function(it){
+    var check = it.key === group
+      ? '<span class="bk-menu-check">' + CHECK_SVG + '</span>' : '<span class="bk-menu-check"></span>';
+    return '<button type="button" class="bk-menu-item" data-group="' + it.key + '" role="menuitem">'
+      + check + '<span>' + esc(it.label) + '</span></button>';
+  }).join('');
+  $('#bk-group-menu').querySelectorAll('[data-group]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      group = btn.dataset.group;
+      closeAllMenus();
+      renderAll();
     });
-  }else{
-    list.sort(function(a, b){ return new Date(b.created_at || 0) - new Date(a.created_at || 0); });
+  });
+}
+$('#bk-group-btn').addEventListener('click', function(e){
+  e.stopPropagation();
+  var menu = $('#bk-group-menu');
+  var willOpen = menu.classList.contains('hidden');
+  closeAllMenus();
+  if(willOpen){
+    renderGroupMenu();
+    menu.classList.remove('hidden');
+    $('#bk-group-btn').setAttribute('aria-expanded', 'true');
+  }
+});
+
+/* ================= ⋮ 菜单（Owner） ================= */
+function renderMoreMenu(){
+  $('#bk-more-menu').innerHTML =
+    '<a class="bk-menu-item" href="' + esc(adminBase) + '" role="menuitem"><span>' + esc(T.uploadBooks) + '</span></a>'
+    + '<button type="button" class="bk-menu-item" data-more="random" role="menuitem"><span>' + esc(T.randomOpen) + '</span></button>'
+    + '<button type="button" class="bk-menu-item" data-more="backfill" role="menuitem"><span>' + esc(T.backfill) + '</span></button>';
+  $('#bk-more-menu').querySelectorAll('[data-more]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      $('#bk-more-menu').classList.add('hidden');
+      if(btn.dataset.more === 'random') randomOpen();
+      if(btn.dataset.more === 'backfill') runBackfill();
+    });
+  });
+}
+$('#bk-menu-btn').addEventListener('click', function(e){
+  e.stopPropagation();
+  var menu = $('#bk-more-menu');
+  var willOpen = menu.classList.contains('hidden');
+  closeAllMenus();
+  if(willOpen){ renderMoreMenu(); menu.classList.remove('hidden'); }
+});
+function randomOpen(){
+  var list = visibleBooks();
+  if(!list.length){ toast(T.noResults); return; }
+  var b = list[Math.floor(Math.random() * list.length)];
+  window.location.href = readUrl(b);
+}
+async function runBackfill(){
+  try{
+    var res = await api('/api/admin/books/backfill-covers', { method: 'POST' });
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    var j = await res.json();
+    var fixed = Number(j.fixed || 0), checked = Number(j.checked || 0);
+    if(fixed > 0){ toast(T.backfillDone(fixed, checked)); loadBooks(); }
+    else toast(T.backfillNone);
+  }catch(e){ toast(T.failed); }
+}
+
+/* ================= 搜索 ================= */
+var searchTimer = null;
+function setSearchOpen(open){
+  var bar = $('#bk-searchbar');
+  bar.classList.toggle('hidden', !open);
+  bar.classList.toggle('flex', open);
+  if(open){ $('#bk-search-input').focus(); }
+  else { query = ''; $('#bk-search-input').value = ''; renderAll(); }
+}
+$('#bk-search-btn').addEventListener('click', function(){
+  setSearchOpen($('#bk-searchbar').classList.contains('hidden'));
+});
+$('#bk-search-close').addEventListener('click', function(){ setSearchOpen(false); });
+$('#bk-search-input').addEventListener('input', function(){
+  clearTimeout(searchTimer);
+  var v = this.value;
+  searchTimer = setTimeout(function(){ query = v.trim(); renderAll(); }, 150);
+});
+$('#bk-search-input').addEventListener('keydown', function(e){
+  if(e.key === 'Escape') setSearchOpen(false);
+});
+
+/* ================= 筛选 ================= */
+function defaultSort(){ return owner ? 'recent' : 'added'; }
+function visibleBooks(){
+  var list = books.slice();
+  if(group === 'reading') list = list.filter(function(b){ return readState(b) === 'reading'; });
+  if(group === 'shelf') list = list.filter(function(b){ return Number(b.in_shelf) === 1; });
+  if(statuses.size){
+    list = list.filter(function(b){ return statuses.has(readState(b)); });
+  }
+  if(formats.size){
+    list = list.filter(function(b){ return formats.has(String(b.format || '').toUpperCase()); });
+  }
+  if(query){
+    var q = query.toLowerCase();
+    list = list.filter(function(b){
+      return String(b.title || '').toLowerCase().includes(q) || String(b.author || '').toLowerCase().includes(q);
+    });
+  }
+  var byTitle = function(a, b){ return String(a.title || '').localeCompare(String(b.title || ''), isEn ? 'en' : 'zh'); };
+  var byAuthor = function(a, b){ return String(a.author || '').localeCompare(String(b.author || ''), isEn ? 'en' : 'zh'); };
+  if(sort === 'title') list.sort(byTitle);
+  else if(sort === 'author') list.sort(byAuthor);
+  else if(sort === 'recent'){
+    list.sort(function(a, b){
+      var ta = a.progress_updated_at == null ? -1 : Number(a.progress_updated_at);
+      var tb = b.progress_updated_at == null ? -1 : Number(b.progress_updated_at);
+      if(tb !== ta) return tb - ta;
+      return Number(b.created_at || 0) - Number(a.created_at || 0);
+    });
+  } else {
+    list.sort(function(a, b){ return Number(b.created_at || 0) - Number(a.created_at || 0); });
   }
   return list;
 }
-function coverTile(b, cls){
-  var cv = coverURL(b);
-  if(cv){
-    return '<img src="' + esc(cv) + '" alt="" loading="lazy" class="' + cls + ' w-full h-full object-cover">';
+
+/* 胶囊：排序胶囊无 ×（点开弹层），状态/格式胶囊带 × 可单个清除，布局不进胶囊 */
+function sortChipLabel(){
+  if(sort === 'title') return T.sortTitle;
+  if(sort === 'author') return T.sortAuthor;
+  if(sort === 'recent') return T.sortRecent;
+  return T.sortAdded;
+}
+function renderChips(){
+  var chips = [];
+  chips.push('<button type="button" class="bk-chip bk-chip-sort" data-chip="sort">' + esc(T.sort + '：' + sortChipLabel()) + '</button>');
+  ['unread','reading','read'].forEach(function(s){
+    if(!statuses.has(s)) return;
+    var label = s === 'unread' ? T.unread : (s === 'reading' ? T.readingSt : T.read);
+    chips.push('<button type="button" class="bk-chip" data-chip="status" data-value="' + s + '">' + esc(label) + ' <span aria-hidden="true">×</span></button>');
+  });
+  ['EPUB','PDF'].forEach(function(f){
+    if(!formats.has(f)) return;
+    chips.push('<button type="button" class="bk-chip" data-chip="format" data-value="' + f + '">' + esc(f) + ' <span aria-hidden="true">×</span></button>');
+  });
+  $('#bk-chips').innerHTML = chips.join('');
+  $('#bk-chips').querySelectorAll('[data-chip]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var kind = btn.dataset.chip;
+      if(kind === 'sort'){ openFilterSheet(); return; }
+      if(kind === 'status') statuses.delete(btn.dataset.value);
+      if(kind === 'format') formats.delete(btn.dataset.value);
+      renderAll();
+    });
+  });
+}
+
+/* 筛选弹层：草稿态，点「完成」才应用；点遮罩/Esc 丢弃草稿 */
+var draft = null;
+function openFilterSheet(){
+  draft = { sort: sort, statuses: new Set(statuses), formats: new Set(formats), layout: layout };
+  renderFilterSheet();
+  openOverlay('filter-wrap');
+}
+function renderFilterSheet(){
+  var sortOpts = [
+    { key: 'title', label: T.sortTitle },
+    { key: 'author', label: T.sortAuthor },
+    { key: 'added', label: T.sortAdded }
+  ];
+  if(owner) sortOpts.push({ key: 'recent', label: T.sortRecent });
+  var sortHTML = sortOpts.map(function(o){
+    return '<label class="bk-radio-row"><input type="radio" name="bk-sort" value="' + o.key + '"' + (draft.sort === o.key ? ' checked' : '') + '><span class="bk-radio"></span><span>' + esc(o.label) + '</span></label>';
+  }).join('');
+  var statusHTML = '';
+  if(owner){
+    var stOpts = [
+      { key: 'unread', label: T.unread },
+      { key: 'reading', label: T.readingSt },
+      { key: 'read', label: T.read }
+    ];
+    statusHTML = '<p class="bk-filter-label">' + esc(T.status) + '</p>'
+      + stOpts.map(function(o){
+        return '<label class="bk-check-row"><input type="checkbox" data-status="' + o.key + '"' + (draft.statuses.has(o.key) ? ' checked' : '') + '><span class="bk-check"></span><span>' + esc(o.label) + '</span></label>';
+      }).join('');
   }
-  return '<div class="' + cls + ' w-full h-full flex items-center justify-center bg-m-primary-container text-m-on-primary-container text-2xl font-extrabold">' + esc(String(b.title || '?').slice(0, 1)) + '</div>';
+  var layoutOpts = [
+    { key: 'list', label: T.layoutList, icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>' },
+    { key: 'grid', label: T.layoutGrid, icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg>' },
+    { key: 'large', label: T.layoutLarge, icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="3" width="16" height="18" rx="2"/></svg>' }
+  ];
+  var layoutHTML = '<p class="bk-filter-label">' + esc(T.layout) + '</p>'
+    + '<div class="bk-seg" role="radiogroup" aria-label="' + esc(T.layout) + '">'
+    + layoutOpts.map(function(o){
+      return '<button type="button" class="bk-seg-item' + (draft.layout === o.key ? ' active' : '') + '" data-layout="' + o.key + '">' + o.icon + '<span>' + esc(o.label) + '</span></button>';
+    }).join('') + '</div>';
+  var formatHTML = '<p class="bk-filter-label">' + esc(T.format) + '</p>'
+    + ['EPUB','PDF'].map(function(f){
+      return '<label class="bk-check-row"><input type="checkbox" data-format="' + f + '"' + (draft.formats.has(f) ? ' checked' : '') + '><span class="bk-check"></span><span>' + esc(f) + '</span></label>';
+    }).join('');
+  $('#filter-body').innerHTML =
+    '<p class="bk-filter-label">' + esc(T.sort) + '</p>' + sortHTML
+    + statusHTML + layoutHTML + formatHTML;
+  $('#filter-body').querySelectorAll('input[name="bk-sort"]').forEach(function(r){
+    r.addEventListener('change', function(){ draft.sort = r.value; });
+  });
+  $('#filter-body').querySelectorAll('[data-status]').forEach(function(c){
+    c.addEventListener('change', function(){
+      if(c.checked) draft.statuses.add(c.dataset.status); else draft.statuses.delete(c.dataset.status);
+    });
+  });
+  $('#filter-body').querySelectorAll('[data-format]').forEach(function(c){
+    c.addEventListener('change', function(){
+      if(c.checked) draft.formats.add(c.dataset.format); else draft.formats.delete(c.dataset.format);
+    });
+  });
+  $('#filter-body').querySelectorAll('[data-layout]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      draft.layout = btn.dataset.layout;
+      $('#filter-body').querySelectorAll('[data-layout]').forEach(function(b){
+        b.classList.toggle('active', b.dataset.layout === draft.layout);
+      });
+    });
+  });
+}
+$('#filter-gear').addEventListener('click', function(){
+  closeOverlay('filter-wrap');
+  openSettingsSheet();
+});
+$('#filter-done').addEventListener('click', function(){
+  if(!draft) return;
+  sort = draft.sort; statuses = draft.statuses; formats = draft.formats; layout = draft.layout;
+  closeOverlay('filter-wrap');
+  renderAll();
+});
+$('#filter-clear').addEventListener('click', function(){
+  sort = defaultSort(); statuses = new Set(); formats = new Set(); layout = 'grid';
+  closeOverlay('filter-wrap');
+  renderAll();
+});
+$('#bk-filter-btn').addEventListener('click', function(){ openFilterSheet(); });
+
+/* 书库设置：主题（沿用 baseof 的 sgx-theme-mode） */
+function applyTheme(mode){
+  try{ localStorage.setItem('sgx-theme-mode', mode); }catch(e){}
+  var dark = mode === 'dark' || (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  document.documentElement.classList.toggle('dark', dark);
+  document.querySelectorAll('.bk-theme-opt').forEach(function(btn){
+    btn.classList.toggle('bk-theme-active', btn.dataset.theme === mode);
+  });
+}
+function openSettingsSheet(){
+  var cur = 'system';
+  try{ cur = localStorage.getItem('sgx-theme-mode') || 'system'; }catch(e){}
+  document.querySelectorAll('.bk-theme-opt').forEach(function(btn){
+    btn.classList.toggle('bk-theme-active', btn.dataset.theme === cur);
+  });
+  openOverlay('settings-wrap');
+}
+document.querySelectorAll('.bk-theme-opt').forEach(function(btn){
+  btn.addEventListener('click', function(){ applyTheme(btn.dataset.theme); });
+});
+
+/* ================= 书架网格 ================= */
+function gridItemHTML(b){
+  var meta = [b.author, String(b.format || '').toUpperCase()].filter(Boolean).join(' · ');
+  if(layout === 'list'){
+    return '<article class="bk-row flex gap-3 py-3 cursor-pointer min-w-0" data-book="' + esc(b.id) + '" role="button" tabindex="0" aria-label="' + esc(b.title) + '">'
+      + '<div class="w-14 shrink-0">' + coverBoxHTML(b, 'sm') + '</div>'
+      + '<div class="min-w-0 flex-1 py-0.5">'
+      + '<h3 class="text-[15px] font-bold truncate">' + esc(b.title) + '</h3>'
+      + '<p class="text-xs text-m-on-surface-variant truncate mt-1">' + esc(meta) + '</p>'
+      + '<p class="text-xs text-m-on-surface-variant mt-1">' + (owner ? esc(statusLabel(b)) : esc(fmtDate(b.created_at))) + '</p>'
+      + '</div></article>';
+  }
+  return '<article class="bk-card cursor-pointer min-w-0" data-book="' + esc(b.id) + '" role="button" tabindex="0" aria-label="' + esc(b.title) + '">'
+    + coverBoxHTML(b, 'md')
+    + '<h3 class="mt-2 text-sm font-bold truncate">' + esc(b.title) + '</h3>'
+    + '<p class="text-xs text-m-on-surface-variant truncate mt-0.5">' + esc(meta) + '</p></article>';
 }
 function renderGrid(){
-  var loading = document.getElementById('bk-loading');
-  var grid = document.getElementById('bk-grid');
-  var empty = document.getElementById('bk-empty');
-  loading.classList.add('hidden');
   var list = visibleBooks();
-  if(!list.length){
+  var grid = $('#bk-grid');
+  var noResults = $('#bk-no-results');
+  var empty = $('#bk-empty');
+  var loading = $('#bk-loading');
+  loading.classList.add('hidden');
+  grid.classList.remove('hidden');
+  noResults.classList.add('hidden');
+  empty.classList.add('hidden');
+  if(!books.length){
     grid.classList.add('hidden');
     empty.classList.remove('hidden');
-    var sub = document.getElementById('bk-empty-sub');
-    var cta = document.getElementById('bk-empty-cta');
-    if(query.trim() || filter !== 'all'){
-      sub.textContent = T.noResult;
-      cta.classList.add('hidden');
-    }else if(isOwner){
-      sub.textContent = isEn ? 'Upload your first book to get started.' : '上传第一本书，开始你的收藏。';
-      cta.classList.remove('hidden');
-    }else{
-      sub.textContent = isEn ? 'No public books yet.' : '暂时没有公开的书。';
-      cta.classList.add('hidden');
-    }
+    $('#bk-empty-text').innerHTML = owner
+      ? esc(T.empty) + '<br>' + esc(T.emptySub)
+      : esc(T.emptyVisitor);
+    $('#bk-empty-cta').classList.toggle('hidden', !owner);
     return;
   }
-  empty.classList.add('hidden');
-  grid.classList.remove('hidden');
-  grid.classList.remove('sgx-fade'); void grid.offsetWidth; grid.classList.add('sgx-fade'); /* 1.0.1：结果淡入 */
-  grid.innerHTML = list.map(function(b){
-    var p = isOwner ? progressOf(b.id) : 0;
-    var lastT = isOwner ? lastReadOf(b.id) : 0; /* 最近阅读时间：owner 仅 */
-    var badges = '<span class="absolute left-1.5 top-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-black/55 text-white">' + esc((b.format || '').toUpperCase()) + '</span>';
-    if(p > 0){
-      badges += '<span class="absolute right-1.5 top-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-m-primary/90 text-m-on-primary">' + fmtPct(p) + '</span>';
-    }
-    return '<button type="button" data-book="' + esc(b.id) + '" class="text-left group">' +
-      '<div class="relative aspect-[2/3] rounded-xl overflow-hidden bg-m-container shadow-sm group-active:scale-[.97] transition-transform">' +
-        coverTile(b, '') + badges +
-        (p > 0 ? '<div class="absolute bottom-0 inset-x-0 h-1 bg-black/30"><div class="h-full bg-m-primary" style="width:' + fmtPct(p) + '"></div></div>' : '') +
-      '</div>' +
-      '<p class="text-[13px] font-semibold leading-snug mt-2 line-clamp-2 text-m-on-surface">' + esc(b.title || '') + '</p>' +
-      '<p class="text-xs text-m-on-surface-variant line-clamp-1 mt-0.5">' + esc(b.author || T.unknownAuthor) + '</p>' +
-      (lastT ? '<p class="text-[11px] text-m-on-surface-variant line-clamp-1 mt-0.5">' + esc(lastReadLabel(lastT)) + '</p>' : '') +
-    '</button>';
-  }).join('');
-}
-document.getElementById('bk-grid').addEventListener('click', function(e){
-  var c = e.target.closest('[data-book]');
-  if(c) openSheet(c.getAttribute('data-book'));
-});
-document.getElementById('bk-sort').addEventListener('change', function(e){
-  sortMode = e.target.value; renderGrid();
-});
-document.getElementById('bk-retry').addEventListener('click', function(){ checkLogin().then(loadBooks); });
-
-document.addEventListener('visibilitychange', function(){ if(!document.hidden) checkLogin(); });
-
-/* ---- 详情 bottom sheet ---- */
-var sheetWrap = document.getElementById('sheet-wrap');
-function openSheet(id){
-  var b = bookById[id];
-  if(!b) return;
-  var p = isOwner ? progressOf(id) : 0;
-  var metaRows = [];
-  if(b.pages) metaRows.push('<div class="flex justify-between py-2.5 border-b border-m-outline/40"><span class="text-sm text-m-on-surface-variant">' + T.pages + '</span><span class="text-sm font-semibold">' + esc(b.pages) + '</span></div>');
-  metaRows.push('<div class="flex justify-between py-2.5 border-b border-m-outline/40"><span class="text-sm text-m-on-surface-variant">' + T.size + '</span><span class="text-sm font-semibold">' + esc(fmtSize(b.size)) + '</span></div>');
-  metaRows.push('<div class="flex justify-between py-2.5 border-b border-m-outline/40"><span class="text-sm text-m-on-surface-variant">' + T.tags + '</span><span class="text-sm font-semibold text-right max-w-[60%]">' + esc((b.tags || []).join('、') || T.noTags) + '</span></div>');
-  metaRows.push('<div class="flex justify-between py-2.5"><span class="text-sm text-m-on-surface-variant">' + T.addedOn + '</span><span class="text-sm font-semibold">' + esc(fmtDate(b.created_at)) + '</span></div>');
-  var prog = p > 0
-    ? '<div class="mt-4"><div class="flex justify-between text-xs text-m-on-surface-variant mb-1.5"><span>' + T.progress + '</span><span>' + fmtPct(p) + '</span></div>' +
-      '<div class="h-2 rounded-full bg-m-container overflow-hidden"><div class="h-full rounded-full bg-m-primary" style="width:' + fmtPct(p) + '"></div></div></div>'
-    : '';
-  /* 按钮区：有进度显示「继续阅读」，无进度（含 visitor）显示「开始阅读」；owner 第二行：编辑信息 / 更换封面 / 删除 */
-  var btns = '<a href="' + readBase + '?id=' + encodeURIComponent(b.id) + '" class="w-full h-12 mt-5 inline-flex items-center justify-center rounded-full bg-m-primary text-m-on-primary text-sm font-bold">' + (p > 0 ? T.cont : T.start) + '</a>';
-  if(isOwner){
-    btns += '<div class="flex gap-2 mt-2">' +
-      '<a href="' + adminBase + '#book-' + encodeURIComponent(b.id) + '" class="flex-1 h-12 px-3 inline-flex items-center justify-center rounded-full bg-m-container text-m-on-surface text-sm font-bold">' + T.edit + '</a>' +
-      '<button type="button" data-cover-book="' + esc(b.id) + '" class="flex-1 h-12 px-3 inline-flex items-center justify-center rounded-full bg-m-container text-m-on-surface text-sm font-bold">' + T.cover + '</button>' +
-      '<button type="button" data-del-book="' + esc(b.id) + '" class="flex-1 h-12 px-3 inline-flex items-center justify-center rounded-full bg-m-rose-container text-m-on-rose-container text-sm font-bold">' + T.del + '</button>' +
-    '</div>';
+  if(!list.length){
+    grid.classList.add('hidden');
+    noResults.classList.remove('hidden');
+    return;
   }
-  document.getElementById('sheet-body').innerHTML =
-    '<div class="flex gap-4">' +
-      '<div class="w-24 flex-shrink-0 aspect-[2/3] rounded-xl overflow-hidden bg-m-container shadow">' + coverTile(b, '') + '</div>' +
-      '<div class="min-w-0 flex-1">' +
-        '<h3 class="text-lg font-extrabold leading-snug text-m-on-surface">' + esc(b.title || '') + '</h3>' +
-        '<p class="text-sm text-m-on-surface-variant mt-1">' + esc(b.author || T.unknownAuthor) + '</p>' +
-        '<span class="inline-block mt-2 text-[11px] font-bold px-2 py-0.5 rounded-md bg-m-primary-container text-m-on-primary-container">' + esc((b.format || '').toUpperCase()) + '</span>' +
-      '</div>' +
-    '</div>' +
-    '<div class="mt-4 rounded-2xl bg-m-container-low px-4">' + metaRows.join('') + '</div>' +
-    prog + btns;
-  sheetWrap.classList.remove('closing');
-  sheetWrap.classList.add('open');
-  sheetWrap.setAttribute('aria-hidden', 'false');
-  document.body.style.overflow = 'hidden';
-}
-function closeSheet(){
-  if(!sheetWrap.classList.contains('open')) return;
-  sheetWrap.classList.add('closing');
-  sheetWrap.classList.remove('open');
-  setTimeout(function(){
-    sheetWrap.classList.remove('closing');
-    sheetWrap.setAttribute('aria-hidden', 'true');
-  }, 250);
-  document.body.style.overflow = '';
-}
-document.getElementById('sheet-bg').addEventListener('click', closeSheet);
-document.getElementById('sheet-handle').addEventListener('click', closeSheet);
-document.addEventListener('keydown', function(e){ if(e.key === 'Escape'){ closeSheet(); closeDelDialog(); } });
-
-/* ---- 删除二次确认 ---- */
-var delWrap = document.getElementById('del-wrap');
-var delBookId = null;
-function openDelDialog(id){
-  var b = bookById[id];
-  if(!b || !isOwner) return;
-  delBookId = id;
-  document.getElementById('del-title').textContent = T.delTitle;
-  document.getElementById('del-body').textContent = T.delBody;
-  delWrap.querySelector('[data-del-cancel]').textContent = T.cancel;
-  document.getElementById('del-confirm').textContent = T.confirmDel;
-  delWrap.classList.remove('hidden');
-  delWrap.classList.add('flex');
-  document.body.style.overflow = 'hidden';
-}
-function closeDelDialog(){
-  delBookId = null;
-  delWrap.classList.add('hidden');
-  delWrap.classList.remove('flex');
-  if(!sheetWrap.classList.contains('open')) document.body.style.overflow = '';
-}
-delWrap.addEventListener('click', function(e){
-  if(e.target.closest('[data-del-cancel]')) closeDelDialog();
-});
-document.getElementById('del-confirm').addEventListener('click', async function(){
-  if(!delBookId || !isOwner) return;
-  var id = delBookId;
-  try{
-    var r = await fetch('/api/admin/book?id=' + encodeURIComponent(id), {
-      method: 'DELETE',
-      credentials: 'same-origin'
+  if(layout === 'grid') grid.className = 'grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-x-3 gap-y-5';
+  else if(layout === 'large') grid.className = 'grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-6';
+  else grid.className = 'flex flex-col divide-y divide-m-outline/30';
+  grid.innerHTML = list.map(gridItemHTML).join('');
+  grid.querySelectorAll('[data-book]').forEach(function(el){
+    el.addEventListener('click', function(){
+      var b = books.find(function(x){ return x.id === el.dataset.book; });
+      if(b) openSheet(b);
     });
-    if(!r.ok) throw new Error('HTTP ' + r.status);
-    delete bookById[id];
-    books = books.filter(function(b){ return b.id !== id; });
-    try{ localStorage.removeItem('bk-progress-' + id); }catch(e){}
-    closeDelDialog();
-    closeSheet();
-    renderChips(); renderContinue(); renderGrid();
-  }catch(e){
-    closeDelDialog();
-  }
-});
-/* 详情弹层内的删除按钮（事件委托） */
-document.getElementById('sheet-body').addEventListener('click', function(e){
-  var b = e.target.closest('[data-del-book]');
-  if(b) openDelDialog(b.getAttribute('data-del-book'));
-});
-
-/* ---- 更换封面（owner；与后台管理页同流程：选图 → 压 WebP 600 → POST /api/admin/cover → PUT /api/admin/book） ---- */
-var coverInput = document.getElementById('bk-cover-input');
-var coverTargetId = null;
-if(coverInput) coverInput.addEventListener('change', async function(){
-  var f = coverInput.files && coverInput.files[0];
-  coverInput.value = '';
-  var id = coverTargetId; coverTargetId = null;
-  var b = id && bookById[id];
-  if(!f || !b || !isOwner) return;
-  try{
-    /* 用 helpers 的 toWebp600；压缩失败直接抛错，不回退原图 */
-    var helpers = window.SgxUploadQueue.helpers(isEn);
-    var webp = await helpers.toWebp600(f);
-    /* helpers.api 与管理页同一份：same-origin 凭证 + app token 失效自动跳复验 */
-    var apiH = window.SgxUploadQueue.helpers(isEn).api;
-    var key = b.cover_key || ('covers/' + b.id + '.webp');
-    var r = await apiH('/api/admin/cover?key=' + encodeURIComponent(key),
-      {method: 'POST', body: webp, headers: {'Content-Type': 'image/webp'}});
-    if(!r.ok) throw new Error('cover HTTP ' + r.status);
-    var ck = (await r.json()).key;
-    var r2 = await apiH('/api/admin/book?id=' + encodeURIComponent(b.id),
-      {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({coverKey: ck})});
-    if(!r2.ok) throw new Error('put HTTP ' + r2.status);
-    b.cover_key = ck;
-    coverRev[b.id] = Date.now();
-    renderGrid();
-    if(sheetWrap.classList.contains('open')) openSheet(b.id); /* 刷新弹层内封面 */
-  }catch(err){
-    console.error('[book] replace cover failed:', err);
-    alert(T.coverFail);
-  }
-});
-/* 详情弹层内的更换封面按钮（事件委托） */
-document.getElementById('sheet-body').addEventListener('click', async function(e){
-  var c = e.target.closest('[data-cover-book]');
-  if(!c || !isOwner) return;
-  /* 预检通行证：与上传 FAB 一致，无效时在选图之前跳主站复验 */
-  try{
-    var ok = await window.SgxUploadQueue.appCheck();
-    if(!ok){ window.location.href = window.SgxUploadQueue.appVerifyUrl(); return; }
-  }catch(err){ /* 预检失败不阻塞打开，上传时再处理 */ }
-  coverTargetId = c.getAttribute('data-cover-book');
-  if(coverInput) coverInput.click();
-});
-
-/* ---- 登录状态变化时刷新 ---- */
-document.addEventListener('visibilitychange', function(){ if(!document.hidden) checkLogin(); });
-window.addEventListener('bk-login-change', checkLogin);
-
-/* ---- 底部搜索胶囊（1.0.1）：展开 + visualViewport 键盘贴合 ---- */
-(function(){
-  var pill = document.getElementById('bk-pill');
-  var input = document.getElementById('bk-pill-input');
-  if(!pill || !input) return;
-  document.body.classList.add('sgx85-has-pill'); /* 底部留白：最后一项能完整滚出来 */
-  var opened = false;
-  var vv = window.visualViewport;
-  var lastKB = 0;
-  function kbH(){
-    if(!vv) return 0;
-    return Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-  }
-  function stick(){
-    var kb = kbH();
-    pill.style.transform = kb > 0 ? ('translateY(' + (-kb) + 'px)') : '';
-  }
-  function onVV(){ if(opened) stick(); }
-  function open(){
-    if(opened) return; opened = true;
-    pill.classList.add('open');
-    input.tabIndex = 0;
-    if(vv){ vv.addEventListener('resize', onVV); vv.addEventListener('scroll', onVV); }
-    stick();
-    setTimeout(function(){ try{ input.focus({preventScroll:true}); }catch(e){ input.focus(); } }, 60);
-  }
-  function close(){
-    if(!opened) return; opened = false;
-    pill.classList.remove('open');
-    pill.style.transform = '';
-    input.tabIndex = -1;
-    if(vv){ vv.removeEventListener('resize', onVV); vv.removeEventListener('scroll', onVV); }
-    if(document.activeElement === input) input.blur();
-  }
-  pill.addEventListener('click', function(){ if(!opened) open(); });
-  pill.addEventListener('keydown', function(e){
-    if(!opened && (e.key === 'Enter' || e.key === ' ')){ e.preventDefault(); open(); }
+    el.addEventListener('keydown', function(e){
+      if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); el.click(); }
+    });
   });
-  input.addEventListener('keydown', function(e){
-    if(e.key === 'Escape'){ e.stopPropagation(); close(); }
-  });
-  document.addEventListener('click', function(e){
-    if(opened && !pill.contains(e.target)) close();
-  });
-  if(vv) vv.addEventListener('resize', function(){
-    if(!opened) return;
-    var kb = kbH();
-    if(lastKB > 0 && kb === 0){
-      setTimeout(function(){ if(document.activeElement !== input) close(); }, 150);
+}
+
+/* ================= 最近阅读 / 最近添加条 ================= */
+function recentBooks(){
+  return books.filter(function(b){ return pctOf(b) != null; })
+    .sort(function(a, b){ return Number(b.progress_updated_at || 0) - Number(a.progress_updated_at || 0); })
+    .slice(0, 5);
+}
+function stripItemHTML(b){
+  return '<div class="bk-strip-item shrink-0 w-[76px] cursor-pointer" data-book="' + esc(b.id) + '" role="button" tabindex="0" aria-label="' + esc(b.title) + '">'
+    + coverBoxHTML(b, 'sm')
+    + '<p class="text-xs font-medium truncate mt-1.5">' + esc(b.title) + '</p>'
+    + '<p class="text-[11px] text-m-on-surface-variant mt-0.5">' + esc(statusLabel(b)) + '</p></div>';
+}
+function renderStrip(){
+  var strip = $('#bk-strip');
+  var side = $('#bk-side');
+  var filtersActive = query || statuses.size || formats.size || group !== 'all';
+  /* Owner：最近阅读（有进度记录，最多 5 本）；Visitor：最近添加（公开书 ≥ 8 本才显示） */
+  if(owner){
+    var recent = filtersActive ? [] : recentBooks();
+    if(recent.length){
+      strip.classList.remove('hidden');
+      strip.innerHTML = '<div class="bg-m-container-lowest rounded-[1.75rem] p-4 shadow-sm">'
+        + '<button type="button" id="bk-strip-head" class="w-full flex items-center justify-between mb-3"><span class="text-base font-extrabold">' + esc(T.recentRead) + '</span><span class="text-m-on-surface-variant">›</span></button>'
+        + '<div class="flex gap-3 overflow-x-auto pb-1 -mx-1 px-1">' + recent.map(stripItemHTML).join('') + '</div></div>';
+      var head = $('#bk-strip-head');
+      if(head) head.addEventListener('click', function(){ group = 'reading'; renderAll(); });
+      strip.querySelectorAll('[data-book]').forEach(function(el){
+        el.addEventListener('click', function(){
+          var b = books.find(function(x){ return x.id === el.dataset.book; });
+          if(b) openSheet(b);
+        });
+      });
+    } else {
+      strip.classList.add('hidden');
+      strip.innerHTML = '';
     }
-    lastKB = kb;
-  });
-  /* 1.0 的搜索逻辑：150ms 防抖，按书名/作者过滤网格 */
-  var searchTimer = null;
-  input.addEventListener('input', function(){
-    clearTimeout(searchTimer);
-    searchTimer = setTimeout(function(){ query = input.value; renderGrid(); }, 150);
-  });
-})();
+    /* 桌面右侧栏：最近阅读卡 */
+    if(recent.length){
+      side.innerHTML = '<div class="bg-m-container-lowest rounded-[1.75rem] p-4 shadow-sm">'
+        + '<h2 class="text-base font-extrabold mb-3">' + esc(T.recentRead) + '</h2>'
+        + recent.map(function(b){
+          return '<div class="flex gap-3 py-2 cursor-pointer" data-book="' + esc(b.id) + '" role="button" tabindex="0" aria-label="' + esc(b.title) + '">'
+            + '<div class="w-12 shrink-0">' + coverBoxHTML(b, 'sm') + '</div>'
+            + '<div class="min-w-0 py-0.5"><p class="text-sm font-bold truncate">' + esc(b.title) + '</p>'
+            + '<p class="text-xs text-m-on-surface-variant mt-1">' + esc(statusLabel(b)) + '</p></div></div>';
+        }).join('') + '</div>';
+      side.querySelectorAll('[data-book]').forEach(function(el){
+        el.addEventListener('click', function(){
+          var b = books.find(function(x){ return x.id === el.dataset.book; });
+          if(b) openSheet(b);
+        });
+      });
+    } else {
+      side.innerHTML = '';
+    }
+  } else {
+    /* Visitor：最近添加条（公开书少于 8 本不显示） */
+    var added = (!filtersActive && books.length >= 8)
+      ? books.slice().sort(function(a, b){ return Number(b.created_at || 0) - Number(a.created_at || 0); }).slice(0, 5)
+      : [];
+    if(added.length){
+      strip.classList.remove('hidden');
+      strip.innerHTML = '<div class="bg-m-container-lowest rounded-[1.75rem] p-4 shadow-sm">'
+        + '<div class="flex items-center justify-between mb-3"><span class="text-base font-extrabold">' + esc(T.recentlyAdded) + '</span><span class="text-m-on-surface-variant">›</span></div>'
+        + '<div class="flex gap-3 overflow-x-auto pb-1 -mx-1 px-1">'
+        + added.map(function(b){
+          return '<div class="bk-strip-item shrink-0 w-[76px] cursor-pointer" data-book="' + esc(b.id) + '" role="button" tabindex="0" aria-label="' + esc(b.title) + '">'
+            + '<div class="bk-cover relative aspect-[2/3] overflow-hidden bg-m-container rounded-xl">' + coverHTML(b, 'sm') + '</div>'
+            + '<p class="text-xs font-medium truncate mt-1.5">' + esc(b.title) + '</p></div>';
+        }).join('') + '</div></div>';
+      strip.querySelectorAll('[data-book]').forEach(function(el){
+        el.addEventListener('click', function(){
+          var b = books.find(function(x){ return x.id === el.dataset.book; });
+          if(b) openSheet(b);
+        });
+      });
+    } else {
+      strip.classList.add('hidden');
+      strip.innerHTML = '';
+    }
+    side.innerHTML = '';
+  }
+}
 
-/* ---- 启动 ---- */
-checkLogin().then(loadBooks);
+/* ================= 继续阅读 FAB ================= */
+function fabBook(){
+  var inProgress = books.filter(function(b){ return readState(b) === 'reading'; });
+  if(!inProgress.length) return null;
+  inProgress.sort(function(a, b){ return Number(b.progress_updated_at || 0) - Number(a.progress_updated_at || 0); });
+  return inProgress[0];
+}
+function renderFAB(){
+  var fab = $('#bk-fab');
+  var spacer = $('#bk-fab-spacer');
+  if(!owner){
+    fab.classList.add('hidden');
+    spacer.classList.add('hidden');
+    return;
+  }
+  var b = fabBook();
+  if(!b){
+    fab.classList.add('hidden');
+    spacer.classList.add('hidden');
+    return;
+  }
+  fab.classList.remove('hidden');
+  spacer.classList.remove('hidden');
+  var p = Math.round(pctOf(b) || 0);
+  fab.setAttribute('aria-label', (isEn ? 'Continue reading ' : '继续阅读 《') + b.title + (isEn ? '' : '》'));
+  fab.dataset.bookId = b.id;
+  $('#bk-fab-title').textContent = b.title;
+  $('#bk-fab-sub').textContent = T.continueReading + ' · ' + p + '%';
+  var url = coverUrl(b);
+  var thumb = $('#bk-fab-thumb');
+  thumb.innerHTML = url
+    ? '<img src="' + esc(url) + '" alt="" class="w-full h-full object-cover" draggable="false">'
+    : genCoverHTML(b, 'sm');
+  var collapsed = $('#bk-fab-collapsed');
+  collapsed.innerHTML = url
+    ? '<img src="' + esc(url) + '" alt="" class="w-full h-full object-cover" draggable="false">'
+    : '<span class="text-m-on-primary">' + $('#bk-fab-icon').innerHTML + '</span>';
+  setFabExpanded(true);
+}
+function setFabExpanded(expanded){
+  $('#bk-fab-expanded').classList.toggle('hidden', !expanded);
+  var c = $('#bk-fab-collapsed');
+  c.classList.toggle('hidden', expanded);
+  c.classList.toggle('flex', !expanded);
+}
+window.addEventListener('scroll', function(){
+  if($('#bk-fab').classList.contains('hidden')) return;
+  setFabExpanded(false);
+  clearTimeout(fabTimer);
+  fabTimer = setTimeout(function(){ setFabExpanded(true); }, 200);
+}, { passive: true });
+$('#bk-fab').addEventListener('click', function(){
+  var b = books.find(function(x){ return x.id === $('#bk-fab').dataset.bookId; });
+  if(!b) return;
+  /* 轻触进阅读器：封面放大过渡（减弱动效时改为淡入，见 .bk-fab-leaving） */
+  $('#bk-fab').classList.add('bk-fab-leaving');
+  setTimeout(function(){ window.location.href = readUrl(b); }, 200);
+});
+
+/* ================= 详情弹层 ================= */
+function closeSheet(){
+  var wrap = $('#sheet-wrap');
+  wrap.classList.remove('open');
+  sheetBook = null;
+  if(!document.querySelector('.bk-overlay.open')) document.body.style.overflow = '';
+}
+$('#sheet-backdrop').addEventListener('click', closeSheet);
+function openSheet(b){
+  sheetBook = b;
+  renderDetail();
+  var wrap = $('#sheet-wrap');
+  wrap.classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+function metaLine(b){
+  var parts = [];
+  if(b.author) parts.push(b.author);
+  if(b.format) parts.push(String(b.format).toUpperCase());
+  if(b.pages) parts.push(b.pages + ' ' + T.pages);
+  if(owner){
+    var p = pctOf(b);
+    if(p != null && p >= READ_DONE) parts.push(T.readDone);
+    else if(p != null && p > 0) parts.push(T.readPct(Math.round(p)));
+  }
+  return parts.join(' · ');
+}
+function metaLine2(b){
+  var parts = [];
+  if(b.size) parts.push(fmtSize(b.size));
+  if(b.tags && b.tags.length) parts.push(b.tags.join('、'));
+  var d = fmtDate(b.created_at);
+  if(d) parts.push(d);
+  return parts.join(' · ');
+}
+function renderDetail(){
+  var b = sheetBook;
+  if(!b) return;
+  var p = pctOf(b);
+  var progressBar = '';
+  if(owner && p != null && p > 0){
+    progressBar = '<div class="mt-4 h-1.5 rounded-full bg-m-container overflow-hidden"><div class="h-full bg-m-primary rounded-full" style="width:' + Math.round(p) + '%"></div></div>';
+  }
+  var rows = '';
+  if(owner){
+    rows = '<div class="mt-5 divide-y divide-m-outline/30 border-y border-m-outline/30">'
+      + '<label class="flex items-center justify-between py-4 gap-3 cursor-pointer"><span class="text-[15px]">' + esc(T.publicToVisitors) + '</span>'
+      + switchInputHTML('bk-vis', b.visibility === 'public') + '</label>'
+      + '<label class="flex items-center justify-between py-4 gap-3 cursor-pointer"><span class="text-[15px]">' + esc(T.inShelf) + '</span>'
+      + switchInputHTML('bk-shelf', Number(b.in_shelf) === 1) + '</label>'
+      + '<button type="button" id="bk-sheet-cover" class="w-full flex items-center justify-between py-4 gap-3 text-left"><span class="text-[15px]">' + esc(T.changeCover) + '</span><span class="text-m-on-surface-variant">›</span></button>'
+      + '</div>';
+  }
+  var readLabel = (owner && p != null && p > 0) ? T.continueReading : T.startReading;
+  var buttons = '';
+  if(owner){
+    buttons = '<div class="flex gap-3 mt-6">'
+      + '<a href="' + esc(readUrl(b)) + '" class="flex-1 h-12 inline-flex items-center justify-center rounded-full bg-m-primary text-m-on-primary text-[15px] font-bold">' + esc(readLabel) + '</a>'
+      + '<button type="button" id="bk-sheet-edit" class="flex-1 h-12 rounded-full bg-m-container text-m-on-surface text-[15px] font-bold">' + esc(T.edit) + '</button></div>'
+      + '<button type="button" id="bk-sheet-del" class="block w-full text-center mt-5 text-[15px] font-bold text-m-error py-1">' + esc(T.deleteBook) + '</button>';
+  } else {
+    buttons = '<div class="mt-6"><a href="' + esc(readUrl(b)) + '" class="block h-12 leading-[3rem] text-center rounded-full bg-m-primary text-m-on-primary text-[15px] font-bold">' + esc(readLabel) + '</a></div>';
+  }
+  $('#sheet-body').innerHTML =
+    '<div class="w-32 mx-auto mt-2">' + coverBoxHTML(b, 'md') + '</div>'
+    + '<h2 class="text-xl font-extrabold text-center mt-4 leading-snug" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;text-wrap:balance">' + esc(b.title) + '</h2>'
+    + '<p class="text-sm text-m-on-surface-variant text-center mt-1.5">' + esc(metaLine(b)) + '</p>'
+    + (metaLine2(b) ? '<p class="text-xs text-m-on-surface-variant text-center mt-1">' + esc(metaLine2(b)) + '</p>' : '')
+    + progressBar + rows + buttons;
+  if(!owner) return;
+  var visInput = $('#sheet-body').querySelector('input[data-f="bk-vis"]');
+  if(visInput) visInput.addEventListener('change', function(){
+    updateBook(b, { visibility: visInput.checked ? 'public' : 'private' }, visInput, !visInput.checked);
+  });
+  var shelfInput = $('#sheet-body').querySelector('input[data-f="bk-shelf"]');
+  if(shelfInput) shelfInput.addEventListener('change', function(){
+    updateBook(b, { in_shelf: shelfInput.checked ? 1 : 0 }, shelfInput, !shelfInput.checked);
+  });
+  var coverBtn = $('#bk-sheet-cover');
+  if(coverBtn) coverBtn.addEventListener('click', function(){ openOverlay('cover-wrap'); });
+  var editBtn = $('#bk-sheet-edit');
+  if(editBtn) editBtn.addEventListener('click', renderEdit);
+  var delBtn = $('#bk-sheet-del');
+  if(delBtn) delBtn.addEventListener('click', function(){ askConfirm(T.deleteConfirm, deleteBook); });
+}
+/* PUT 元数据（只需 owner 鉴权）；失败时回滚开关 */
+async function updateBook(b, patch, inputEl, rollbackChecked){
+  try{
+    var res = await api('/api/admin/book?id=' + encodeURIComponent(b.id), {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch)
+    });
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    Object.assign(b, patch);
+    renderAll();
+    if(sheetBook && sheetBook.id === b.id) renderDetail();
+  }catch(e){
+    if(inputEl) inputEl.checked = rollbackChecked;
+    toast(T.failed);
+  }
+}
+/* 编辑：弹层内完成，不跳页 */
+function renderEdit(){
+  var b = sheetBook;
+  if(!b) return;
+  $('#sheet-body').innerHTML =
+    '<div class="w-32 mx-auto mt-2">' + coverBoxHTML(b, 'md') + '</div>'
+    + '<label class="block mt-5"><span class="text-sm text-m-on-surface-variant">' + esc(T.title) + '</span>'
+    + '<input id="bk-edit-title" type="text" class="mt-1.5 w-full h-12 px-4 rounded-2xl border border-m-outline bg-m-surface text-[15px] outline-none focus:border-m-primary" value="' + esc(b.title) + '"></label>'
+    + '<label class="block mt-4"><span class="text-sm text-m-on-surface-variant">' + esc(T.author) + '</span>'
+    + '<input id="bk-edit-author" type="text" class="mt-1.5 w-full h-12 px-4 rounded-2xl border border-m-outline bg-m-surface text-[15px] outline-none focus:border-m-primary" value="' + esc(b.author || '') + '"></label>'
+    + '<div class="flex gap-3 mt-6">'
+    + '<button type="button" id="bk-edit-save" class="flex-1 h-12 rounded-full bg-m-primary text-m-on-primary text-[15px] font-bold">' + esc(T.save) + '</button>'
+    + '<button type="button" id="bk-edit-cancel" class="flex-1 h-12 rounded-full bg-m-container text-m-on-surface text-[15px] font-bold">' + esc(T.cancel) + '</button></div>';
+  $('#bk-edit-cancel').addEventListener('click', renderDetail);
+  $('#bk-edit-save').addEventListener('click', async function(){
+    var title = $('#bk-edit-title').value.trim();
+    var author = $('#bk-edit-author').value.trim();
+    if(!title){ $('#bk-edit-title').focus(); return; }
+    try{
+      var res = await api('/api/admin/book?id=' + encodeURIComponent(b.id), {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: title, author: author })
+      });
+      if(!res.ok) throw new Error('HTTP ' + res.status);
+      b.title = title; b.author = author;
+      renderAll();
+      renderDetail();
+      toast(T.saved);
+    }catch(e){ toast(T.failed); }
+  });
+}
+/* 换封面子菜单 */
+$('#cover-upload').addEventListener('click', function(){
+  closeOverlay('cover-wrap');
+  $('#bk-cover-input').click();
+});
+$('#cover-reextract').addEventListener('click', async function(){
+  var b = sheetBook;
+  if(!b) return;
+  closeOverlay('cover-wrap');
+  try{
+    var f = await api('/api/private/file?id=' + encodeURIComponent(b.id));
+    if(!f.ok) throw new Error('HTTP ' + f.status);
+    var blob = await f.blob();
+    var webp = await H.extractCover(blob, b.format);
+    if(!webp){ toast(T.coverNotFound); return; }
+    await uploadCoverBlob(b, webp);
+  }catch(e){ toast(T.failed); }
+});
+$('#bk-cover-input').addEventListener('change', async function(){
+  var b = sheetBook;
+  var file = this.files && this.files[0];
+  this.value = '';
+  if(!b || !file) return;
+  try{
+    var webp = await H.toWebp600(file);
+    await uploadCoverBlob(b, webp);
+  }catch(e){ toast(T.failed); }
+});
+/* 上传封面图：POST /api/admin/cover → PUT /api/admin/book（沿用现有流程） */
+async function uploadCoverBlob(b, webp){
+  try{
+    var key = 'covers/' + b.id + '.webp';
+    var r1 = await api('/api/admin/cover?key=' + encodeURIComponent(key), {
+      method: 'POST', headers: { 'Content-Type': 'image/webp' }, body: webp
+    });
+    if(!r1.ok) throw new Error('HTTP ' + r1.status);
+    var j = await r1.json();
+    var coverKey = (j && j.coverKey) || key;
+    var r2 = await api('/api/admin/book?id=' + encodeURIComponent(b.id), {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ coverKey: coverKey })
+    });
+    if(!r2.ok) throw new Error('HTTP ' + r2.status);
+    b.cover_key = coverKey;
+    renderAll();
+    if(sheetBook && sheetBook.id === b.id) renderDetail();
+    toast(T.coverUpdated);
+  }catch(e){ toast(T.failed); }
+}
+/* 删除二次确认 */
+function askConfirm(msg, cb){
+  $('#confirm-msg').textContent = msg;
+  confirmCb = cb;
+  openOverlay('confirm-wrap');
+}
+$('#confirm-cancel').addEventListener('click', function(){ closeOverlay('confirm-wrap'); confirmCb = null; });
+$('#confirm-ok').addEventListener('click', function(){
+  closeOverlay('confirm-wrap');
+  if(confirmCb){ var cb = confirmCb; confirmCb = null; cb(); }
+});
+async function deleteBook(){
+  var b = sheetBook;
+  if(!b) return;
+  try{
+    var res = await api('/api/admin/book?id=' + encodeURIComponent(b.id), { method: 'DELETE' });
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    books = books.filter(function(x){ return x.id !== b.id; });
+    try{ localStorage.removeItem('bk-progress-' + b.id); }catch(e){}
+    closeSheet();
+    renderAll();
+    toast(T.deleted);
+  }catch(e){ toast(T.failed); }
+}
+
+/* ================= 渲染汇总 ================= */
+function renderAll(){
+  renderChips();
+  renderStrip();
+  renderGrid();
+  renderFAB();
+}
+
+/* ================= 启动 ================= */
+async function fetchMe(){
+  try{
+    var r = await fetch('/api/private/me', { credentials: 'same-origin' });
+    if(!r.ok) return null;
+    return await r.json();
+  }catch(e){ return null; }
+}
+async function loadBooks(){
+  var url = owner ? '/api/private/books' : '/api/books';
+  var r = await fetch(url, { credentials: 'same-origin' });
+  if(!r.ok) throw new Error('HTTP ' + r.status);
+  var j = await r.json();
+  books = (j && j.books) || [];
+}
+async function boot(){
+  var me = await fetchMe();
+  owner = !!(me && me.role === 'owner');
+  sort = defaultSort();
+  if(owner) $('#bk-menu-btn').classList.remove('hidden');
+  try{
+    await loadBooks();
+  }catch(e){
+    $('#bk-loading').textContent = T.failed;
+    return;
+  }
+  renderAll();
+}
+boot();
+
 })();
 </script>
-
 {{ end }}

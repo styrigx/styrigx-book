@@ -27,10 +27,12 @@ export function safeParseTags(raw) {
   }
 }
 
-// D1 行 → 对外 book 对象（不暴露内部 r2_key）
+// D1 行 → 对外 book 对象（不暴露内部 r2_key）。
+// percent / progress_updated_at 仅当查询 SELECT 了 progress 列时才带上
+// （/api/private/books LEFT JOIN progress；公开 /api/books 不 SELECT，Visitor 拿不到进度）。
 export function rowToBook(row) {
   if (!row) return null;
-  return {
+  const book = {
     id: row.id,
     title: row.title,
     author: row.author ?? '',
@@ -46,6 +48,9 @@ export function rowToBook(row) {
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
+  if (row.percent !== undefined) book.percent = row.percent == null ? null : Number(row.percent);
+  if (row.progress_updated_at !== undefined) book.progress_updated_at = row.progress_updated_at ?? null;
+  return book;
 }
 
 // R2 key 规范

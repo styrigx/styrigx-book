@@ -59,7 +59,9 @@ test('layouts/ 无 download 属性的 <a> 标签', () => {
 test('layouts/ 无指向 /api/file 或 /api/private/file 的 href 构造', () => {
   const files = readLayouts();
   const hits = [];
-  const re = /\/api\/(private\/)?file\?/g;
+  // 只禁 href 构造（下载链接）；fetch() 取文件做封面提取不是下载链接，允许
+  // （3.0 详情弹层「从书里重新提取」：fetch /api/private/file → 内存解析封面，不暴露下载）
+  const re = /href\s*=\s*["'][^"']*\/api\/(private\/)?file/gi;
   for (const { file, content } of files) {
     // 允许 read.html 阅读器内部使用（那是阅读器加载文件，不是下载）
     // 但不允许出现在 index.html（书架/详情弹层）
@@ -68,7 +70,7 @@ test('layouts/ 无指向 /api/file 或 /api/private/file 的 href 构造', () =>
     }
     re.lastIndex = 0;
   }
-  assert.equal(hits.length, 0, 'index.html 中发现文件接口引用：' + hits.join(', '));
+  assert.equal(hits.length, 0, 'index.html 中发现文件接口 href 构造：' + hits.join(', '));
 });
 
 test('layouts/index.html 无 fileURL / T.download 残留', () => {

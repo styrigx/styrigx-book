@@ -1,4 +1,4 @@
 ---
-title: Admin
+title: Upload books
 layout: admin
 ---

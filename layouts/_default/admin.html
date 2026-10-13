@@ -1,12 +1,14 @@
 {{ define "main" }}
 {{ $isEn := or (eq .Lang "en") (hasPrefix .RelPermalink "/en/") }}
+{{/* 3.0：旧管理页下线，本页只剩上传（上传区 + 上传队列，与书架 ⋮ 菜单共用 upload-queue.js）。
+   书籍管理（编辑 / 换封面 / 公开 / 放进主站书单 / 删除）已移到书架详情弹层。 */}}
 <main class="max-w-4xl mx-auto px-4 sm:px-6 pb-16">
-  {{ partial "subpage-head.html" (dict "title" (cond $isEn "Admin" "管理") "sub" "—" "isEn" $isEn) }}
+  {{ partial "subpage-head.html" (dict "title" (cond $isEn "Upload books" "上传书籍") "sub" "—" "isEn" $isEn) }}
 
   {{/* 未登录提示（/api/private/me 未返回 role=owner 时显示） */}}
   <div id="adm-auth" class="hidden text-center py-20">
     <p class="text-base font-bold mb-2">{{ if $isEn }}Sign-in required{{ else }}需要登录{{ end }}</p>
-    <p class="text-sm text-m-on-surface-variant">{{ if $isEn }}Please unlock from the main site first.{{ else }}请先从主站解锁后再管理书库。{{ end }}</p>
+    <p class="text-sm text-m-on-surface-variant">{{ if $isEn }}Please unlock from the main site first.{{ else }}请先从主站解锁后再上传。{{ end }}</p>
   </div>
 
   {{/* 存储未开放提示（STORAGE_ENABLED=false 时显示） */}}
@@ -17,44 +19,14 @@
   </div>
 
   <div id="adm-main" class="hidden">
-    {{/* 上传区（与书架 FAB 共用 partial + assets/js/upload-queue.js） */}}
     <section class="mb-10 rounded-[1.75rem] bg-m-container-lowest border border-m-outline/40 p-4 sm:p-5 shadow-sm">
       <h2 class="text-base font-extrabold text-m-on-surface mb-1 px-1">{{ if $isEn }}Add books{{ else }}上传新书{{ end }}</h2>
       <p class="text-xs text-m-on-surface-variant mb-4 px-1">{{ if $isEn }}Files are parsed locally first — fill in the info, then upload.{{ else }}文件先在本地解析，填好信息后再上传。{{ end }}</p>
       {{ partial "upload-queue.html" (dict "prefix" "adm" "isEn" $isEn) }}
-    </section>
-
-    {{/* 管理列表 */}}
-    <section>
-      <div class="flex items-baseline justify-between mb-3 px-1">
-        <h2 class="text-sm font-bold text-m-on-surface-variant">{{ if $isEn }}Manage books{{ else }}书籍管理{{ end }}</h2>
-        <p id="adm-stats" class="text-xs text-m-on-surface-variant"></p>
-      </div>
-      {{/* 补齐封面：对 cover_key 为空的书 head R2 的 covers/<id>.webp，存在则写回（只改 cover_key） */}}
-      <div class="flex items-center gap-2 mb-3 px-1">
-        <button type="button" id="adm-backfill-covers" class="h-9 px-3 rounded-full text-xs font-bold bg-m-container text-m-on-surface">{{ if $isEn }}Backfill covers{{ else }}补齐封面{{ end }}</button>
-        <p id="adm-backfill-result" class="text-xs text-m-on-surface-variant"></p>
-      </div>
-      <div id="adm-list" class="space-y-3"></div>
-      <div id="adm-list-empty" class="hidden text-center py-12 text-sm text-m-on-surface-variant">{{ if $isEn }}No books yet.{{ else }}还没有书。{{ end }}</div>
+      <p class="text-xs text-m-on-surface-variant mt-4 px-1 leading-relaxed">{{ if $isEn }}Large files upload in parts; a failed part retries automatically. After upload, the cover and page count are extracted automatically. If an upload fails, please re-upload.{{ else }}大文件分片上传，单片失败自动重试。上传后自动提取封面与页数入库。上传失败后需重新上传。{{ end }}</p>
     </section>
   </div>
 </main>
-
-{{/* 编辑对话框 */}}
-<div id="adm-edit-wrap" class="fixed inset-0 z-[70] hidden items-center justify-center p-4" role="dialog" aria-modal="true">
-  <div id="adm-edit-bg" class="absolute inset-0 bg-black/45"></div>
-  <div class="relative w-full max-w-md rounded-3xl bg-m-container-lowest border border-m-outline/50 shadow-2xl max-h-[85vh] overflow-y-auto">
-    <div class="p-5">
-      <h3 class="text-base font-extrabold mb-4" id="adm-edit-title"></h3>
-      <div id="adm-edit-body" class="space-y-3"></div>
-      <div class="flex gap-2 mt-5">
-        <button type="button" id="adm-edit-save" class="flex-1 h-12 rounded-full bg-m-primary text-m-on-primary text-sm font-bold">{{ if $isEn }}Save{{ else }}保存{{ end }}</button>
-        <button type="button" id="adm-edit-close" class="h-12 px-6 rounded-full bg-m-container text-m-on-surface text-sm font-bold">{{ if $isEn }}Close{{ else }}关闭{{ end }}</button>
-      </div>
-    </div>
-  </div>
-</div>
 {{ end }}
 
 {{ define "pagejs" }}
@@ -65,210 +37,15 @@
 "use strict";
 var isEn = {{ if $isEn }}true{{ else }}false{{ end }};
 
-// Init shared upload queue first (helpers() is defined inside init)
-window.SgxUploadQueue.init('adm', {
-  isEn: isEn,
-  onBookAdded: function(book){ adminBooks.unshift(book); renderList(); renderStats(); },
-  onBookUpdated: function(book){
-    var i = adminBooks.findIndex(function(x){ return String(x.id) === String(book.id); });
-    if(i >= 0){ adminBooks[i] = book; renderList(); }
-  }
-});
+window.SgxUploadQueue.init('adm', { isEn: isEn });
 var H = window.SgxUploadQueue.helpers(isEn);
-var T = H.T, esc = H.esc, fmtSize = H.fmtSize, fmtDate = H.fmtDate, api = H.api;
+var api = H.api;
 
-var adminBooks = [];
-function subEl(){ return document.querySelector('[data-subpage-head] .subpage-sub'); }
-
-/* ============ 管理列表 ============ */
-function coverURLAdmin(b){
-  return b.cover_key ? '/api/private/cover?key=' + encodeURIComponent(b.cover_key) : '';
-}
-function renderStats(){
-  var bytes = adminBooks.reduce(function(s, b){ return s + (Number(b.size) || 0); }, 0);
-  var txt = T.stats(adminBooks.length, fmtSize(bytes));
-  var sub = subEl(); if(sub) sub.textContent = txt;
-  var st = document.getElementById('adm-stats'); if(st) st.textContent = txt;
-}
-function renderList(){
-  var box = document.getElementById('adm-list');
-  var empty = document.getElementById('adm-list-empty');
-  if(!adminBooks.length){ box.innerHTML = ''; empty.classList.remove('hidden'); return; }
-  empty.classList.add('hidden');
-  box.innerHTML = adminBooks.map(function(b){
-    var cv = coverURLAdmin(b);
-    var cover = cv
-      ? '<img src="' + esc(cv) + '" alt="" loading="lazy" class="w-full h-full object-cover">'
-      : '<div class="w-full h-full flex items-center justify-center bg-m-container text-m-on-surface-variant text-xl font-extrabold">' + esc(String(b.title || '?').slice(0, 1)) + '</div>';
-    var visBadge = b.visibility === 'public'
-      ? '<span class="text-[11px] font-bold px-2 py-0.5 rounded-full bg-m-tertiary-container text-m-on-tertiary-container">' + T.pub + '</span>'
-      : '<span class="text-[11px] font-bold px-2 py-0.5 rounded-full bg-m-container text-m-on-surface-variant">' + T.priv + '</span>';
-    var shelfBadge = (b.in_shelf === 1 || b.in_shelf === true)
-      ? '<span class="text-[11px] font-bold px-2 py-0.5 rounded-full bg-m-warm-container text-m-on-warm-container">' + T.shelf + '</span>'
-      : '';
-    var btn = function(act, label, danger){
-      return '<button type="button" data-act="' + act + '" class="h-9 px-3 rounded-full text-xs font-bold ' +
-        (danger ? 'text-m-rose bg-m-rose-container/50' : 'bg-m-container text-m-on-surface') + '">' + esc(label) + '</button>';
-    };
-    return '<div class="flex gap-3 p-3 rounded-2xl bg-m-container-lowest border border-m-outline/40" data-row="' + esc(b.id) + '">' +
-      '<div class="w-14 h-[84px] rounded-lg overflow-hidden bg-m-container flex-shrink-0">' + cover + '</div>' +
-      '<div class="flex-1 min-w-0">' +
-        '<p class="text-sm font-bold truncate">' + esc(b.title || '') + '</p>' +
-        '<p class="text-xs text-m-on-surface-variant truncate mt-0.5">' + esc(b.author || '') + '</p>' +
-        '<div class="flex items-center gap-1.5 flex-wrap mt-2">' + visBadge + shelfBadge + '</div>' +
-        '<p class="text-[11px] text-m-on-surface-variant mt-1.5">' + esc((b.format || '').toUpperCase()) + ' · ' + esc(fmtSize(b.size)) + ' · ' + esc(fmtDate(b.created_at)) + '</p>' +
-      '</div>' +
-      '<div class="flex flex-col gap-1.5 flex-shrink-0">' +
-        btn('edit', T.edit) + btn('cover', T.replaceCover) +
-        btn('toggle', b.visibility === 'public' ? T.priv : T.pub) + btn('del', T.del, true) +
-      '</div>' +
-    '</div>';
-  }).join('');
-}
-document.getElementById('adm-list').addEventListener('click', async function(e){
-  var btn = e.target.closest('[data-act]'); if(!btn) return;
-  var row = btn.closest('[data-row]');
-  var id = row.getAttribute('data-row');
-  var b = adminBooks.find(function(x){ return String(x.id) === String(id); });
-  if(!b) return;
-  var act = btn.getAttribute('data-act');
-  if(act === 'edit'){ openEdit(b); }
-  else if(act === 'toggle'){
-    var nv = b.visibility === 'public' ? 'private' : 'public';
-    var r = await api('/api/admin/book?id=' + encodeURIComponent(b.id),
-      {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({visibility: nv})});
-    if(r.ok){ b.visibility = nv; b.updated_at = new Date().toISOString(); renderList(); }
-    else{ alert(T.saveFail); }
-  }
-  else if(act === 'cover'){
-    coverTarget = b;
-    document.getElementById('adm-cover-input').click();
-  }
-  else if(act === 'del'){
-    if(!confirm(T.delConfirm(b.title || ''))) return;
-    var r2 = await api('/api/admin/book?id=' + encodeURIComponent(b.id), {method: 'DELETE'});
-    if(r2.ok){
-      adminBooks = adminBooks.filter(function(x){ return String(x.id) !== String(id); });
-      renderList(); renderStats();
-    }else{ alert(T.delFail); }
-  }
-});
-
-/* 换封面：选图 → 压 WebP 600 → POST cover → PUT */
-var coverTarget = null;
-document.getElementById('adm-cover-input').addEventListener('change', async function(e){
-  var f = e.target.files && e.target.files[0];
-  e.target.value = '';
-  if(!f || !coverTarget) return;
-  var b = coverTarget; coverTarget = null;
-  try{
-    var webp = await H.toWebp600(f);
-    /* key 用书现有的 cover_key（无则按 covers/<bookid>.webp 构造，book id 即 uuid），后端返回新 coverKey 后 PUT 更新 */
-    var key = b.cover_key || ('covers/' + b.id + '.webp');
-    var r = await api('/api/admin/cover?key=' + encodeURIComponent(key),
-      {method: 'POST', body: webp, headers: {'Content-Type': 'image/webp'}});
-    if(!r.ok) throw new Error('cover HTTP ' + r.status);
-    var ck = (await r.json()).key;
-    var r2 = await api('/api/admin/book?id=' + encodeURIComponent(b.id),
-      {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({coverKey: ck})});
-    if(!r2.ok) throw new Error('put HTTP ' + r2.status);
-    b.cover_key = ck; b.updated_at = new Date().toISOString();
-    renderList();
-  }catch(err){ alert(T.saveFail + ': ' + ((err && err.message) || err)); }
-});
-
-/* ============ 补齐封面 ============ */
-document.getElementById('adm-backfill-covers').addEventListener('click', async function(){
-  var btn = this, out = document.getElementById('adm-backfill-result');
-  btn.disabled = true;
-  out.textContent = isEn ? 'Checking…' : '正在检查…';
-  try{
-    var r = await api('/api/admin/books/backfill-covers', {method: 'POST'});
-    if(!r.ok) throw new Error('HTTP ' + r.status);
-    var j = await r.json();
-    out.textContent = isEn
-      ? ('Checked ' + j.checked + ', backfilled ' + j.fixed + '.')
-      : ('已扫描 ' + j.checked + ' 本，补上 ' + j.fixed + ' 本。');
-    if(j.fixed > 0){
-      /* 重新拉列表，让补上的封面显示出来 */
-      var r2 = await api('/api/admin/books');
-      if(r2.ok){ var j2 = await r2.json(); adminBooks = (j2 && j2.books) || []; renderList(); renderStats(); }
-    }
-  }catch(e){
-    out.textContent = isEn ? 'Failed, please retry.' : '失败，请重试。';
-  }finally{
-    btn.disabled = false;
-  }
-});
-
-/* ============ 编辑对话框 ============ */
-var editWrap = document.getElementById('adm-edit-wrap');
-var editBody = document.getElementById('adm-edit-body');
-var editBook = null;
-function openEdit(b){
-  editBook = b;
-  document.getElementById('adm-edit-title').textContent = T.editInfo + ' · ' + (b.title || '');
-  var field = function(fid, label, val, ph){
-    return '<label class="block"><span class="text-[11px] font-bold text-m-on-surface-variant">' + esc(label) + '</span>' +
-      '<input data-f="' + fid + '" value="' + esc(val) + '" placeholder="' + esc(ph || '') + '"' +
-      ' class="mt-1 w-full h-11 px-3 rounded-xl bg-m-container text-sm text-m-on-surface outline-none focus:ring-2 focus:ring-m-primary/50"></label>';
-  };
-  editBody.innerHTML =
-    field('title', T.title, b.title || '') +
-    field('author', T.author, b.author || '') +
-    '<div class="grid grid-cols-2 gap-3">' + field('lang', T.lang, b.lang || '') + field('tags', T.tags, (b.tags || []).join(', '), T.tagsPh) + '</div>' +
-    '<div class="flex items-center gap-6 pt-1">' +
-      H.switchHTML('vis', b.visibility === 'public' ? T.pub : T.priv, b.visibility === 'public') +
-      H.switchHTML('inShelf', T.inShelf, b.in_shelf === 1 || b.in_shelf === true) +
-    '</div>';
-  editWrap.classList.remove('hidden'); editWrap.classList.add('flex');
-  document.body.style.overflow = 'hidden';
-}
-function closeEdit(){
-  editWrap.classList.add('hidden'); editWrap.classList.remove('flex');
-  document.body.style.overflow = '';
-  editBook = null;
-  if(location.hash.indexOf('#book-') === 0) history.replaceState(null, '', location.pathname);
-}
-document.getElementById('adm-edit-close').addEventListener('click', closeEdit);
-document.getElementById('adm-edit-bg').addEventListener('click', closeEdit);
-document.addEventListener('keydown', function(e){ if(e.key === 'Escape') closeEdit(); });
-editBody.addEventListener('change', function(e){
-  var f = e.target.getAttribute('data-f');
-  if(f === 'vis'){
-    var lbl = e.target.closest('label').querySelector('span:last-child');
-    if(lbl) lbl.textContent = e.target.checked ? T.pub : T.priv;
-  }
-});
-document.getElementById('adm-edit-save').addEventListener('click', async function(){
-  if(!editBook) return;
-  var v = function(fid){ var el = editBody.querySelector('[data-f="' + fid + '"]'); return el ? el.value : ''; };
-  var visEl = editBody.querySelector('[data-f="vis"]');
-  var shelfEl = editBody.querySelector('[data-f="inShelf"]');
-  var body = {
-    title: v('title'), author: v('author'), lang: v('lang'),
-    tags: v('tags').split(/[,，]/).map(function(s){ return s.trim(); }).filter(Boolean),
-    visibility: visEl && visEl.checked ? 'public' : 'private',
-    in_shelf: shelfEl && shelfEl.checked ? 1 : 0
-  };
-  var r = await api('/api/admin/book?id=' + encodeURIComponent(editBook.id),
-    {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
-  if(r.ok){
-    editBook.title = body.title; editBook.author = body.author; editBook.lang = body.lang;
-    editBook.tags = body.tags; editBook.visibility = body.visibility;
-    editBook.in_shelf = body.in_shelf; editBook.updated_at = new Date().toISOString();
-    renderList(); closeEdit();
-  }else{
-    alert(T.saveFail);
-  }
-});
-
-/* ============ 启动 ============ */
+/* ============ 启动：只做鉴权 + 存储开关检查，上传队列由 init 接管 ============ */
 async function boot(){
   var auth = document.getElementById('adm-auth');
   var closed = document.getElementById('adm-closed');
   var main = document.getElementById('adm-main');
-  /* 先查存储开关：未启用直接显示「上传暂未开放」 */
   try{
     var st = await api('/api/status');
     if(st.ok){
@@ -277,19 +54,11 @@ async function boot(){
     }
   }catch(e){}
   try{
-    var r = await api('/api/admin/books');
-    if(r.status === 401 || r.status === 403){ auth.classList.remove('hidden'); return; }
+    var r = await api('/api/private/me');
     if(!r.ok) throw new Error('HTTP ' + r.status);
     var j = await r.json();
-    adminBooks = (j && j.books) || [];
-    auth.classList.add('hidden'); main.classList.remove('hidden');
-    renderStats(); renderList();
-    /* 书架页「编辑」按钮跳过来的深链：#book-<id> */
-    if(location.hash.indexOf('#book-') === 0){
-      var id = decodeURIComponent(location.hash.slice(6));
-      var b = adminBooks.find(function(x){ return String(x.id) === String(id); });
-      if(b) openEdit(b);
-    }
+    if(!j || j.role !== 'owner'){ auth.classList.remove('hidden'); return; }
+    main.classList.remove('hidden');
   }catch(e){
     auth.classList.remove('hidden');
   }

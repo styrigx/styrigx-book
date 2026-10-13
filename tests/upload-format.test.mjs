@@ -56,9 +56,10 @@ test('onBookAdded 传给列表的格式与渲染一致', () => {
   // onBookAdded 传递 item.format（大写）
   assert.ok(uploadQueueJs.includes('format: item.format,'), 'onBookAdded 应传递 item.format');
   // 列表渲染时用 toUpperCase()，所以大写传入也能正确显示
-  const adminHtml = fs.readFileSync(path.join(repoRoot, 'layouts/_default/admin.html'), 'utf8');
+  // 3.0：管理列表已从 admin.html 移到书架 index.html（详情弹层/网格）
+  const idxHtml = fs.readFileSync(path.join(repoRoot, 'layouts/index.html'), 'utf8');
   assert.ok(
-    adminHtml.includes("(b.format || '').toUpperCase()"),
+    idxHtml.includes("String(b.format || '').toUpperCase()"),
     '列表渲染应对 format 做 toUpperCase'
   );
 });

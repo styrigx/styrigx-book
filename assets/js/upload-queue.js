@@ -100,9 +100,10 @@ window.SgxUploadQueue.appCheck = async function(){
   }catch(e){ return true; }
 };
 
-window.SgxUploadQueue.init = function(prefix, opts){
-"use strict";
-var isEn = !!opts.isEn;
+/* ============ 顶层工具 ============
+ * helpers 及依赖（checkAppAuth / esc / 元数据解析 / switchHTML）：
+ * 供不调用 init 的页面使用（书架首页的详情弹层换封面等）；init 内同样可见。
+ * 注意：init 内不再重复定义这些函数。 */
 
 /* 旧 checkAppAuth 保留给管理页 helpers：分类后跳转（兼容原有调用） */
 async function checkAppAuth(res){
@@ -114,101 +115,10 @@ async function checkAppAuth(res){
   return false;
 }
 
-/* 单文件上限（可配置）；R2 multipart 切片大小固定 10MB */
-var MAX_MB = 500;
-var CHUNK = 10 * 1024 * 1024;
-
-var T = {
-  title: isEn ? 'Title' : '书名',
-  author: isEn ? 'Author' : '作者',
-  lang: isEn ? 'Language' : '语言',
-  tags: isEn ? 'Tags' : '标签',
-  tagsPh: isEn ? 'Comma separated' : '逗号分隔',
-  pub: isEn ? 'Public' : '公开',
-  priv: isEn ? 'Private' : '私有',
-  inShelf: isEn ? 'Feature in shelf' : '放进书单',
-  upload: isEn ? 'Upload' : '上传',
-  cancel: isEn ? 'Cancel' : '取消',
-  retry: isEn ? 'Retry' : '重试',
-  remove: isEn ? 'Remove' : '移除',
-  editMeta: isEn ? 'Edit info' : '编辑信息',
-  replaceCover: isEn ? 'Replace cover' : '换封面',
-  save: isEn ? 'Save' : '保存',
-  saveFail: isEn ? 'Save failed' : '保存失败',
-  failed: isEn ? 'Failed' : '失败',
-  parsing: isEn ? 'Parsing…' : '解析中…',
-  ready: isEn ? 'Ready to upload' : '就绪，可上传',
-  uploading: function(p){ return (isEn ? 'Uploading ' : '上传中 ') + p + '%'; },
-  done: isEn ? 'Done' : '已完成',
-  exists: isEn ? 'Already exists — skipped' : '已存在，已跳过',
-  errMagic: isEn ? 'Invalid file header (not a real EPUB/PDF)' : '文件头校验失败（不是有效的 EPUB/PDF）',
-  errMime: isEn ? 'Not a valid EPUB (mimetype missing)' : '不是有效的 EPUB（缺少 mimetype）',
-  errExt: isEn ? 'Only .epub / .pdf accepted' : '仅接受 .epub / .pdf',
-  errSize: isEn ? 'File too large (max 500 MB)' : '文件过大（上限 500MB）',
-  errUpload: isEn ? 'Upload failed: ' : '上传失败：',
-  needReauth: isEn ? 'Re-verification needed' : '需要重新验证',
-  cancelled: isEn ? 'Cancelled' : '已取消',
-  stats: function(n, s){ return isEn ? (n + ' books · ' + s + ' used') : ('共 ' + n + ' 本 · 已用 ' + s); },
-  editInfo: isEn ? 'Edit info' : '编辑信息',
-  replaceCover: isEn ? 'Replace cover' : '换封面',
-  del: isEn ? 'Delete' : '删除',
-  edit: isEn ? 'Edit' : '编辑',
-  delConfirm: function(t){ return isEn ? ('Delete "' + t + '"?\nThis removes the file, cover and database record.') : ('确定删除《' + t + '》吗？\n将同时删除 R2 文件、封面和数据库记录。'); },
-  delFail: isEn ? 'Delete failed' : '删除失败',
-  saveFail: isEn ? 'Save failed' : '保存失败',
-  shelf: isEn ? 'Shelf' : '书单'
-};
-
 function esc(s){
   return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
     return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
   });
-}
-function fmtSize(b){
-  b = Number(b) || 0;
-  if(b < 1024) return b + ' B';
-  if(b < 1048576) return (b / 1024).toFixed(1) + ' KB';
-  if(b < 1073741824) return (b / 1048576).toFixed(1) + ' MB';
-  return (b / 1073741824).toFixed(2) + ' GB';
-}
-function fmtSpeed(bps){
-  return fmtSize(bps) + '/s';
-}
-function fmtDate(s){
-  if(!s) return '—';
-  try{ return new Date(s).toLocaleDateString(isEn ? 'en-US' : 'zh-CN'); }
-  catch(e){ return '—'; }
-}
-function api(path, opts){
-  opts = opts || {};
-  opts.credentials = 'same-origin';
-  return fetch(path, opts);
-}
-function subEl(){ return document.querySelector('[data-subpage-head] .subpage-sub'); }
-
-var adminBooks = [];
-var queue = [];
-var uidSeq = 0;
-
-/* ============ 文件校验：魔数（前后端都验） ============ */
-async function checkMagic(file){
-  var ext = file.name.toLowerCase();
-  var head = new Uint8Array(await file.slice(0, 4).arrayBuffer());
-  var isZip = head[0] === 0x50 && head[1] === 0x4B && head[2] === 0x03 && head[3] === 0x04; /* PK\x03\x04 */
-  var isPdf = head[0] === 0x25 && head[1] === 0x50 && head[2] === 0x44 && head[3] === 0x46; /* %PDF */
-  if(ext.endsWith('.epub')){
-    if(!isZip) return {ok: false, why: 'magic'};
-    /* zip 内含 mimetype application/epub+zip：扫前 8KB 找明文串 */
-    var buf = new Uint8Array(await file.slice(0, 8192).arrayBuffer());
-    var s = new TextDecoder('latin1').decode(buf);
-    if(s.indexOf('application/epub+zip') === -1) return {ok: false, why: 'mimetype'};
-    return {ok: true, format: 'EPUB'};
-  }
-  if(ext.endsWith('.pdf')){
-    if(!isPdf) return {ok: false, why: 'magic'};
-    return {ok: true, format: 'PDF'};
-  }
-  return {ok: false, why: 'ext'};
 }
 
 /* ============ 元数据解析 ============ */
@@ -291,6 +201,191 @@ async function parsePdf(file){
   try{ doc.destroy(); }catch(e){}
   return {title: title || file.name.replace(/\.pdf$/i, ''), author: author, lang: '', coverBlob: coverBlob, pages: pages};
 }
+
+function switchHTML(fid, label, checked){
+  return '<label class="flex items-center gap-2 cursor-pointer select-none text-sm text-m-on-surface">' +
+    '<input type="checkbox" data-f="' + fid + '"' + (checked ? ' checked' : '') + ' class="peer sr-only">' +
+    '<span class="w-10 h-6 rounded-full bg-m-container peer-checked:bg-m-primary relative transition-colors ' +
+    'after:content-[\'\'] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:after:translate-x-4"></span>' +
+    '<span>' + esc(label) + '</span></label>';
+}
+
+// Expose helpers for admin management UI
+window.SgxUploadQueue.helpers = function(isEn){
+  "use strict";
+  var T = {
+    title: isEn ? 'Title' : '书名',
+    author: isEn ? 'Author' : '作者',
+    lang: isEn ? 'Language' : '语言',
+    tags: isEn ? 'Tags' : '标签',
+    tagsPh: isEn ? 'Comma separated' : '逗号分隔',
+    pub: isEn ? 'Public' : '公开',
+    priv: isEn ? 'Private' : '私有',
+    inShelf: isEn ? 'Feature in shelf' : '放进书单',
+    upload: isEn ? 'Upload' : '上传',
+    cancel: isEn ? 'Cancel' : '取消',
+    retry: isEn ? 'Retry' : '重试',
+    parsing: isEn ? 'Parsing…' : '解析中…',
+    ready: isEn ? 'Ready to upload' : '就绪，可上传',
+    uploading: function(p){ return (isEn ? 'Uploading ' : '上传中 ') + p + '%'; },
+    done: isEn ? 'Done' : '已完成',
+    exists: isEn ? 'Already exists — skipped' : '已存在，已跳过',
+    errMagic: isEn ? 'Invalid file header (not a real EPUB/PDF)' : '文件头校验失败（不是有效的 EPUB/PDF）',
+    errMime: isEn ? 'Not a valid EPUB (mimetype missing)' : '不是有效的 EPUB（缺少 mimetype）',
+    errExt: isEn ? 'Only .epub / .pdf accepted' : '仅接受 .epub / .pdf',
+    errSize: isEn ? 'File too large (max 500 MB)' : '文件过大（上限 500MB）',
+    errUpload: isEn ? 'Upload failed: ' : '上传失败：',
+    cancelled: isEn ? 'Cancelled' : '已取消',
+    stats: function(n, s){ return isEn ? (n + ' books · ' + s + ' used') : ('共 ' + n + ' 本 · 已用 ' + s); },
+    editInfo: isEn ? 'Edit info' : '编辑信息',
+    replaceCover: isEn ? 'Replace cover' : '换封面',
+    del: isEn ? 'Delete' : '删除',
+    edit: isEn ? 'Edit' : '编辑',
+    delConfirm: function(t){ return isEn ? ('Delete "' + t + '"?\nThis removes the file, cover and database record.') : ('确定删除《' + t + '》吗？\n将同时删除 R2 文件、封面和数据库记录。'); },
+    delFail: isEn ? 'Delete failed' : '删除失败',
+    saveFail: isEn ? 'Save failed' : '保存失败',
+    shelf: isEn ? 'Shelf' : '书单'
+  };
+  function esc(s){
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+  function fmtSize(b){
+    b = Number(b) || 0;
+    if(b < 1024) return b + ' B';
+    if(b < 1048576) return (b / 1024).toFixed(1) + ' KB';
+    if(b < 1073741824) return (b / 1048576).toFixed(1) + ' MB';
+    return (b / 1073741824).toFixed(2) + ' GB';
+  }
+  function fmtDate(s){
+    if(!s) return '—';
+    try{ return new Date(s).toLocaleDateString(isEn ? 'en-US' : 'zh-CN'); }
+    catch(e){ return '—'; }
+  }
+  function api(path, opts){
+    opts = opts || {};
+    opts.credentials = 'same-origin';
+    return fetch(path, opts).then(function(res){
+      checkAppAuth(res);
+      return res;
+    });
+  }
+  /* 从书文件重新提取封面（3.0 详情弹层「从书里重新提取」）：
+     EPUB 取内嵌封面，PDF 取第一页渲染；返回 WebP Blob（无封面时 null）。
+     复用上传解析的 parseEpub / parsePdf，不加新接口。
+     file 是 fetch 下来的 Blob（无 name），用 format 参数决定解析器。 */
+  async function extractCover(file, format){
+    if(!file) return null;
+    // parseEpub 会读 file.name 做标题回退：fetch 下来的 Blob 无 name，包一层 File
+    var named = (typeof File !== 'undefined' && !(file instanceof File))
+      ? new File([file], 'book.' + (String(format || 'epub').toLowerCase() === 'pdf' ? 'pdf' : 'epub'))
+      : file;
+    var meta = String(format || '').toLowerCase() === 'pdf'
+      ? await parsePdf(named) : await parseEpub(named);
+    return (meta && meta.coverBlob) || null;
+  }
+  return {T: T, esc: esc, fmtSize: fmtSize, fmtDate: fmtDate, api: api,
+    toWebp600: toWebp600, switchHTML: switchHTML, extractCover: extractCover};
+};
+
+window.SgxUploadQueue.init = function(prefix, opts){
+"use strict";
+var isEn = !!opts.isEn;
+
+
+/* 单文件上限（可配置）；R2 multipart 切片大小固定 10MB */
+var MAX_MB = 500;
+var CHUNK = 10 * 1024 * 1024;
+
+var T = {
+  title: isEn ? 'Title' : '书名',
+  author: isEn ? 'Author' : '作者',
+  lang: isEn ? 'Language' : '语言',
+  tags: isEn ? 'Tags' : '标签',
+  tagsPh: isEn ? 'Comma separated' : '逗号分隔',
+  pub: isEn ? 'Public' : '公开',
+  priv: isEn ? 'Private' : '私有',
+  inShelf: isEn ? 'Feature in shelf' : '放进书单',
+  upload: isEn ? 'Upload' : '上传',
+  cancel: isEn ? 'Cancel' : '取消',
+  retry: isEn ? 'Retry' : '重试',
+  remove: isEn ? 'Remove' : '移除',
+  editMeta: isEn ? 'Edit info' : '编辑信息',
+  replaceCover: isEn ? 'Replace cover' : '换封面',
+  save: isEn ? 'Save' : '保存',
+  saveFail: isEn ? 'Save failed' : '保存失败',
+  failed: isEn ? 'Failed' : '失败',
+  parsing: isEn ? 'Parsing…' : '解析中…',
+  ready: isEn ? 'Ready to upload' : '就绪，可上传',
+  uploading: function(p){ return (isEn ? 'Uploading ' : '上传中 ') + p + '%'; },
+  done: isEn ? 'Done' : '已完成',
+  exists: isEn ? 'Already exists — skipped' : '已存在，已跳过',
+  errMagic: isEn ? 'Invalid file header (not a real EPUB/PDF)' : '文件头校验失败（不是有效的 EPUB/PDF）',
+  errMime: isEn ? 'Not a valid EPUB (mimetype missing)' : '不是有效的 EPUB（缺少 mimetype）',
+  errExt: isEn ? 'Only .epub / .pdf accepted' : '仅接受 .epub / .pdf',
+  errSize: isEn ? 'File too large (max 500 MB)' : '文件过大（上限 500MB）',
+  errUpload: isEn ? 'Upload failed: ' : '上传失败：',
+  needReauth: isEn ? 'Re-verification needed' : '需要重新验证',
+  cancelled: isEn ? 'Cancelled' : '已取消',
+  stats: function(n, s){ return isEn ? (n + ' books · ' + s + ' used') : ('共 ' + n + ' 本 · 已用 ' + s); },
+  editInfo: isEn ? 'Edit info' : '编辑信息',
+  replaceCover: isEn ? 'Replace cover' : '换封面',
+  del: isEn ? 'Delete' : '删除',
+  edit: isEn ? 'Edit' : '编辑',
+  delConfirm: function(t){ return isEn ? ('Delete "' + t + '"?\nThis removes the file, cover and database record.') : ('确定删除《' + t + '》吗？\n将同时删除 R2 文件、封面和数据库记录。'); },
+  delFail: isEn ? 'Delete failed' : '删除失败',
+  saveFail: isEn ? 'Save failed' : '保存失败',
+  shelf: isEn ? 'Shelf' : '书单'
+};
+
+function fmtSize(b){
+  b = Number(b) || 0;
+  if(b < 1024) return b + ' B';
+  if(b < 1048576) return (b / 1024).toFixed(1) + ' KB';
+  if(b < 1073741824) return (b / 1048576).toFixed(1) + ' MB';
+  return (b / 1073741824).toFixed(2) + ' GB';
+}
+function fmtSpeed(bps){
+  return fmtSize(bps) + '/s';
+}
+function fmtDate(s){
+  if(!s) return '—';
+  try{ return new Date(s).toLocaleDateString(isEn ? 'en-US' : 'zh-CN'); }
+  catch(e){ return '—'; }
+}
+function api(path, opts){
+  opts = opts || {};
+  opts.credentials = 'same-origin';
+  return fetch(path, opts);
+}
+function subEl(){ return document.querySelector('[data-subpage-head] .subpage-sub'); }
+
+var adminBooks = [];
+var queue = [];
+var uidSeq = 0;
+
+/* ============ 文件校验：魔数（前后端都验） ============ */
+async function checkMagic(file){
+  var ext = file.name.toLowerCase();
+  var head = new Uint8Array(await file.slice(0, 4).arrayBuffer());
+  var isZip = head[0] === 0x50 && head[1] === 0x4B && head[2] === 0x03 && head[3] === 0x04; /* PK\x03\x04 */
+  var isPdf = head[0] === 0x25 && head[1] === 0x50 && head[2] === 0x44 && head[3] === 0x46; /* %PDF */
+  if(ext.endsWith('.epub')){
+    if(!isZip) return {ok: false, why: 'magic'};
+    /* zip 内含 mimetype application/epub+zip：扫前 8KB 找明文串 */
+    var buf = new Uint8Array(await file.slice(0, 8192).arrayBuffer());
+    var s = new TextDecoder('latin1').decode(buf);
+    if(s.indexOf('application/epub+zip') === -1) return {ok: false, why: 'mimetype'};
+    return {ok: true, format: 'EPUB'};
+  }
+  if(ext.endsWith('.pdf')){
+    if(!isPdf) return {ok: false, why: 'magic'};
+    return {ok: true, format: 'PDF'};
+  }
+  return {ok: false, why: 'ext'};
+}
+
 async function sha256hex(file){
   var d = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
   return Array.prototype.map.call(new Uint8Array(d), function(x){ return x.toString(16).padStart(2, '0'); }).join('');
@@ -348,13 +443,6 @@ async function addFile(file){
   renderQueue();
 }
 
-function switchHTML(fid, label, checked){
-  return '<label class="flex items-center gap-2 cursor-pointer select-none text-sm text-m-on-surface">' +
-    '<input type="checkbox" data-f="' + fid + '"' + (checked ? ' checked' : '') + ' class="peer sr-only">' +
-    '<span class="w-10 h-6 rounded-full bg-m-container peer-checked:bg-m-primary relative transition-colors ' +
-    'after:content-[\'\'] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:after:translate-x-4"></span>' +
-    '<span>' + esc(label) + '</span></label>';
-}
 /* One UI 状态徽章：容器色 pill，深色模式跟随 --m-* */
 function chipCls(color){
   return 'inline-flex items-center h-6 px-2.5 rounded-full text-[11px] font-bold whitespace-nowrap ' + color;
@@ -825,70 +913,6 @@ async function replaceCover(item, file){
   item.coverBusy = false;
   renderQueue();
 }
-// Expose helpers for admin management UI
-window.SgxUploadQueue.helpers = function(isEn){
-  "use strict";
-  var T = {
-    title: isEn ? 'Title' : '书名',
-    author: isEn ? 'Author' : '作者',
-    lang: isEn ? 'Language' : '语言',
-    tags: isEn ? 'Tags' : '标签',
-    tagsPh: isEn ? 'Comma separated' : '逗号分隔',
-    pub: isEn ? 'Public' : '公开',
-    priv: isEn ? 'Private' : '私有',
-    inShelf: isEn ? 'Feature in shelf' : '放进书单',
-    upload: isEn ? 'Upload' : '上传',
-    cancel: isEn ? 'Cancel' : '取消',
-    retry: isEn ? 'Retry' : '重试',
-    parsing: isEn ? 'Parsing…' : '解析中…',
-    ready: isEn ? 'Ready to upload' : '就绪，可上传',
-    uploading: function(p){ return (isEn ? 'Uploading ' : '上传中 ') + p + '%'; },
-    done: isEn ? 'Done' : '已完成',
-    exists: isEn ? 'Already exists — skipped' : '已存在，已跳过',
-    errMagic: isEn ? 'Invalid file header (not a real EPUB/PDF)' : '文件头校验失败（不是有效的 EPUB/PDF）',
-    errMime: isEn ? 'Not a valid EPUB (mimetype missing)' : '不是有效的 EPUB（缺少 mimetype）',
-    errExt: isEn ? 'Only .epub / .pdf accepted' : '仅接受 .epub / .pdf',
-    errSize: isEn ? 'File too large (max 500 MB)' : '文件过大（上限 500MB）',
-    errUpload: isEn ? 'Upload failed: ' : '上传失败：',
-    cancelled: isEn ? 'Cancelled' : '已取消',
-    stats: function(n, s){ return isEn ? (n + ' books · ' + s + ' used') : ('共 ' + n + ' 本 · 已用 ' + s); },
-    editInfo: isEn ? 'Edit info' : '编辑信息',
-    replaceCover: isEn ? 'Replace cover' : '换封面',
-    del: isEn ? 'Delete' : '删除',
-    edit: isEn ? 'Edit' : '编辑',
-    delConfirm: function(t){ return isEn ? ('Delete "' + t + '"?\nThis removes the file, cover and database record.') : ('确定删除《' + t + '》吗？\n将同时删除 R2 文件、封面和数据库记录。'); },
-    delFail: isEn ? 'Delete failed' : '删除失败',
-    saveFail: isEn ? 'Save failed' : '保存失败',
-    shelf: isEn ? 'Shelf' : '书单'
-  };
-  function esc(s){
-    return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
-      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
-    });
-  }
-  function fmtSize(b){
-    b = Number(b) || 0;
-    if(b < 1024) return b + ' B';
-    if(b < 1048576) return (b / 1024).toFixed(1) + ' KB';
-    if(b < 1073741824) return (b / 1048576).toFixed(1) + ' MB';
-    return (b / 1073741824).toFixed(2) + ' GB';
-  }
-  function fmtDate(s){
-    if(!s) return '—';
-    try{ return new Date(s).toLocaleDateString(isEn ? 'en-US' : 'zh-CN'); }
-    catch(e){ return '—'; }
-  }
-  function api(path, opts){
-    opts = opts || {};
-    opts.credentials = 'same-origin';
-    return fetch(path, opts).then(function(res){
-      checkAppAuth(res);
-      return res;
-    });
-  }
-  return {T: T, esc: esc, fmtSize: fmtSize, fmtDate: fmtDate, api: api,
-    toWebp600: toWebp600, switchHTML: switchHTML};
-};
 /* 测试钩子：tests/upload-resume.test.mjs 用 mock fetch 驱动真实上传流程做行为测试。
    仅当 window.__sgxUploadTest 已设置时生效，生产环境无影响。 */
 if(window.__sgxUploadTest){
