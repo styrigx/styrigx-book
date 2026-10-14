@@ -71,8 +71,11 @@ window.__setHeadH();
   <span class="absolute left-1/2 -translate-x-1/2 text-[15px] font-bold">{{ if $isEn }}Library{{ else }}书库{{ end }}</span>
 </header>
 {{ block "main" . }}{{ end }}
-<footer class="text-center text-xs text-m-on-surface-variant py-10 px-4">
-  <p>Styrigx · {{ if $isEn }}Library{{ else }}书库{{ end }} · book.styrigx.com</p>
+<footer class="relative z-10 mt-4">
+  <div class="max-w-[1100px] mx-auto px-6 py-8 text-center">
+    <p class="text-xs text-m-on-surface-variant">© 2020–2026 Sloan Gray</p>
+    <p class="sgx-powered">Powered by Styrigx UI</p>
+  </div>
 </footer>
 <script>
 /* 子页面返回键：有历史则回退，否则回书架首页 */
