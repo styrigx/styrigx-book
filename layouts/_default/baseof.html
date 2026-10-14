@@ -63,7 +63,7 @@ window.__setHeadH();
 <body class="bg-m-surface text-m-on-surface font-sans antialiased" style="background-image:var(--m-wallpaper);background-attachment:fixed">
 {{/* 极简顶栏：左 头像+Styrigx（回主站）；滚过标题区后由 .subpage-mini-title 显示居中小标题 */}}
 {{ $avatar := resources.Get "images/avatar.png" }}
-<header id="site-nav" class="fixed top-0 inset-x-0 z-50 h-14 flex items-center px-4 backdrop-blur-xl bg-m-surface/70 border-b border-m-outline/40">
+<header id="site-nav" class="fixed top-0 inset-x-0 z-50 h-12 flex items-center px-4 backdrop-blur-xl bg-m-surface/70 border-b border-m-outline/40">
   <a href="https://styrigx.com" class="flex items-center gap-2 text-sm font-semibold text-m-on-surface hover:opacity-80">
     {{ with $avatar }}<img src="{{ .RelPermalink }}" alt="" class="w-7 h-7 rounded-full object-cover">{{ end }}
     <span>Styrigx</span>
