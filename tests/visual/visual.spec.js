@@ -103,6 +103,18 @@ for (const theme of ['light', 'dark']) {
       };
     });
     expect(overlap.ok, `页脚文字下边缘(${overlap.footerBottom})应≤胶囊上边缘(${overlap.capTop})`).toBe(true);
+    // Gray 要求：深色滚动后顶栏背景色与页面深色背景一致（不能是浅色遮罩）
+    if (theme === 'dark') {
+      const topbarBg = await page.evaluate(() => {
+        const nav = document.querySelector('#site-nav');
+        const bodyBg = getComputedStyle(document.body).backgroundColor;
+        const navBg = nav ? getComputedStyle(nav).backgroundColor : 'missing';
+        return { navBg, bodyBg };
+      });
+      // 顶栏是半透明毛玻璃（rgba 0.72），不能是浅色（255,255,255）
+      expect(topbarBg.navBg, `深色顶栏背景应为深色，不能是浅色: ${topbarBg.navBg}`).not.toContain('255, 255, 255');
+      expect(topbarBg.navBg, `深色顶栏背景应为深色: ${topbarBg.navBg}`).toMatch(/rgba?\(30,\s*30,\s*32/);
+    }
     await expect(page).toHaveScreenshot(`shelf-360-bottom-${theme}.png`, {
       fullPage: false,
       animations: 'disabled',
@@ -299,20 +311,35 @@ for (const theme of ['light', 'dark']) {
         const check = o.querySelector('.bk-theme-check');
         return check ? !check.classList.contains('hidden') : 'missing';
       });
-      // Gray 要求：三行的边框和背景计算值相同（选中仅文字主色+对勾，不加边框）
+      // Gray 要求：三行在浅色和深色下，四边 border 宽度、box-shadow、outline、background
+      // 的计算值全部相同；并检查 ::before/::after（选中仅文字主色+对勾，不加边框）
       const styles = opts.map(o => {
         const s = getComputedStyle(o);
+        const before = getComputedStyle(o, '::before');
+        const after = getComputedStyle(o, '::after');
         return {
           bg: s.backgroundColor,
           btw: s.borderTopWidth, brw: s.borderRightWidth,
           bbw: s.borderBottomWidth, blw: s.borderLeftWidth,
           bts: s.borderTopStyle,
+          shadow: s.boxShadow,
+          olw: s.outlineWidth, ols: s.outlineStyle,
+          beforeBg: before.backgroundColor, beforeBw: before.borderTopWidth,
+          beforeShadow: before.boxShadow, beforeContent: before.content,
+          afterBg: after.backgroundColor, afterBw: after.borderTopWidth,
+          afterShadow: after.boxShadow, afterContent: after.content,
         };
       });
       const sameStyle = styles.every(st =>
         st.bg === styles[0].bg && st.btw === styles[0].btw &&
         st.brw === styles[0].brw && st.bbw === styles[0].bbw &&
-        st.blw === styles[0].blw && st.bts === styles[0].bts);
+        st.blw === styles[0].blw && st.bts === styles[0].bts &&
+        st.shadow === styles[0].shadow &&
+        st.olw === styles[0].olw && st.ols === styles[0].ols &&
+        st.beforeBg === styles[0].beforeBg && st.beforeBw === styles[0].beforeBw &&
+        st.beforeShadow === styles[0].beforeShadow && st.beforeContent === styles[0].beforeContent &&
+        st.afterBg === styles[0].afterBg && st.afterBw === styles[0].afterBw &&
+        st.afterShadow === styles[0].afterShadow && st.afterContent === styles[0].afterContent);
       return { sameBase, checks, sameStyle, styles };
     });
     expect(themeState.sameBase, '主题三项应统一样式').toBe(true);

@@ -245,10 +245,10 @@ footer { padding-bottom: calc(var(--dock-h) + env(safe-area-inset-bottom, 0px));
   padding-bottom:14px;
   -webkit-mask-image:linear-gradient(to bottom,#000 0%,#000 62%,transparent 100%);
   mask-image:linear-gradient(to bottom,#000 0%,#000 62%,transparent 100%)}
-.dark .layout-phone body.subpage-scrolled #site-nav{background:rgba(30,30,32,0.72)}
+.dark.layout-phone body.subpage-scrolled #site-nav{background:rgba(30,30,32,0.72)}
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .layout-phone body.subpage-scrolled #site-nav{background:#fff}
-  .dark .layout-phone body.subpage-scrolled #site-nav{background:#1e1e20}
+  .dark.layout-phone body.subpage-scrolled #site-nav{background:#1e1e20}
 }
 .layout-phone body.subpage-scrolled #nav-brand,
 .layout-phone body.subpage-scrolled #nav-time-center{opacity:0;pointer-events:none}
