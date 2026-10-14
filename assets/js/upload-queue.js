@@ -472,9 +472,12 @@ function statusChip(item){
 }
 function coverThumb(item, sizeCls){
   /* 无封面：与书架同一套排版封面（book-cover.js genCoverHTML：哈希取色渐变 + 全标题）。
-   * SgxBookCover 未加载时回退首字占位（仅容错，正常流程不走这里）。 */
+   * SgxBookCover 未加载时回退首字占位（仅容错，正常流程不走这里）。
+   * hotfix v1.1：有封面 URL 时也加 onerror 回落，加载失败显示生成封面，不出现裂图图标。 */
   var inner = item.coverURL
-    ? '<img src="' + item.coverURL + '" alt="" class="w-full h-full object-cover">'
+    ? (window.SgxBookCover && window.SgxBookCover.coverImgHTML
+      ? window.SgxBookCover.coverImgHTML(item.coverURL, item.title || item.file.name, '', 'uq', 'w-full h-full object-cover')
+      : '<img src="' + item.coverURL + '" alt="" class="w-full h-full object-cover">')
     : (window.SgxBookCover && window.SgxBookCover.genCoverHTML
       ? window.SgxBookCover.genCoverHTML(item.title || item.file.name, '', 'uq')
       : '<div class="w-full h-full flex items-center justify-center bg-m-container text-m-on-surface-variant text-xl font-extrabold">' + esc(String(item.title || item.file.name).slice(0, 1)) + '</div>');

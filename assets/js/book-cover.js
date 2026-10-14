@@ -120,5 +120,33 @@
     return '<div class="' + cls + '" style="background:linear-gradient(160deg,' + c[0] + ',' + c[1] + ')">'
       + '<span class="bk-gen-title">' + titleHTML + '</span>' + authorHTML + '</div>';
   }
-  return { coverTitleHTML: coverTitleHTML, genCoverHTML: genCoverHTML, genColors: genColors };
+  /* 带加载失败回落的封面 <img>（hotfix v1.1：任何尺寸都不许出现浏览器裂图图标）。
+   * onerror="window.__sgxCoverErr(this)"：img 加载失败时用 data-* 里的标题/作者/尺寸
+   * 生成统一排版封面替换掉 img。__sgxCoverErr 在浏览器全局只定义一次。 */
+  function coverImgHTML(url, title, author, size, cls) {
+    return '<img src="' + esc(url) + '" alt="" loading="lazy" class="' + esc(cls) + '" draggable="false"'
+      + ' data-covt="' + esc(title) + '" data-cova="' + esc(author) + '" data-covs="' + esc(size || '') + '"'
+      + ' onerror="window.__sgxCoverErr(this)">';
+  }
+  function coverImgFallback(img) {
+    try { img.onerror = null; } catch (e) {}
+    try {
+      var t = img.getAttribute('data-covt') || '';
+      var a = img.getAttribute('data-cova') || '';
+      var s = img.getAttribute('data-covs') || '';
+      var html = genCoverHTML(t, a, s);
+      var doc = img.ownerDocument || document;
+      var tmp = doc.createElement('div');
+      tmp.innerHTML = html;
+      var node = tmp.firstChild;
+      /* .bk-gen 自带 position:absolute;inset:0，直接替换 img 即可填满相对定位容器 */
+      if (node) { img.replaceWith(node); return; }
+    } catch (e) {}
+    /* 最后兜底：隐藏，不露裂图图标 */
+    try { img.style.visibility = 'hidden'; } catch (e) {}
+  }
+  if (typeof window !== 'undefined' && !window.__sgxCoverErr) {
+    window.__sgxCoverErr = coverImgFallback;
+  }
+  return { coverTitleHTML: coverTitleHTML, genCoverHTML: genCoverHTML, genColors: genColors, coverImgHTML: coverImgHTML };
 });

@@ -262,7 +262,10 @@ function fmtDate(v){
 function coverUrl(b){
   if(!b || !b.cover_key) return '';
   if(/^https?:\/\//.test(b.cover_key)) return b.cover_key;
-  return '/api/cover?key=' + encodeURIComponent(b.cover_key);
+  /* hotfix v1.1：站长走 /api/private/cover（需 owner JWT，服务端鉴权不变），
+   * 访客走 /api/cover（只给公开书）。#29 曾丢掉私有路径导致站长私有书 403 裂图。 */
+  var base = owner ? '/api/private/cover?key=' : '/api/cover?key=';
+  return base + encodeURIComponent(b.cover_key);
 }
 function pctOf(b){
   var p = b && b.percent;
@@ -289,10 +292,12 @@ function readUrl(b){ return readBase + '?id=' + encodeURIComponent(b.id); }
  * 居中、内边距 ≥ 封面宽 10%、书名最多两行省略、小尺寸只显示书名。
  * text-wrap: balance 避免第二行只剩一个字。 */
 var genCoverHTML = window.SgxBookCover.genCoverHTML;
+var coverImgHTML = window.SgxBookCover.coverImgHTML;
 function coverHTML(b, size){
   var url = coverUrl(b);
   if(url){
-    return '<img src="' + esc(url) + '" alt="" loading="lazy" class="absolute inset-0 w-full h-full object-cover" draggable="false">';
+    /* hotfix v1.1：加载失败（403/404/网络）时 onerror 回落到生成封面，不出现裂图图标 */
+    return coverImgHTML(url, b.title, b.author, size, 'absolute inset-0 w-full h-full object-cover');
   }
   return genCoverHTML(b.title, b.author, size);
 }
@@ -808,11 +813,11 @@ function renderFAB(){
   var url = coverUrl(b);
   var thumb = $('#bk-fab-thumb');
   thumb.innerHTML = url
-    ? '<img src="' + esc(url) + '" alt="" class="w-full h-full object-cover" draggable="false">'
+    ? coverImgHTML(url, b.title, b.author, 'sm', 'w-full h-full object-cover')
     : genCoverHTML(b.title, b.author, 'sm');
   var collapsed = $('#bk-fab-collapsed');
   collapsed.innerHTML = url
-    ? '<img src="' + esc(url) + '" alt="" class="w-full h-full object-cover" draggable="false">'
+    ? coverImgHTML(url, b.title, b.author, 'sm', 'w-full h-full object-cover')
     : '<span class="text-m-on-primary">' + $('#bk-fab-icon').innerHTML + '</span>';
   setFabExpanded(true);
 }
