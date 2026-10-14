@@ -284,34 +284,17 @@ function statusLabel(b){
 function readUrl(b){ return readBase + '?id=' + encodeURIComponent(b.id); }
 
 /* ================= 排版封面 =================
+ * 共享实现见 assets/js/book-cover.js（书架 / 详情 / FAB / 上传队列同一套）：
  * 无封面书按书名哈希取色（主站配色），与真实封面同尺寸。
  * 居中、内边距 ≥ 封面宽 10%、书名最多两行省略、小尺寸只显示书名。
  * text-wrap: balance 避免第二行只剩一个字。 */
-var GEN_COLORS = [
-  ['#6FA8DC','#4A7DBB'], ['#2C3E50','#1A2530'], ['#7CB873','#5A9E5C'],
-  ['#D97B7B','#B85C5C'], ['#B48CE8','#8E63C8'], ['#D2A06B','#B07D4A'],
-  ['#6FC3B8','#4AA89D'], ['#E8B44A','#C8922E']
-];
-function genColors(title){
-  var h = 0;
-  var s = String(title || '');
-  for(var i = 0; i < s.length; i++){ h = (h * 31 + s.charCodeAt(i)) >>> 0; }
-  return GEN_COLORS[h % GEN_COLORS.length];
-}
-/* size: 'md'（网格/详情：书名+作者）| 'sm'（条/侧栏小尺寸：只书名） */
-function genCoverHTML(b, size){
-  var c = genColors(b.title);
-  var cls = size === 'sm' ? 'bk-gen bk-gen-sm' : 'bk-gen';
-  var author = (size !== 'sm' && b.author) ? '<span class="bk-gen-author">' + esc(b.author) + '</span>' : '';
-  return '<div class="' + cls + '" style="background:linear-gradient(160deg,' + c[0] + ',' + c[1] + ')">'
-    + '<span class="bk-gen-title">' + coverTitleHTML(b.title) + '</span>' + author + '</div>';
-}
+var genCoverHTML = window.SgxBookCover.genCoverHTML;
 function coverHTML(b, size){
   var url = coverUrl(b);
   if(url){
     return '<img src="' + esc(url) + '" alt="" loading="lazy" class="absolute inset-0 w-full h-full object-cover" draggable="false">';
   }
-  return genCoverHTML(b, size);
+  return genCoverHTML(b.title, b.author, size);
 }
 
 /* ================= 角标（Owner 专属，封面右下） ================= */
@@ -777,7 +760,7 @@ function renderStrip(){
         + '<div class="flex gap-3 overflow-x-auto pb-1 -mx-1 px-1">'
         + added.map(function(b){
           return '<div class="bk-strip-item shrink-0 w-[76px] cursor-pointer" data-book="' + esc(b.id) + '" role="button" tabindex="0" aria-label="' + esc(b.title) + '">'
-            + '<div class="bk-cover relative aspect-[2/3] overflow-hidden bg-m-container rounded-xl">' + coverHTML(b, 'sm') + '</div>'
+            + coverBoxHTML(b, 'sm')
             + '<p class="text-xs font-medium truncate mt-1.5">' + esc(b.title) + '</p></div>';
         }).join('') + '</div></div>';
       strip.querySelectorAll('[data-book]').forEach(function(el){
@@ -826,7 +809,7 @@ function renderFAB(){
   var thumb = $('#bk-fab-thumb');
   thumb.innerHTML = url
     ? '<img src="' + esc(url) + '" alt="" class="w-full h-full object-cover" draggable="false">'
-    : genCoverHTML(b, 'sm');
+    : genCoverHTML(b.title, b.author, 'sm');
   var collapsed = $('#bk-fab-collapsed');
   collapsed.innerHTML = url
     ? '<img src="' + esc(url) + '" alt="" class="w-full h-full object-cover" draggable="false">'

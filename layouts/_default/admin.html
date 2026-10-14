@@ -31,6 +31,7 @@
 
 {{ define "pagejs" }}
 {{ $isEn := or (eq .Lang "en") (hasPrefix .RelPermalink "/en/") }}
+<script src="{{ (resources.Get "js/book-cover.js" | minify | fingerprint).RelPermalink }}"></script>
 <script src="{{ (resources.Get "js/upload-queue.js" | minify | fingerprint).RelPermalink }}"></script>
 <script>
 (function(){

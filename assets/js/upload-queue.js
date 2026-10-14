@@ -471,10 +471,14 @@ function statusChip(item){
   return '';
 }
 function coverThumb(item, sizeCls){
+  /* 无封面：与书架同一套排版封面（book-cover.js genCoverHTML：哈希取色渐变 + 全标题）。
+   * SgxBookCover 未加载时回退首字占位（仅容错，正常流程不走这里）。 */
   var inner = item.coverURL
     ? '<img src="' + item.coverURL + '" alt="" class="w-full h-full object-cover">'
-    : '<div class="w-full h-full flex items-center justify-center bg-m-container text-m-on-surface-variant text-xl font-extrabold">' + esc(String(item.title || item.file.name).slice(0, 1)) + '</div>';
-  return '<div class="' + sizeCls + ' rounded-xl overflow-hidden bg-m-container flex-shrink-0">' + inner + '</div>';
+    : (window.SgxBookCover && window.SgxBookCover.genCoverHTML
+      ? window.SgxBookCover.genCoverHTML(item.title || item.file.name, '', 'sm')
+      : '<div class="w-full h-full flex items-center justify-center bg-m-container text-m-on-surface-variant text-xl font-extrabold">' + esc(String(item.title || item.file.name).slice(0, 1)) + '</div>');
+  return '<div class="' + sizeCls + ' bk-cover relative rounded-xl overflow-hidden bg-m-container flex-shrink-0">' + inner + '</div>';
 }
 /* One UI 按钮：主按钮 / 文本按钮 / 浅色按钮 */
 function btnPrimary(qact, label, disabled){

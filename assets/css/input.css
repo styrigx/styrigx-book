@@ -892,7 +892,7 @@ mark.smk{background:var(--m-primary-container);color:var(--m-on-primary-containe
 .bk-gen-author{font-size:12px;line-height:1.3;color:rgba(255,255,255,.78);display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;text-wrap:balance;word-break:keep-all}
 /* 封面盒子内（容器查询）按封面宽缩放字号；cqw 在无容器祖先时回退到视口单位，
  * 会把 FAB 缩略图标题撑到 46px 撑爆并被裁掉，故 cqw 只在 .bk-cover 内生效 */
-.bk-cover .bk-gen-title{font-size:13cqw}
+.bk-cover .bk-gen-title{font-size:max(12px,13cqw)}
 .bk-cover .bk-gen-author{font-size:10cqw}
 /* FAB 缩略图 40×52 太小放不下标题：只留渐变底色，书名由旁边的 FAB 标题承载 */
 #bk-fab-thumb .bk-gen-title{display:none}
