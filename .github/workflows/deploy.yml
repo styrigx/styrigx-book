@@ -74,6 +74,12 @@ jobs:
       - name: Build site
         run: hugo --minify
 
+      - name: Install Playwright Chromium
+        run: npx playwright install chromium --with-deps
+
+      - name: Run phone acceptance E2E (⋮ menu + half sheets)
+        run: npm run test:e2e
+
       - name: Check no unversioned /js/ refs in build output
         run: |
           refs=$(grep -rhoE 'src="/js/[a-zA-Z0-9_.-]+\.js"' public/ 2>/dev/null | sort -u | grep -v '/js/vendor/' || true)

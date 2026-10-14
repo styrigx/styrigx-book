@@ -216,7 +216,8 @@ footer { padding-bottom: calc(var(--dock-h) + env(safe-area-inset-bottom, 0px));
 .layout-dex footer { padding-bottom: env(safe-area-inset-bottom, 0px); }
 
 /* ===== 顶栏：透明无底色无线，直接融在背景里；手机、DeX 全局显示 ===== */
-:root { --nav-h: 64px; }
+/* --nav-h 与主站同值：主站 CSS 默认 64px，但内联 JS 用顶栏实测高度覆盖，实测 48px */
+:root { --nav-h: 48px; }
 #site-nav { position: fixed; top: 0; left: 0; right: 0; background: transparent; border: 0; box-shadow: none; }
 #site-nav .nav-inner{position:relative}
 /* DeX 顶栏：统一磨砂玻璃，去硬线 */
@@ -261,14 +262,16 @@ html { scroll-padding-top: calc(var(--nav-h) + 16px); }
 .subpage-head{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;
   text-align:center;min-height:38vh;min-height:38svh;
   padding:calc(76px + env(safe-area-inset-top,0px)) 20px 32px}
-/* 手机：标题区高度 = 实际可见高度 × 0.42（JS 写 --head-h，只在加载/横竖屏更新；兜底 42svh）。
-   标题区从屏幕顶部开始（顶栏透明叠在上面），大标题在区内居中偏下约 55%，
-   第一个内容模块顶边自然落在屏幕 42%–45% 处。 */
-.layout-phone .subpage-head{min-height:var(--head-h,max(300px,42svh));
-  padding-top:calc(var(--nav-h,64px) + 20px + env(safe-area-inset-top,0px))}
-.layout-phone .subpage-hero{position:relative;top:calc(var(--head-h,42svh)*0.05)}
+/* 手机：标题区高度 = 实际可见高度 × 0.25（JS 写 --head-h，只在加载/横竖屏更新；兜底 25svh）。
+   标题区从屏幕顶部开始（顶栏透明叠在上面），大标题沉底：标题区整体约 25% 屏高，
+   大标题下方到第一块内容不超过 32px（head 的 padding-bottom）。折叠动画逻辑不变。 */
+.layout-phone .subpage-head{min-height:var(--head-h,max(200px,25svh));
+  padding-top:calc(var(--nav-h,64px) + 20px + env(safe-area-inset-top,0px));
+  padding-bottom:clamp(120px,20vh,200px);
+  justify-content:flex-end}
+.layout-phone .subpage-hero{position:relative;top:0}
 .layout-phone .subpage-back{top:calc(var(--nav-h,64px) + 12px + env(safe-area-inset-top,0px))}
-.layout-phone .subpage-actions{top:calc(var(--nav-h,64px) + 12px + env(safe-area-inset-top,0px))}
+.layout-phone .subpage-actions{top:auto;bottom:8px}
 .layout-dex .subpage-head{min-height:25vh;min-height:25svh;padding-top:calc(64px + env(safe-area-inset-top,0px))}
 /* 上滑标题区滚走时轻微淡出 + 缩小 */
 .subpage-hero{transition:opacity .25s ease,transform .25s ease}
@@ -286,9 +289,22 @@ html { scroll-padding-top: calc(var(--nav-h) + 16px); }
 .subpage-actions{position:absolute;right:16px;top:calc(12px + env(safe-area-inset-top,0px));display:flex;gap:8px;flex-shrink:0;z-index:2}
 /* 上传页（bk-admin）：压缩标题区大留白，让拖放区进首屏上半部（默认 42svh 标题区） */
 .bk-admin .subpage-head{min-height:230px;padding-top:calc(var(--nav-h,64px) + 8px + env(safe-area-inset-top,0px));padding-bottom:20px}
+/* ===== 上传页横向溢出根因修复（book 手机验收返工第 8 项） =====
+ * 根因：队列卡片里文件名 p.truncate 的 white-space:nowrap 产生约 514px max-content，
+ * 逐层向上传播——min-w-0 只管 min-content，管不住 max-content；main.bk-admin 身为
+ * body flex 容器的子项又带 mx-auto，auto margin 抵消了 stretch，于是 main 按
+ * max-content 定宽到 674px。html/body 的 overflow-x:clip 只盖住 scrollWidth，
+ * 后代元素 rect 仍越过视口——这就是前两次只盯 scrollWidth 修不掉的原因。
+ * 修法：contain:inline-size 让文本列的 intrinsic 尺寸不再依赖内容，阻断传播；
+ * 文件名单行省略照常生效。 */
+#adm-queue [data-q] .flex-1.min-w-0{contain:inline-size}
+/* 状态 chip 带 whitespace:nowrap，在极窄屏下列宽不足时不撑宽，超长省略 */
+#adm-queue [data-status]>span{max-width:100%;overflow:hidden;text-overflow:ellipsis}
+/* 开关行（两个 label 都是 flex 子项，min-width:auto 不收缩）：极窄屏下换行，不撑宽 */
+#adm-queue [data-q] .flex.items-center.gap-6{flex-wrap:wrap;row-gap:.5rem}
 /* 滚过标题区后的顶部居中小标题 */
 .subpage-mini-title{position:fixed;left:50%;top:calc(16px + env(safe-area-inset-top,0px));z-index:54;
-  transform:translateX(-50%) translateY(-8px);opacity:0;pointer-events:none;
+  transform:translateX(-50%) translateY(6px);opacity:0;pointer-events:none;
   font-size:17px;font-weight:700;color:var(--m-on-surface);white-space:nowrap;max-width:60vw;
   overflow:hidden;text-overflow:ellipsis;transition:opacity .2s ease,transform .2s ease}
 .subpage-mini-title.show{opacity:1;transform:translateX(-50%)}
@@ -869,6 +885,9 @@ mark.smk{background:var(--m-primary-container);color:var(--m-on-primary-containe
 .bk-icbtn{display:inline-flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:999px;color:var(--m-on-surface);flex-shrink:0;transition:background .15s}
 .bk-icbtn:active{background:var(--m-container-high)}
 .bk-icbtn svg{width:24px;height:24px}
+/* 标题区 ⋮/筛选按钮：与主站 files-more-btn 同尺寸（44×44，图标 22px），筛选在 ⋮ 左边同一行 */
+.subpage-actions .bk-icbtn{width:44px;height:44px}
+.subpage-actions .bk-icbtn svg{width:22px;height:22px}
 
 /* One UI 下拉菜单（分组 / ⋮）：文字项、无图标 */
 .bk-menu{position:absolute;top:calc(100% - 4px);min-width:200px;z-index:60;background:var(--m-container-lowest);border:1px solid var(--m-outline);border-radius:1.25rem;box-shadow:0 12px 32px -8px rgba(0,0,0,.25);padding:6px;overflow:hidden}
@@ -958,11 +977,44 @@ mark.smk{background:var(--m-primary-container);color:var(--m-on-primary-containe
 .bk-cap-mic{display:inline-flex;align-items:center;justify-content:center;background:none;border:0;padding:0;margin:0;cursor:pointer;color:var(--m-on-surface-variant);flex-shrink:0}
 .bk-cap-mic svg{width:22px;height:22px;display:block}
 @media (prefers-reduced-motion: reduce){.bk-cap{transition:none}}
+/* 搜索胶囊键盘跟随（移植主站 capsule.js/vk.js 机制）：--sgx-kb 为当前键盘高度（px） */
+:root{--sgx-kb:0px}
+/* 无 VirtualKeyboard API 时：rAF + transform 把胶囊放到 visualViewport 底边，不加 transition；
+   .open 的 bottom/left/right/width 保持收起态几何，由 JS 内联样式驱动 */
+.bk-cap.sgx-kb-sync,.bk-cap.sgx-kb-sync.open{transition:none}
+.bk-cap.sgx-kb-sync.open{bottom:calc(12px + env(safe-area-inset-bottom,0px));left:50%;right:auto;transform:translateX(-50%);width:min(64vw,300px)}
+/* 有 VirtualKeyboard API（Chrome）时：overlaysContent 让键盘悬浮不顶页面，
+   胶囊 bottom 直接跟 env(keyboard-inset-height) 走，不加 transition；宽度由 JS 内联插值 */
+.sgx-vk .bk-cap.open{bottom:calc(env(keyboard-inset-height,0px) + 12px + env(safe-area-inset-bottom,0px));transition:none;left:50%;right:auto;transform:translateX(-50%)}
+/* 语音输入弹窗（移植主站 voice-sheet.js 配的样式，token 映射到 book 的 --m-*） */
+dialog.sgx-vs-dlg{padding:0;border:0;background:transparent;margin:0;width:100%;max-width:none;max-height:none;position:fixed;inset:auto 0 0 0}
+dialog.sgx-vs-dlg::backdrop{background:rgba(0,0,0,.2);opacity:0;transition:opacity .2s ease}
+dialog.sgx-vs-dlg.show::backdrop{opacity:1}
+.sgx-vs-card{position:relative;margin:0 8px calc(8px + env(safe-area-inset-bottom,0px));height:72px;background:var(--m-container-lowest);border:1px solid var(--m-outline);border-radius:28px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 14px 0 20px;box-shadow:0 12px 32px rgba(0,0,0,.18);transform:translateY(120%);transition:transform .25s ease-out}
+dialog.sgx-vs-dlg.show .sgx-vs-card{transform:none}
+.sgx-vs-tx{min-width:0;flex:1}
+.sgx-vs-l1{font-size:17px;color:var(--m-on-surface);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sgx-vs-l2{font-size:13px;color:var(--m-on-surface-variant);margin-top:2px}
+.sgx-vs-btn{position:relative;width:44px;height:44px;border-radius:50%;background:var(--m-primary);color:#fff;border:0;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.sgx-vs-btn svg{width:22px;height:22px;display:block}
+.sgx-vs-btn.listening::after{content:"";position:absolute;inset:-4px;border-radius:50%;border:2px solid var(--m-primary);animation:sgx-vs-halo 1.4s ease-out infinite}
+@keyframes sgx-vs-halo{0%{transform:scale(.92);opacity:.9}70%{transform:scale(1.12);opacity:.3}100%{transform:scale(1.18);opacity:0}}
+.sgx-dlg-close{position:absolute;top:8px;right:12px;z-index:2;width:32px;height:32px;border:0;background:none;cursor:pointer;font-size:22px;line-height:1;color:var(--m-on-surface-variant);display:flex;align-items:center;justify-content:center;border-radius:50%}
+.sgx-dlg-close:focus-visible{outline:2px solid var(--m-primary);outline-offset:2px}
+@media (prefers-reduced-motion: reduce){dialog.sgx-vs-dlg::backdrop,.sgx-vs-card{transition:none}.sgx-vs-btn.listening::after{animation:none}}
 
 /* 主题选项选中态：右侧对勾（与行样式统一） */
 .bk-theme-check{color:var(--m-primary);flex-shrink:0}
 .bk-theme-check svg{width:20px;height:20px;display:block}
 
-/* 底部弹层固定高度：打开时不随内容跳动（六.2） */
-.layout-phone #filter-wrap .bk-panel,.layout-phone #settings-wrap .bk-panel{height:min(72vh,560px)}
+/* 半屏下沉弹层（排序与筛选 / 书库设置）：手机 50dvh，从底部弹出；内容多时内部滚动，
+   标题行和底栏固定（五） */
+.layout-phone #filter-wrap .bk-panel,.layout-phone #settings-wrap .bk-panel{height:50dvh}
 .layout-dex #filter-wrap .bk-panel,.layout-dex #settings-wrap .bk-panel{height:min(72vh,560px)}
+/* 弹层标题行：三栏 grid（48px | 1fr | 48px）；行高 56px，顶部距拖动条底部 12px；
+   左栏放齿轮（排序与筛选）或 48px 空位（书库设置），中栏标题居中，右栏关闭按钮 */
+/* 拖动条自带 margin-bottom:2px，这里 margin-top:10px，合计标题行顶部距拖动条底部 12px */
+.bk-titlebar{display:grid;grid-template-columns:48px 1fr 48px;height:56px;margin-top:10px;flex-shrink:0}
+.bk-titlebar-side{display:flex;align-items:center;justify-content:center}
+.bk-titlebar-mid{display:flex;align-items:center;justify-content:center;min-width:0}
+.bk-titlebar-mid h2{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

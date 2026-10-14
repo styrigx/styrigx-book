@@ -272,11 +272,13 @@ for (const theme of ['light', 'dark']) {
     // 右上角 × 存在且可见
     const closeBtn = page.locator('#filter-wrap [data-close="filter"].bk-icbtn');
     await expect(closeBtn).toBeVisible();
-    // 底部按钮不挡住布局选项：两者 bounding box 不相交
+    // 底部按钮不挡住布局选项：50dvh 半屏下内容区内部滚动，先把布局选项滚到可见，
+    // 再断言它与固定底栏的 bounding box 不相交（滚到折叠处不算被挡）
     const overlap = await page.evaluate(() => {
       const seg = document.querySelector('#filter-body .bk-seg');
       const bar = document.querySelector('#filter-wrap .shrink-0.flex.gap-3');
       if (!seg || !bar) return 'missing';
+      seg.scrollIntoView({ block: 'nearest' });
       const r1 = seg.getBoundingClientRect();
       const r2 = bar.getBoundingClientRect();
       const xOverlap = Math.max(0, Math.min(r1.right, r2.right) - Math.max(r1.left, r2.left));

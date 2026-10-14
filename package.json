@@ -12,7 +12,8 @@
     "build:css": "tailwindcss -i assets/css/input.css -o assets/css/main.css --minify",
     "vendor": "node scripts/vendor.mjs",
     "test": "node tests/pages-dev-301.test.mjs && node tests/lock-sync.test.mjs && node tests/no-download.test.mjs && node tests/app-token.test.mjs && node tests/app-token-vectors.test.mjs && node tests/sgx-cookie-vectors.test.mjs && node tests/shelf-owner-load.test.mjs && node tests/upload-chain.test.mjs && node tests/upload-format.test.mjs && node tests/upload-app-epoch.test.mjs && node tests/upload-part-error.test.mjs && node tests/js-cache-headers.test.mjs && node tests/tailwind-js-scan.test.mjs && node tests/upload-resume.test.mjs && node tests/upload-cover-backfill.test.mjs && node tests/private-books-progress.test.mjs && node tests/cover-title.test.mjs && node tests/cover-fallback.test.mjs && node tests/readbase-noquotes.test.mjs",
-    "test:visual": "playwright test --config=playwright.config.js"
+    "test:visual": "playwright test --config=playwright.config.js",
+    "test:e2e": "playwright test --config=playwright.e2e.config.js"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.0",
