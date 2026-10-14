@@ -8,6 +8,8 @@
   </div>
   <p class="text-[15px] font-extrabold text-m-on-surface">{{ if $isEn }}Drag &amp; drop files here, or tap to browse{{ else }}拖放文件到这里，或点击选择{{ end }}</p>
   <p class="text-xs text-m-on-surface-variant mt-1.5">{{ if $isEn }}Only .epub / .pdf · max 500 MB per file{{ else }}仅接受 .epub / .pdf，单本上限 500MB{{ end }}</p>
+  {{/* 画布 11：给手机用的显式「选择文件」按钮（点按冒泡到拖放区，打开文件选择器） */}}
+  <button type="button" class="mt-4 inline-flex items-center justify-center h-11 px-6 rounded-full bg-m-primary text-m-on-primary text-sm font-bold">{{ if $isEn }}Choose files{{ else }}选择文件{{ end }}</button>
 </div>
 <div id="{{ $prefix }}-queue" class="space-y-3 mt-4" aria-live="polite"></div>
 <input type="file" id="{{ $prefix }}-cover-input" accept="image/*" class="hidden">

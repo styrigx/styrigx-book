@@ -397,21 +397,21 @@ await test('前端：上传中途被拒直接跳转（不弹 confirm）', () => 
   assert.ok(src.includes('授权已失效，请重新授权'), '应有中文提示文案');
 });
 
-/* 前端：visitor 不渲染 FAB 入口 */
+/* 前端：visitor 不渲染继续阅读 FAB 入口（3.0：上传 FAB 已删除，FAB 改为继续阅读） */
 import { readFileSync } from 'node:fs';
-await test('前端：FAB 默认隐藏，仅 owner 显示', () => {
-  const fabHtml = readFileSync(new URL('../layouts/partials/upload-fab.html', import.meta.url), 'utf8');
+await test('前端：继续阅读 FAB 默认隐藏，仅 owner 显示', () => {
+  const idxHtml = readFileSync(new URL('../layouts/index.html', import.meta.url), 'utf8');
   // FAB 默认有 hidden 类
-  assert.ok(fabHtml.includes('id="bk-fab"'));
-  assert.ok(/id="bk-fab"[^>]*class="[^"]*hidden/.test(fabHtml), 'FAB 应默认隐藏');
-  // BkShowFab 根据 isOwner 控制显示
-  assert.ok(fabHtml.includes('window.BkShowFab = function(isOwner)'));
+  assert.ok(idxHtml.includes('id="bk-fab"'));
+  assert.ok(/id="bk-fab"[^>]*class="[^"]*hidden/.test(idxHtml), 'FAB 应默认隐藏');
+  // renderFAB 非 owner 时隐藏
+  assert.ok(idxHtml.includes('if(!owner)'), '应根据 owner 状态控制 FAB 显示');
 });
 
-await test('前端：index.html 引入 FAB 且仅 owner 触发显示', () => {
+await test('前端：无上传 FAB（上传入口在 ⋮ 菜单与空状态）', () => {
   const idxHtml = readFileSync(new URL('../layouts/index.html', import.meta.url), 'utf8');
-  assert.ok(idxHtml.includes('upload-fab.html'), 'index.html 应引入 upload-fab partial');
-  assert.ok(idxHtml.includes('window.BkShowFab(owner)'), '应根据 owner 状态调用 BkShowFab');
+  assert.ok(!idxHtml.includes('upload-fab.html'), 'index.html 不应再引入 upload-fab partial');
+  assert.ok(!idxHtml.includes('BkShowFab'), '不应再有上传 FAB 的 BkShowFab');
 });
 
 console.log(`\napp-token: ${passed} passed`);

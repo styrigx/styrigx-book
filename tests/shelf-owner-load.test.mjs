@@ -1,10 +1,12 @@
-// 书架 owner 加载回归测试（fix/shelf-owner-load）
-// 根因：layouts/index.html 的 renderContinue() 残留了引用未声明变量 loggedIn 的旧代码，
+// 书架 owner 加载回归测试（fix/shelf-owner-load，3.0 重写）
+// 旧根因：layouts/index.html 的 renderContinue() 残留引用未声明变量 loggedIn 的旧代码，
 // owner 进书架时抛 ReferenceError，被 loadBooks 的 catch 吃掉显示「加载失败」。
+// 3.0：书架进度只从 /api/private/books 的 percent 读，不再读 localStorage；
+// renderContinue 已被 renderStrip + renderFAB 取代。
 // 覆盖：
 //   1. 内联脚本不引用未声明的 loggedIn
-//   2. 用 vm + 最小 DOM stub 跑 owner 分支的 loadBooks（fetch 返回 {"books":[]}），
-//      断言不抛错、bk-error 保持 hidden
+//   2. 内联脚本不读 localStorage 进度（bk-progress-* 只允许删除清理，不允许 getItem）
+//   3. 纯函数 readState 边界：null/0 → 未读，0<p<99 → 在读，>=99 → 已读
 // 运行：node tests/shelf-owner-load.test.mjs
 
 import { readFileSync } from 'node:fs';
@@ -26,71 +28,19 @@ const src = scripts.join('\n');
 // 1. 静态检查：不应引用 loggedIn（index.html 里从未声明，只有 read.html 有）
 assert.ok(!/\bloggedIn\b/.test(src), '内联脚本不应引用未声明的 loggedIn');
 
-// 2. 动态检查：跑 owner 分支的 loadBooks
-// 最小 DOM stub
-function makeEl() {
-  return {
-    classList: {
-      _set: new Set(['hidden']),
-      add(c) { this._set.add(c); },
-      remove(c) { this._set.delete(c); },
-      contains(c) { return this._set.has(c); },
-    },
-    style: {},
-    textContent: '',
-    querySelector() { return null; },
-  };
-}
+// 2. 静态检查：不读 localStorage 进度（进度只从 /api/private/books 的 percent 来）
+assert.ok(!/localStorage\.getItem\(['"]bk-progress-/.test(src), '书架不应再读 localStorage 进度');
+assert.ok(!/localStorage\[.bk-progress-/.test(src), '书架不应再读 localStorage 进度');
 
-const els = {};
-function getElementById(id) {
-  if (!els[id]) els[id] = makeEl();
-  return els[id];
-}
-
-// loadBooks 依赖的全局
-const sandbox = {
-  console,
-  document: { getElementById },
-  window: {},
-  // isOwner=true 走 owner 分支
-  isOwner: true,
-  books: [],
-  bookById: {},
-  progressMap: {},
-  sortMode: 'added',
-  T: {
-    loading: '加载中',
-    loadFail: '加载失败',
-    count: (n) => `共 ${n} 本`,
-  },
-  subEl: () => null,
-  // sgxLockSync.apiFetch 返回 {"books":[]}
-  sgxLockSync: {
-    apiFetch: async () => ({
-      ok: true,
-      json: async () => ({ books: [] }),
-    }),
-  },
-  // render* 存根：renderContinue 是重点（曾抛 ReferenceError）
-  renderChips: () => {},
-  renderGrid: () => {},
-  loadProgress: () => {},
-};
-
-vm.createContext(sandbox);
-
-// 只执行 loadBooks 和 renderContinue 相关的函数定义
-// 提取函数：loadBooks, renderContinue, renderChips(存根已给), renderGrid(存根已给)
-const fnNames = ['loadBooks', 'renderContinue'];
-let testSrc = '';
+// 3. 纯函数 readState 边界（提取 pctOf / readState / statusLabel 跑 vm）
+const fnNames = ['pctOf', 'readState', 'statusLabel'];
+let testSrc = 'var READ_DONE = 99;\nvar T = { unread: "未读", read: "已读", readingPct: function(p){ return "在读 " + p + "%"; } };\n';
 for (const name of fnNames) {
-  const fnRe = new RegExp(`(async\\s+)?function\\s+${name}\\s*\\([^)]*\\)\\s*\\{`, 'g');
+  const fnRe = new RegExp(`function\\s+${name}\\s*\\([^)]*\\)\\s*\\{`, 'g');
   const match = fnRe.exec(src);
   assert.ok(match, `应找到函数 ${name}`);
-  // 简单括号匹配提取函数体
   let depth = 0;
-  let start = match.index;
+  const start = match.index;
   let i = src.indexOf('{', start);
   let end = i;
   for (; i < src.length; i++) {
@@ -102,15 +52,20 @@ for (const name of fnNames) {
   }
   testSrc += src.slice(start, end) + '\n';
 }
-
+const sandbox = { console };
+vm.createContext(sandbox);
 vm.runInContext(testSrc, sandbox);
-vm.runInContext('loadBooks()', sandbox);
-
-// 等待 async 完成
-await new Promise((r) => setTimeout(r, 100));
-
-// 断言：bk-error 保持 hidden（没有显示「加载失败」）
-const errEl = getElementById('bk-error');
-assert.ok(errEl.classList.contains('hidden'), 'owner 加载空书架时 bk-error 应保持 hidden');
+const { readState, statusLabel } = sandbox;
+assert.equal(readState({}), 'unread', '无 percent → 未读');
+assert.equal(readState({ percent: null }), 'unread', 'percent null → 未读');
+assert.equal(readState({ percent: 0 }), 'unread', 'percent 0 → 未读');
+assert.equal(readState({ percent: 0.5 }), 'reading', 'percent 0.5 → 在读');
+assert.equal(readState({ percent: 42 }), 'reading', 'percent 42 → 在读');
+assert.equal(readState({ percent: 98.9 }), 'reading', 'percent 98.9 → 在读');
+assert.equal(readState({ percent: 99 }), 'read', 'percent 99 → 已读');
+assert.equal(readState({ percent: 100 }), 'read', 'percent 100 → 已读');
+assert.equal(statusLabel({ percent: 42 }), '在读 42%', '在读显示在读 + 百分比');
+assert.equal(statusLabel({ percent: 100 }), '已读', '已读显示已读');
+assert.equal(statusLabel({ percent: 0 }), '未读', '未读显示未读');
 
 console.log('ok: shelf-owner-load passed');

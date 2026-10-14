@@ -284,6 +284,8 @@ html { scroll-padding-top: calc(var(--nav-h) + 16px); }
 .subpage-title{font-size:40px;font-weight:800;letter-spacing:-0.02em;line-height:1.15;color:var(--m-primary)}
 .subpage-sub{margin-top:10px;font-size:14px;color:var(--m-on-surface-variant)}
 .subpage-actions{position:absolute;right:16px;top:calc(12px + env(safe-area-inset-top,0px));display:flex;gap:8px;flex-shrink:0;z-index:2}
+/* 上传页（bk-admin）：压缩标题区大留白，让拖放区进首屏上半部（默认 42svh 标题区） */
+.bk-admin .subpage-head{min-height:230px;padding-top:calc(var(--nav-h,64px) + 8px + env(safe-area-inset-top,0px));padding-bottom:20px}
 /* 滚过标题区后的顶部居中小标题 */
 .subpage-mini-title{position:fixed;left:50%;top:calc(16px + env(safe-area-inset-top,0px));z-index:54;
   transform:translateX(-50%) translateY(-8px);opacity:0;pointer-events:none;
@@ -484,6 +486,8 @@ body.subpage-scrolled #site-nav > span{opacity:0;pointer-events:none;transition:
 .sheet-opt{display:flex;align-items:center;gap:12px;width:100%;padding:14px 20px;min-height:56px;text-align:left;border-radius:1rem}
 .sheet-opt:active{background:var(--m-container)}
 .sheet-opt + .sheet-opt{border-top:1px solid color-mix(in srgb,var(--m-outline) 45%,transparent)}
+/* 详情弹层：内容区滚动、操作按钮固定底部（#sheet-actions） */
+#sheet-body{flex:1 1 auto;min-height:0}
 
 /* #search-modal 已删除（搜索并入 /browser/） */
 
@@ -854,3 +858,98 @@ mark.smk{background:var(--m-primary-container);color:var(--m-on-primary-containe
 @keyframes sgxFadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 .sgx-fade{animation:sgxFadeIn .28s ease}
 .reduced-motion .sgx-fade{animation:none}
+
+/* ===== Book 3.0 书架 ===== */
+
+/* #bk-main 是 body flex 容器的子项（main{flex:1 0 auto}），默认 min-width:auto 会被
+   网格标题的 truncate（nowrap）撑宽导致横向溢出；强制 min-width:0 让它贴合视口 */
+#bk-main{min-width:0}
+
+/* 页头图标按钮：24px 视觉，48px 触控区，按下 --m-container-high 圆形底 */
+.bk-icbtn{display:inline-flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:999px;color:var(--m-on-surface);flex-shrink:0;transition:background .15s}
+.bk-icbtn:active{background:var(--m-container-high)}
+.bk-icbtn svg{width:24px;height:24px}
+
+/* One UI 下拉菜单（分组 / ⋮）：文字项、无图标 */
+.bk-menu{position:absolute;top:calc(100% - 4px);min-width:200px;z-index:60;background:var(--m-container-lowest);border:1px solid var(--m-outline);border-radius:1.25rem;box-shadow:0 12px 32px -8px rgba(0,0,0,.25);padding:6px;overflow:hidden}
+#bk-group-menu{left:0}
+#bk-more-menu{right:0}
+.bk-menu-item{display:flex;align-items:center;gap:10px;width:100%;padding:12px 12px;min-height:48px;text-align:left;font-size:15px;border-radius:.75rem;color:var(--m-on-surface);text-decoration:none}
+.bk-menu-item:active{background:var(--m-container)}
+.bk-menu-check{width:20px;height:20px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;color:var(--m-primary)}
+
+/* 胶囊：排序胶囊（蓝底无 ×）+ 可清除胶囊 */
+.bk-chip{display:inline-flex;align-items:center;gap:4px;height:32px;padding:0 14px;border-radius:999px;background:var(--m-container);color:var(--m-on-surface);font-size:13px;font-weight:600}
+.bk-chip:active{background:var(--m-container-high)}
+.bk-chip-sort{background:var(--m-primary-container,#dbeafe);color:var(--m-on-primary-container,#1a4a7a)}
+.dark .bk-chip-sort{background:#1e3a5f;color:#bcd7ff}
+
+/* 封面容器：container queries 让排版封面字号随封面宽缩放 */
+.bk-cover{container-type:inline-size}
+/* 排版封面：居中、内边距 ≥ 封面宽 10%、书名最多两行省略 */
+.bk-gen{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:12%;gap:6%;overflow:hidden}
+.bk-gen-title{font-weight:800;line-height:1.35;color:#fff;text-wrap:balance;word-break:keep-all;line-break:strict;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:15px}
+.bk-gen-author{font-size:12px;line-height:1.3;color:rgba(255,255,255,.78);display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;text-wrap:balance;word-break:keep-all}
+/* 封面盒子内（容器查询）按封面宽缩放字号；cqw 在无容器祖先时回退到视口单位，
+ * 会把 FAB 缩略图标题撑到 46px 撑爆并被裁掉，故 cqw 只在 .bk-cover 内生效 */
+.bk-cover .bk-gen-title{font-size:max(12px,13cqw)}
+.bk-cover .bk-gen-author{font-size:10cqw}
+/* FAB 缩略图 40×52 太小放不下标题：只留渐变底色，书名由旁边的 FAB 标题承载 */
+#bk-fab-thumb .bk-gen-title{display:none}
+#bk-fab-thumb .bk-gen{padding:4px}
+.bk-gen-sm .bk-gen-author{display:none}
+/* 小封面（书架条带）：单行省略。line-clamp + keep-all 在小尺寸下
+ * 会把「…」裁成一个点（末行段 + 省略号超宽，keep-all 不许拆段让位），且 4 字段会
+ * 溢出内边距贴边。单行 text-overflow 由浏览器预留省略号宽度，保证完整「…」；
+ * text-align:left 保证从右截断、显示标题开头（居中会对齐导致左右都裁）。 */
+.bk-gen-sm .bk-gen-title{display:block;width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left}
+/* 上传队列 48px 小封面（uq）：两行截断。display:-webkit-box + line-clamp:2，
+ * 去掉 nowrap 和单行 text-overflow（省略号由 line-clamp 出）；保留 coverTitleHTML
+ * 的 <wbr> 提供断行点（keep-all 下无 <wbr> 断不开）；左右内边距 ≥4px，不贴边。
+ * 书架条带仍走纯 sm（单行），不受 uq 影响。 */
+.bk-gen-uq{padding-left:4px;padding-right:4px}
+.bk-gen-sm.bk-gen-uq .bk-gen-title{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;white-space:normal;text-overflow:clip;text-align:left}
+
+/* 封面角标（Owner 专属，封面右下）：百分比黑胶囊 / 已读绿勾圆 */
+.bk-badge{position:absolute;right:6px;bottom:6px;z-index:1}
+.bk-badge-pct{display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:999px;background:rgba(0,0,0,.62);color:#fff;font-size:11px;font-weight:700;line-height:1}
+.bk-badge-done{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:999px;background:#2E9E4F;color:#fff}
+
+/* 弹层（筛选 / 换封面 / 设置 / 确认）：手机底部弹层，桌面居中弹窗，与 #sheet-wrap 同行为 */
+.bk-overlay{display:none}
+.bk-overlay.open{display:flex}
+.bk-overlay:not(.open){pointer-events:none}
+.bk-panel{transition:transform .32s cubic-bezier(.22,1,.36,1),opacity .25s}
+.layout-phone .bk-panel{position:absolute;left:0;right:0;bottom:0;max-height:82vh;border-radius:1.75rem 1.75rem 0 0;background:var(--m-container-lowest);display:flex;flex-direction:column;transform:translateY(102%)}
+.layout-phone .bk-overlay.open .bk-panel{transform:translateY(0)}
+.layout-dex .bk-overlay.open,.layout-dex .bk-overlay.closing{align-items:center;justify-content:center;padding:1rem}
+.layout-dex .bk-panel{position:relative;width:100%;max-width:26rem;border-radius:1.75rem;background:var(--m-container-lowest);border:1px solid var(--m-outline);box-shadow:0 24px 64px -16px rgba(0,0,0,.35);opacity:0;transform:scale(.96) translateY(8px);max-height:82vh;display:flex;flex-direction:column}
+.layout-dex .bk-overlay.open .bk-panel{opacity:1;transform:none}
+.layout-dex .bk-panel .sheet-handle{display:none}
+.layout-dex .bk-dialog{max-width:22rem}
+.bk-overlay{opacity:0;transition:opacity .25s}
+.bk-overlay.open{opacity:1}
+
+/* 筛选弹层控件：圆点单选 / 复选 / 三段式 */
+.bk-filter-label{font-size:13px;color:var(--m-on-surface-variant);margin:20px 0 4px}
+.bk-radio-row,.bk-check-row{display:flex;align-items:center;gap:12px;width:100%;padding:13px 4px;min-height:48px;font-size:15px;cursor:pointer}
+.bk-radio-row + .bk-radio-row,.bk-check-row + .bk-check-row{border-top:1px solid color-mix(in srgb,var(--m-outline) 45%,transparent)}
+.bk-radio-row input,.bk-check-row input{position:absolute;opacity:0;pointer-events:none}
+.bk-radio{width:22px;height:22px;border-radius:999px;border:2px solid var(--m-outline);flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;transition:border-color .15s}
+.bk-radio-row input:checked + .bk-radio{border-color:var(--m-primary)}
+.bk-radio-row input:checked + .bk-radio::after{content:'';width:11px;height:11px;border-radius:999px;background:var(--m-primary)}
+.bk-check{width:22px;height:22px;border-radius:6px;border:2px solid var(--m-outline);flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;transition:background .15s,border-color .15s;color:#fff}
+.bk-check-row input:checked + .bk-check{background:var(--m-primary);border-color:var(--m-primary)}
+.bk-check-row input:checked + .bk-check::after{content:'';width:12px;height:7px;border-left:2.4px solid #fff;border-bottom:2.4px solid #fff;transform:rotate(-45deg) translateY(-1px)}
+.bk-seg{display:flex;background:var(--m-container);border-radius:999px;padding:4px;gap:2px;margin-top:8px}
+.bk-seg-item{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;height:40px;border-radius:999px;font-size:13px;font-weight:600;color:var(--m-on-surface-variant)}
+.bk-seg-item.active{background:var(--m-container-lowest);color:var(--m-on-surface);box-shadow:0 1px 4px rgba(0,0,0,.12)}
+.bk-theme-active{font-weight:800;color:var(--m-primary)}
+
+/* FAB 离场过渡：封面放大 + 淡出；减弱动效时只淡入/淡出 */
+#bk-fab{transition:transform .2s ease,opacity .2s ease}
+#bk-fab.bk-fab-leaving{transform:scale(1.06);opacity:0}
+@media (prefers-reduced-motion: reduce){
+  #bk-fab{transition:opacity .2s ease}
+  #bk-fab.bk-fab-leaving{transform:none;opacity:0}
+}

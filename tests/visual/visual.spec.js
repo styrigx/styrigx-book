@@ -76,7 +76,7 @@ test('sheet-mobile', async ({ page }) => {
   });
 });
 
-/* 上传页：owner 身份，/admin/ 渲染上传区 + 管理列表 */
+/* 上传页：owner 身份，/admin/ 只渲染上传区（3.0：管理列表已下线，管理移到书架详情弹层） */
 test('admin-upload', async ({ page }) => {
   await setup(page, { viewport: MOBILE, theme: 'light', owner: true });
   await gotoReady(page, '/admin/', '#adm-main:not(.hidden)');
@@ -115,7 +115,10 @@ test('admin-upload-longname', async ({ page }) => {
 
 /* 管理页：滚动后折叠标题只显示当前页标题（手机宽度），断言无横向溢出 */
 test('admin-upload-scrolled', async ({ page }) => {
-  await setup(page, { viewport: MOBILE, theme: 'light', owner: true });
+  /* 3.0：admin 页只剩上传区，页面变短；390×844 下最大滚动 40px，达不到
+     subpage-head 折叠阈值（head 高 354 × 0.55 ≈ 195）。用 390×600 视口
+     （仍是手机宽）才能滚出折叠效果，断言意图不变：滚动 → 折叠触发 + 无横向溢出。 */
+  await setup(page, { viewport: { width: 390, height: 600 }, theme: 'light', owner: true });
   await gotoReady(page, '/admin/', '#adm-main:not(.hidden)');
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
   await page.waitForFunction(() => document.body.classList.contains('subpage-scrolled'), { timeout: 5000 });
