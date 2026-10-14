@@ -6,12 +6,9 @@
 {{/* 3.0 书架首页：主站同款大标题（subpage-head，noBack）+ 胶囊 + 最近阅读/最近添加条 +
    书架网格（列表/网格/大封面）+ 详情弹层 + 筛选弹层 + 底部搜索胶囊。
    PR 2 起的入口（收藏、阅读统计、书签与笔记、多选）不渲染。 */}}
-{{ $headActions := printf `%s%s` (printf `<button id="bk-filter-btn" type="button" class="bk-icbtn" aria-label="%s">%s</button>` (cond $isEn "Sort and filter" "排序与筛选") (partial "icon.html" (dict "name" "sliders" "uid" "head-filter"))) (printf `<button id="bk-menu-btn" type="button" class="bk-icbtn hidden" aria-label="%s"><svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg></button>` (cond $isEn "More" "更多")) }}
+{{ $headActions := printf `%s%s%s` (printf `<button id="bk-filter-btn" type="button" class="bk-icbtn" aria-label="%s">%s</button>` (cond $isEn "Sort and filter" "排序与筛选") (partial "icon.html" (dict "name" "sliders" "uid" "head-filter"))) (printf `<button id="bk-menu-btn" type="button" class="bk-icbtn hidden" aria-label="%s"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg></button>` (cond $isEn "More" "更多")) `<div id="bk-more-menu" class="bk-menu hidden" role="menu"></div>` }}
 <main id="bk-main" class="w-full max-w-7xl mx-auto px-4 sm:px-6 pb-6">
   {{ partial "subpage-head.html" (dict "title" (cond $isEn "Library" "书库") "isEn" $isEn "noBack" true "actions" ($headActions | safeHTML)) }}
-  {{/* ⋮ 菜单：上传书籍 / 随机打开一本 / 为无封面的书提取封面 */}}
-  <div id="bk-more-menu" class="bk-menu hidden" role="menu"></div>
-
   {{/* ===== 选中条件胶囊 ===== */}}
   <div id="bk-chips" class="flex flex-wrap gap-2 pb-3"></div>
 
@@ -64,12 +61,10 @@
   <div class="bk-overlay-backdrop absolute inset-0 bg-black/40" data-close="filter"></div>
   <div class="bk-panel bg-m-container-lowest text-m-on-surface shadow-2xl">
     <div class="sheet-handle"></div>
-    <div class="flex items-start justify-between px-5 pt-1">
-      <h2 class="text-lg font-extrabold">{{ if $isEn }}Sort and filter{{ else }}排序与筛选{{ end }}</h2>
-      <div class="flex items-center gap-1 -mr-2 -mt-1">
-        <button type="button" class="bk-icbtn" id="filter-gear" aria-label="{{ if $isEn }}Library settings{{ else }}书库设置{{ end }}">{{ partial "icon.html" (dict "name" "gear" "uid" "filter-gear") }}</button>
-        <button type="button" class="bk-icbtn" data-close="filter" aria-label="{{ if $isEn }}Close{{ else }}关闭{{ end }}">{{ partial "icon.html" (dict "name" "x-mark" "uid" "filter-x") }}</button>
-      </div>
+    <div class="bk-titlebar">
+      <div class="bk-titlebar-side"><button type="button" class="bk-icbtn" id="filter-gear" aria-label="{{ if $isEn }}Library settings{{ else }}书库设置{{ end }}">{{ partial "icon.html" (dict "name" "gear" "uid" "filter-gear") }}</button></div>
+      <div class="bk-titlebar-mid"><h2 class="text-lg font-extrabold">{{ if $isEn }}Sort and filter{{ else }}排序与筛选{{ end }}</h2></div>
+      <div class="bk-titlebar-side"><button type="button" class="bk-icbtn" data-close="filter" aria-label="{{ if $isEn }}Close{{ else }}关闭{{ end }}">{{ partial "icon.html" (dict "name" "x-mark" "uid" "filter-x") }}</button></div>
     </div>
     <div id="filter-body" class="flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 pb-4"></div>
     <div class="shrink-0 px-5 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] border-t border-m-outline/30 bg-m-container-lowest flex gap-3">
@@ -98,11 +93,12 @@
   <div class="bk-overlay-backdrop absolute inset-0 bg-black/40" data-close="settings"></div>
   <div class="bk-panel bg-m-container-lowest text-m-on-surface shadow-2xl">
     <div class="sheet-handle"></div>
-    <div class="flex items-start justify-between px-5 pt-1">
-      <h2 class="text-lg font-extrabold">{{ if $isEn }}Library settings{{ else }}书库设置{{ end }}</h2>
-      <button type="button" class="bk-icbtn -mr-2 -mt-1" data-close="settings" aria-label="{{ if $isEn }}Close{{ else }}关闭{{ end }}">{{ partial "icon.html" (dict "name" "x-mark" "uid" "settings-x") }}</button>
+    <div class="bk-titlebar">
+      <div class="bk-titlebar-side" aria-hidden="true"></div>
+      <div class="bk-titlebar-mid"><h2 class="text-lg font-extrabold">{{ if $isEn }}Library settings{{ else }}书库设置{{ end }}</h2></div>
+      <div class="bk-titlebar-side"><button type="button" class="bk-icbtn" data-close="settings" aria-label="{{ if $isEn }}Close{{ else }}关闭{{ end }}">{{ partial "icon.html" (dict "name" "x-mark" "uid" "settings-x") }}</button></div>
     </div>
-    <div class="px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+    <div class="flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
       <p class="text-sm text-m-on-surface-variant mb-3 mt-2">{{ if $isEn }}Theme{{ else }}主题{{ end }}</p>
       <div class="flex flex-col" role="radiogroup" aria-label="{{ if $isEn }}Theme{{ else }}主题{{ end }}">
         <button type="button" class="sheet-opt text-[15px] bk-theme-opt" data-theme="system"><span class="flex-1">{{ if $isEn }}Follow system{{ else }}跟随系统{{ end }}</span><span class="bk-theme-check hidden">{{ partial "icon.html" (dict "name" "check" "uid" "theme-system") }}</span></button>
@@ -140,6 +136,10 @@
 {{ $adminBase := cond $isEn "/en/admin/" "/admin/" }}
 <script src="{{ (resources.Get "js/upload-queue.js" | minify | fingerprint).RelPermalink }}"></script>
 <script src="{{ (resources.Get "js/book-cover.js" | minify | fingerprint).RelPermalink }}"></script>
+{{/* 搜索胶囊键盘跟随 + 语音弹窗（移植主站 vk.js/capsule.js/voice-sheet.js 机制，ES module） */}}
+<script type="module" src="{{ (resources.Get "js/sgx/entry.js" | js.Build | minify | fingerprint).RelPermalink }}"></script>
+{{/* 语音弹窗文案（sgx-i18n-core 子集，主站同款键名） */}}
+<script id="sgx-i18n-core" type="application/json">{"vsAria":{"zh":"语音输入","en":"Voice input"},"vsClose":{"zh":"关闭","en":"Close"},"vsSpeak":{"zh":"立即说出","en":"Speak now"},"vsLang":{"zh":"中文（中国）","en":"English (US)"},"vsNoPerm":{"zh":"需要麦克风权限","en":"Microphone permission needed"},"vsRetry":{"zh":"没听清，点麦克风重试","en":"Didn't catch that, tap the mic to retry"}}</script>
 <script>
 (function(){
 "use strict";
@@ -383,48 +383,14 @@ async function runBackfill(){
   }catch(e){ toast(T.failed); }
 }
 
-/* ================= 底部搜索胶囊（主站同款：聚焦拉满宽，visualViewport 跟键盘） ================= */
-(function(){
-  var cap = document.getElementById('bk-cap');
-  var input = document.getElementById('bk-cap-input');
-  var mic = cap.querySelector('[data-mic]');
-  /* 麦克风：只检测 SpeechRecognition 接口是否存在，不支持则不显示 */
-  if('webkitSpeechRecognition' in window || 'SpeechRecognition' in window){
-    mic.style.display = '';
-  }
-  var searchTimer = null;
-  input.addEventListener('input', function(){
-    clearTimeout(searchTimer);
-    var v = this.value;
-    searchTimer = setTimeout(function(){ query = v.trim(); renderAll(); }, 150);
-  });
-  input.addEventListener('keydown', function(e){
-    if(e.key === 'Escape'){ input.blur(); }
-  });
-  /* 跟键盘：visualViewport 变化时把胶囊放到键盘上沿，收起时回落 */
-  function syncKb(){
-    if(!cap.classList.contains('open')) return;
-    var vv = window.visualViewport;
-    if(!vv) return;
-    var kbH = window.innerHeight - vv.height - vv.offsetTop;
-    if(kbH > 40){
-      cap.style.bottom = 'calc(' + Math.round(kbH) + 'px + 12px)';
-    }else{
-      cap.style.bottom = '';
-    }
-  }
-  input.addEventListener('focus', function(){
-    cap.classList.add('open');
-    setTimeout(syncKb, 350);
-  });
-  input.addEventListener('blur', function(){
-    cap.classList.remove('open');
-    cap.style.bottom = '';
-  });
-  if(window.visualViewport){
-    window.visualViewport.addEventListener('resize', syncKb);
-  }
-})();
+/* ================= 底部搜索胶囊（主站 capsule.js/vk.js 机制：键盘跟随 + 语音） =================
+   胶囊交互（聚焦拉满宽、键盘高度插值、blur 180ms 收起、麦克风语音）由 ES module
+   assets/js/sgx/shell/capsule-kb.js 接管（onKeyboardHeight + 宽度插值 + voice-sheet）。
+   这里只注册搜索回调：胶囊输入/语音识别完成后把 query 写回并重渲染书架。 */
+window.__bkCapSearchProvider = function(q){
+  query = String(q || '').trim();
+  renderAll();
+};
 
 /* ================= 筛选 ================= */
 function defaultSort(){ return owner ? 'recent' : 'added'; }
