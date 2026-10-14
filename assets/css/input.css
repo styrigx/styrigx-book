@@ -941,7 +941,10 @@ mark.smk{background:var(--m-primary-container);color:var(--m-on-primary-containe
 .bk-seg{display:flex;background:var(--m-container);border-radius:999px;padding:4px;gap:2px;margin-top:8px}
 .bk-seg-item{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;height:40px;border-radius:999px;font-size:13px;font-weight:600;color:var(--m-on-surface-variant)}
 .bk-seg-item.active{background:var(--m-container-lowest);color:var(--m-on-surface);box-shadow:0 1px 4px rgba(0,0,0,.12)}
-.bk-theme-active{font-weight:800;color:var(--m-primary)}
+/* 书库设置主题三项：与排序筛选行同一样式，三行完全一致；选中仅文字主色+对勾，无边框 */
+.bk-theme-opt{-webkit-appearance:none;appearance:none;background:transparent;border:0!important;border-radius:1rem}
+#settings-wrap .bk-theme-opt + .bk-theme-opt{border-top:0!important}
+.bk-theme-active{font-weight:800;color:var(--m-primary);-webkit-appearance:none;appearance:none;background:transparent;border:0!important}
 
 /* 主站同款页脚第二行（复用 styrigx-space 样式） */
 .sgx-powered{margin-top:4px;font-size:11px;line-height:1.5;text-align:center;color:color-mix(in srgb,var(--m-on-surface-variant) 62%,transparent)}
