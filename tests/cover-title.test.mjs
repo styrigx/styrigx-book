@@ -94,6 +94,21 @@ test('CSS：小封面单行省略（上传队列 48px 不裁省略号、不贴�
   assert.ok(rule[0].includes('width:100%'), '小封面标题应占满内容盒（不溢出内边距）');
 });
 
+test('CSS：上传队列小封面两行截断（48px，line-clamp:2，不贴边）', () => {
+  const css = fs.readFileSync(path.join(repoRoot, 'assets/css/input.css'), 'utf8');
+  const rule = css.match(/\.bk-gen-sm\.bk-gen-uq \.bk-gen-title\{[^}]*\}/);
+  assert.ok(rule, '应有 .bk-gen-sm.bk-gen-uq .bk-gen-title 规则（只改上传队列，书架条带 sm 不动）');
+  assert.ok(rule[0].includes('display:-webkit-box'), '上传队列小封面标题应 -webkit-box（多行截断）');
+  assert.ok(rule[0].includes('-webkit-line-clamp:2'), '上传队列小封面标题应 line-clamp:2（最多两行）');
+  assert.ok(rule[0].includes('-webkit-box-orient:vertical'), '上传队列小封面标题应 vertical');
+  assert.ok(!rule[0].includes('white-space:nowrap'), '上传队列小封面标题不应 nowrap（去掉单行）');
+  assert.ok(!rule[0].includes('text-overflow:ellipsis'), '上传队列小封面标题不应单行 text-overflow（省略号由 line-clamp 出）');
+  const pad = css.match(/\.bk-gen-uq\{[^}]*\}/);
+  assert.ok(pad, '应有 .bk-gen-uq 内边距规则');
+  assert.ok(pad[0].includes('padding-left:4px'), '上传队列小封面左右内边距 ≥4px（左）');
+  assert.ok(pad[0].includes('padding-right:4px'), '上传队列小封面左右内边距 ≥4px（右）');
+});
+
 test('括号保护：括号内标点后不插 <wbr>，右括号不独占一行', () => {
   const out = coverTitleHTML('三体（刘慈欣、著）');
   assert.equal(out, '三体<wbr>（刘慈欣、著）');
@@ -142,6 +157,16 @@ test('小封面标题无 <wbr>：sm 去断行点，保证单行省略（<wbr> �
   assert.ok(sm.includes('视觉测试示例书'), 'sm 标题应含完整书名');
   const md = genCoverHTML('视觉测试示例书', '', 'md');
   assert.ok(md.includes('<wbr>'), 'md 标题仍应含 <wbr>（多行排版需要断行点）');
+});
+
+test('上传队列小封面保留 <wbr>：uq 两行截断需要断行点（keep-all 下无 <wbr> 断不开）', () => {
+  const uq = genCoverHTML('视觉测试示例书', '', 'uq');
+  assert.ok(uq.includes('bk-gen-uq'), 'uq 应带 bk-gen-uq 类（只改上传队列，书架条带 sm 不动）');
+  assert.ok(uq.includes('<wbr>'), 'uq 标题应含 <wbr>（两行截断需要断行点，不加新的，只留 coverTitleHTML 已有的）');
+  assert.ok(uq.replace(/<wbr>/g, '').includes('视觉测试示例书'), 'uq 标题应含完整书名（除 <wbr> 后）');
+  assert.ok(!uq.includes('bk-gen-author'), 'uq 不显示作者');
+  const queueJs = fs.readFileSync(path.join(repoRoot, 'assets/js/upload-queue.js'), 'utf8');
+  assert.ok(queueJs.includes("genCoverHTML(item.title || item.file.name, '', 'uq')"), '上传队列应走 uq（两行截断），不再走 sm 单行');
 });
 
 test('统一风格：书架与上传队列共用同一套生成封面', () => {

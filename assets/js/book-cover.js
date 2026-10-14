@@ -11,7 +11,8 @@
  *
  * genCoverHTML(title, author, size)：生成封面共享渲染（书架 / 详情 /
  * FAB / 上传队列同一套：按书名哈希取色渐变 + 居中标题 + 作者）。
- * size: 'md'（书名+作者）| 'sm'（只书名）。
+ * size: 'md'（书名+作者）| 'sm'（只书名，单行省略，书架条带）|
+ *       'uq'（只书名，两行截断，上传队列 48px）。
  *
  * UMD：浏览器里挂 window.SgxBookCover，Node 测试里直接 require。
  */
@@ -102,14 +103,19 @@
   }
   function genCoverHTML(title, author, size) {
     var c = genColors(title);
-    var cls = size === 'sm' ? 'bk-gen bk-gen-sm' : 'bk-gen';
-    var authorHTML = (size !== 'sm' && author)
+    /* uq 带 bk-gen-sm（沿用 sm 的作者隐藏等），再加 bk-gen-uq 覆盖标题为两行截断；
+     * 书架条带仍走纯 sm（单行），不受 uq 影响。 */
+    var cls = size === 'sm' ? 'bk-gen bk-gen-sm'
+      : size === 'uq' ? 'bk-gen bk-gen-sm bk-gen-uq' : 'bk-gen';
+    var authorHTML = (size !== 'sm' && size !== 'uq' && author)
       ? '<span class="bk-gen-author">' + esc(author) + '</span>' : '';
-    /* 长串断行步长：sm 小封面行宽约 3 字 → 3；md 行宽约 5–6 字 → 5。 */
-    var maxRun = size === 'sm' ? 3 : 5;
+    /* 长串断行步长：sm / uq 小封面行宽约 3 字 → 3；md 行宽约 5–6 字 → 5。 */
+    var maxRun = (size === 'sm' || size === 'uq') ? 3 : 5;
     var titleHTML = coverTitleHTML(title, maxRun);
     /* sm 小封面单行省略（CSS white-space:nowrap）：<wbr> 在 Chromium 下即使 nowrap 也会断行，
-     * 多段标题会变成多行、超出封面高度被裁且无省略号；故 sm 去掉 <wbr>，保证真正一行 + 完整「…」。 */
+     * 多段标题会变成多行、超出封面高度被裁且无省略号；故 sm 去掉 <wbr>，保证真正一行 + 完整「…」。
+     * uq 两行截断（CSS line-clamp:2 + keep-all）需要 <wbr> 提供断行点，否则断不开；
+     * 故 uq 保留 coverTitleHTML 已有的 <wbr>（不加新的，避头尾规则照旧）。 */
     if (size === 'sm') titleHTML = titleHTML.replace(/<wbr>/g, '');
     return '<div class="' + cls + '" style="background:linear-gradient(160deg,' + c[0] + ',' + c[1] + ')">'
       + '<span class="bk-gen-title">' + titleHTML + '</span>' + authorHTML + '</div>';

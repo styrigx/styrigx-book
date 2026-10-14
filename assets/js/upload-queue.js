@@ -476,7 +476,7 @@ function coverThumb(item, sizeCls){
   var inner = item.coverURL
     ? '<img src="' + item.coverURL + '" alt="" class="w-full h-full object-cover">'
     : (window.SgxBookCover && window.SgxBookCover.genCoverHTML
-      ? window.SgxBookCover.genCoverHTML(item.title || item.file.name, '', 'sm')
+      ? window.SgxBookCover.genCoverHTML(item.title || item.file.name, '', 'uq')
       : '<div class="w-full h-full flex items-center justify-center bg-m-container text-m-on-surface-variant text-xl font-extrabold">' + esc(String(item.title || item.file.name).slice(0, 1)) + '</div>');
   return '<div class="' + sizeCls + ' bk-cover relative rounded-xl overflow-hidden bg-m-container flex-shrink-0">' + inner + '</div>';
 }

@@ -300,10 +300,10 @@ test('360 宽无横向溢出，长书名截断；390×844 首屏见书架第一�
   expect(trunc).toBe(true);
 });
 
-/* 上传队列 48px 小封面：长标题单行省略，完整「…」且不贴边（核查 §三.1）。
- * 根因：line-clamp + keep-all 在小尺寸下把「…」裁成一个点，且 4 字段溢出内边距。
- * 修复：.bk-gen-sm 单行 text-overflow:ellipsis（浏览器预留省略号宽度）。 */
-test('上传队列 48px 小封面：长标题单行省略，完整「…」且不贴边', async ({ page }) => {
+/* 上传队列 48px 小封面：长标题两行截断，完整「…」且不贴边（批复：小封面改两行截断）。
+ * 根因：单行 nowrap 在小尺寸下只显示约 3 字；两行 line-clamp 显示约 5–6 字 + 省略号。
+ * 修复：上传队列走 uq（display:-webkit-box + line-clamp:2），去掉 nowrap 和单行 text-overflow。 */
+test('上传队列 48px 小封面：长标题两行截断，完整「…」且不贴边', async ({ page }) => {
   await setup(page, { viewport: NARROW, owner: true });
   await gotoReady(page, '/admin/', '#adm-main:not(.hidden)');
   const { makeEpub } = require('./fixtures/file-fixtures.js');
@@ -322,29 +322,51 @@ test('上传队列 48px 小封面：长标题单行省略，完整「…」且�
     const tr = thumb.getBoundingClientRect();
     const r = title.getBoundingClientRect();
     const cs = getComputedStyle(title);
-    /* 真实排版行数：<wbr> 在 Chromium 下即使 nowrap 也会断行，故不能只看 computed style，
-     * 用 Range 矩形数数实际行数（每行一个矩形）。 */
-    const range = document.createRange();
-    range.selectNodeContents(title);
-    const tops = new Set([...range.getClientRects()].map(x => Math.round(x.top)));
     return {
       scrollW: title.scrollWidth, clientW: title.clientWidth,
+      height: r.height, lineH: parseFloat(cs.lineHeight),
+      fontSize: parseFloat(cs.fontSize),
+      display: cs.display, lineClamp: cs.webkitLineClamp, boxOrient: cs.webkitBoxOrient,
       whiteSpace: cs.whiteSpace, textOverflow: cs.textOverflow,
-      lineCount: tops.size,
       leftGap: r.left - tr.left, rightGap: tr.right - r.right,
     };
   });
-  /* 截断生效：内容长于盒子（scrollWidth > clientWidth，与书架网格标题断言同理）。
-   * 注意：核查原文「scrollWidth<=clientWidth」对截断标题不成立——scrollWidth 计的是
-   * 完整标题宽度，截断时必然大于盒宽；「不溢出」应以包围盒为准。
-   * 另：innerText 不含渲染出的「…」（省略号是视觉产物、非 DOM 字符），故用机制断言
-   * （单行 + ellipsis + 截断 + 包围盒）+ 截图目视「…」来证明。 */
-  expect(m.scrollW, '小封面标题应处于截断态（内容长于盒子，省略号生效）').toBeGreaterThan(m.clientW);
-  expect(m.whiteSpace, '小封面标题应单行').toBe('nowrap');
-  expect(m.textOverflow, '小封面标题应用省略号截断（浏览器预留省略号宽度，不裁成点）').toBe('ellipsis');
-  expect(m.lineCount, '小封面标题应真实只排一行（<wbr> 已去掉，不多行）').toBe(1);
+  /* 最多 2 行：高度 ≤ 2×行高（line-clamp 把元素高度钳在两行；Range 矩形数在 clamp 下
+   * 不可靠——被裁掉的第 3 行仍会出现在 Range 矩形里，故以元素高度为准）。 */
+  expect(m.height, '小封面标题最多排两行（高度 ≤ 2×行高）').toBeLessThanOrEqual(2 * m.lineH + 1);
+  /* line-clamp 生效：computed style 应为 clamp:2 + vertical，且去掉 nowrap。
+   * 注意：Chromium 把 display:-webkit-box 的 computed 值归一化为 flow-root，
+   * 故不断言 display，只断言 line-clamp / box-orient + 高度 ≤ 2×行高。 */
+  expect(m.lineClamp, '小封面标题应 line-clamp:2').toBe('2');
+  expect(m.boxOrient, '小封面标题应 vertical').toBe('vertical');
+  expect(m.whiteSpace, '小封面标题不应 nowrap（去掉单行）').not.toBe('nowrap');
+  /* 截断生效：内容宽于盒子（第 2 行超宽被裁，省略号生效）。 */
+  expect(m.scrollW, '小封面标题应处于截断态（内容宽于盒子，省略号生效）').toBeGreaterThan(m.clientW);
+  /* 字号下限 + 不贴边。 */
+  expect(m.fontSize, '小封面标题字号 ≥12px').toBeGreaterThanOrEqual(12);
   expect(m.leftGap, '标题左侧内边距 ≥4px').toBeGreaterThanOrEqual(4);
   expect(m.rightGap, '标题右侧内边距 ≥4px').toBeGreaterThanOrEqual(4);
+  /* 短标题不截断：注入一个短标题 uq 封面（同尺寸），应只排一行、不被裁。 */
+  const s = await page.evaluate(() => {
+    const wrap = document.createElement('div');
+    wrap.className = 'bk-cover relative';
+    wrap.style.cssText = 'position:fixed;top:0;left:0;width:48px;height:72px;opacity:0;pointer-events:none;';
+    wrap.innerHTML = window.SgxBookCover.genCoverHTML('短', '', 'uq');
+    document.body.appendChild(wrap);
+    const title = wrap.querySelector('.bk-gen-title');
+    const r = title.getBoundingClientRect();
+    const cs = getComputedStyle(title);
+    const out = {
+      height: r.height, lineH: parseFloat(cs.lineHeight),
+      scrollW: title.scrollWidth, clientW: title.clientWidth,
+      scrollH: title.scrollHeight, clientH: title.clientHeight,
+    };
+    wrap.remove();
+    return out;
+  });
+  expect(s.height, '短标题应只排一行').toBeLessThanOrEqual(s.lineH + 1);
+  expect(s.scrollW, '短标题不应被截断（内容不宽于盒子）').toBeLessThanOrEqual(s.clientW);
+  expect(s.scrollH, '短标题不应被裁（内容不高于盒子）').toBeLessThanOrEqual(s.clientH);
 });
 
 test('390×844 首屏见书架第一行', async ({ page }) => {
