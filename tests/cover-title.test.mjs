@@ -84,6 +84,16 @@ test('CSS：排版封面标题字号下限 12px（小封面不缩到 12px 以下
   assert.ok(rule[0].includes('max(12px,13cqw)'), '应为 max(12px,13cqw)，标题字号不得低于 12px');
 });
 
+test('CSS：小封面单行省略（上传队列 48px 不裁省略号、不贴边）', () => {
+  const css = fs.readFileSync(path.join(repoRoot, 'assets/css/input.css'), 'utf8');
+  const rule = css.match(/\.bk-gen-sm \.bk-gen-title\{[^}]*\}/);
+  assert.ok(rule, '应有 .bk-gen-sm .bk-gen-title 规则');
+  assert.ok(rule[0].includes('white-space:nowrap'), '小封面标题应单行');
+  assert.ok(rule[0].includes('text-overflow:ellipsis'), '小封面标题应省略号截断（浏览器预留省略号宽度，不裁成点）');
+  assert.ok(rule[0].includes('text-align:left'), '小封面标题应左对齐（从右截断，显示开头）');
+  assert.ok(rule[0].includes('width:100%'), '小封面标题应占满内容盒（不溢出内边距）');
+});
+
 test('括号保护：括号内标点后不插 <wbr>，右括号不独占一行', () => {
   const out = coverTitleHTML('三体（刘慈欣、著）');
   assert.equal(out, '三体<wbr>（刘慈欣、著）');
@@ -124,6 +134,14 @@ test('生成封面共享渲染：genCoverHTML 输出渐变 + 全标题 + 作者'
   assert.ok(html.includes('linear-gradient'), '应含渐变底色');
   const sm = genCoverHTML('了不起的盖茨比', 'F. Scott Fitzgerald', 'sm');
   assert.ok(!sm.includes('bk-gen-author'), 'sm 不显示作者');
+});
+
+test('小封面标题无 <wbr>：sm 去断行点，保证单行省略（<wbr> 在 Chromium 下即使 nowrap 也断行）', () => {
+  const sm = genCoverHTML('视觉测试示例书', '', 'sm');
+  assert.ok(!sm.includes('<wbr>'), 'sm 标题不应含 <wbr>，否则 nowrap 下仍会多行、超出被裁且无省略号');
+  assert.ok(sm.includes('视觉测试示例书'), 'sm 标题应含完整书名');
+  const md = genCoverHTML('视觉测试示例书', '', 'md');
+  assert.ok(md.includes('<wbr>'), 'md 标题仍应含 <wbr>（多行排版需要断行点）');
 });
 
 test('统一风格：书架与上传队列共用同一套生成封面', () => {

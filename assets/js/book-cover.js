@@ -107,8 +107,12 @@
       ? '<span class="bk-gen-author">' + esc(author) + '</span>' : '';
     /* 长串断行步长：sm 小封面行宽约 3 字 → 3；md 行宽约 5–6 字 → 5。 */
     var maxRun = size === 'sm' ? 3 : 5;
+    var titleHTML = coverTitleHTML(title, maxRun);
+    /* sm 小封面单行省略（CSS white-space:nowrap）：<wbr> 在 Chromium 下即使 nowrap 也会断行，
+     * 多段标题会变成多行、超出封面高度被裁且无省略号；故 sm 去掉 <wbr>，保证真正一行 + 完整「…」。 */
+    if (size === 'sm') titleHTML = titleHTML.replace(/<wbr>/g, '');
     return '<div class="' + cls + '" style="background:linear-gradient(160deg,' + c[0] + ',' + c[1] + ')">'
-      + '<span class="bk-gen-title">' + coverTitleHTML(title, maxRun) + '</span>' + authorHTML + '</div>';
+      + '<span class="bk-gen-title">' + titleHTML + '</span>' + authorHTML + '</div>';
   }
   return { coverTitleHTML: coverTitleHTML, genCoverHTML: genCoverHTML, genColors: genColors };
 });

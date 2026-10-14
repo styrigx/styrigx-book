@@ -300,6 +300,53 @@ test('360 宽无横向溢出，长书名截断；390×844 首屏见书架第一�
   expect(trunc).toBe(true);
 });
 
+/* 上传队列 48px 小封面：长标题单行省略，完整「…」且不贴边（核查 §三.1）。
+ * 根因：line-clamp + keep-all 在小尺寸下把「…」裁成一个点，且 4 字段溢出内边距。
+ * 修复：.bk-gen-sm 单行 text-overflow:ellipsis（浏览器预留省略号宽度）。 */
+test('上传队列 48px 小封面：长标题单行省略，完整「…」且不贴边', async ({ page }) => {
+  await setup(page, { viewport: NARROW, owner: true });
+  await gotoReady(page, '/admin/', '#adm-main:not(.hidden)');
+  const { makeEpub } = require('./fixtures/file-fixtures.js');
+  await page.setInputFiles('#adm-file', {
+    name: 'x.epub', mimeType: 'application/epub+zip', buffer: Buffer.from(makeEpub()),
+  });
+  await expect(page.locator('#adm-queue [data-q]')).toBeVisible({ timeout: 15000 });
+  await page.waitForFunction(() => {
+    const el = document.querySelector('#adm-queue [data-q] [data-status]');
+    return el && !el.textContent.includes('解析');
+  }, { timeout: 15000 });
+  await page.evaluate(() => document.fonts.ready);
+  const m = await page.evaluate(() => {
+    const thumb = document.querySelector('#adm-queue [data-q] .bk-cover');
+    const title = thumb.querySelector('.bk-gen-title');
+    const tr = thumb.getBoundingClientRect();
+    const r = title.getBoundingClientRect();
+    const cs = getComputedStyle(title);
+    /* 真实排版行数：<wbr> 在 Chromium 下即使 nowrap 也会断行，故不能只看 computed style，
+     * 用 Range 矩形数数实际行数（每行一个矩形）。 */
+    const range = document.createRange();
+    range.selectNodeContents(title);
+    const tops = new Set([...range.getClientRects()].map(x => Math.round(x.top)));
+    return {
+      scrollW: title.scrollWidth, clientW: title.clientWidth,
+      whiteSpace: cs.whiteSpace, textOverflow: cs.textOverflow,
+      lineCount: tops.size,
+      leftGap: r.left - tr.left, rightGap: tr.right - r.right,
+    };
+  });
+  /* 截断生效：内容长于盒子（scrollWidth > clientWidth，与书架网格标题断言同理）。
+   * 注意：核查原文「scrollWidth<=clientWidth」对截断标题不成立——scrollWidth 计的是
+   * 完整标题宽度，截断时必然大于盒宽；「不溢出」应以包围盒为准。
+   * 另：innerText 不含渲染出的「…」（省略号是视觉产物、非 DOM 字符），故用机制断言
+   * （单行 + ellipsis + 截断 + 包围盒）+ 截图目视「…」来证明。 */
+  expect(m.scrollW, '小封面标题应处于截断态（内容长于盒子，省略号生效）').toBeGreaterThan(m.clientW);
+  expect(m.whiteSpace, '小封面标题应单行').toBe('nowrap');
+  expect(m.textOverflow, '小封面标题应用省略号截断（浏览器预留省略号宽度，不裁成点）').toBe('ellipsis');
+  expect(m.lineCount, '小封面标题应真实只排一行（<wbr> 已去掉，不多行）').toBe(1);
+  expect(m.leftGap, '标题左侧内边距 ≥4px').toBeGreaterThanOrEqual(4);
+  expect(m.rightGap, '标题右侧内边距 ≥4px').toBeGreaterThanOrEqual(4);
+});
+
 test('390×844 首屏见书架第一行', async ({ page }) => {
   await setup(page, { viewport: MOBILE, owner: false });
   await gotoReady(page, '/', '#bk-grid:not(.hidden)');

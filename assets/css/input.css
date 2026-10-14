@@ -898,6 +898,11 @@ mark.smk{background:var(--m-primary-container);color:var(--m-on-primary-containe
 #bk-fab-thumb .bk-gen-title{display:none}
 #bk-fab-thumb .bk-gen{padding:4px}
 .bk-gen-sm .bk-gen-author{display:none}
+/* 小封面（上传队列 48px / 书架条带）：单行省略。line-clamp + keep-all 在小尺寸下
+ * 会把「…」裁成一个点（末行段 + 省略号超宽，keep-all 不许拆段让位），且 4 字段会
+ * 溢出内边距贴边。单行 text-overflow 由浏览器预留省略号宽度，保证完整「…」；
+ * text-align:left 保证从右截断、显示标题开头（居中会对齐导致左右都裁）。 */
+.bk-gen-sm .bk-gen-title{display:block;width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left}
 
 /* 封面角标（Owner 专属，封面右下）：百分比黑胶囊 / 已读绿勾圆 */
 .bk-badge{position:absolute;right:6px;bottom:6px;z-index:1}
