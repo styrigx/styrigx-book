@@ -179,3 +179,74 @@ for (const owner of [true, false]) {
     });
   });
 }
+
+/* ===== App 化 v1.1 新增：排序与筛选 / 书库设置弹层（360×800 浅/深） =====
+ * 断言：右上角有 ×；底部按钮不挡住「布局」选项；主题三项选中态一致。
+ * 截图进基线（待站长确认）。
+ */
+const SHEET_360 = { width: 360, height: 800 };
+
+async function openFilterSheet(page) {
+  await page.locator('#bk-filter-btn').click();
+  await expect(page.locator('#filter-wrap.open')).toHaveCount(1, { timeout: 10000 });
+  await page.evaluate(() => document.fonts.ready);
+}
+
+for (const theme of ['light', 'dark']) {
+  test(`sheet-filter-360-${theme}`, async ({ page }) => {
+    await setup(page, { viewport: SHEET_360, theme, owner: false });
+    await gotoReady(page, '/', '#bk-grid:not(.hidden)');
+    await waitShelfReady(page);
+    await openFilterSheet(page);
+    // 右上角 × 存在且可见
+    const closeBtn = page.locator('#filter-wrap [data-close="filter"].bk-icbtn');
+    await expect(closeBtn).toBeVisible();
+    // 底部按钮不挡住布局选项：两者 bounding box 不相交
+    const overlap = await page.evaluate(() => {
+      const seg = document.querySelector('#filter-body .bk-seg');
+      const bar = document.querySelector('#filter-wrap .shrink-0.flex.gap-3');
+      if (!seg || !bar) return 'missing';
+      const r1 = seg.getBoundingClientRect();
+      const r2 = bar.getBoundingClientRect();
+      const xOverlap = Math.max(0, Math.min(r1.right, r2.right) - Math.max(r1.left, r2.left));
+      const yOverlap = Math.max(0, Math.min(r1.bottom, r2.bottom) - Math.max(r1.top, r2.top));
+      return xOverlap * yOverlap;
+    });
+    expect(overlap, '底部按钮不应挡住布局选项').toBe(0);
+    await expect(page).toHaveScreenshot(`sheet-filter-360-${theme}.png`, {
+      fullPage: false,
+      animations: 'disabled',
+    });
+  });
+
+  test(`sheet-settings-360-${theme}`, async ({ page }) => {
+    await setup(page, { viewport: SHEET_360, theme, owner: false });
+    await gotoReady(page, '/', '#bk-grid:not(.hidden)');
+    await waitShelfReady(page);
+    await openFilterSheet(page);
+    await page.locator('#filter-gear').click();
+    await expect(page.locator('#settings-wrap.open')).toHaveCount(1, { timeout: 10000 });
+    await page.evaluate(() => document.fonts.ready);
+    // 右上角 × 存在且可见
+    const closeBtn = page.locator('#settings-wrap [data-close="settings"].bk-icbtn');
+    await expect(closeBtn).toBeVisible();
+    // 主题三项：同一行样式类，选中项有可见对勾
+    const themeState = await page.evaluate(() => {
+      const opts = [...document.querySelectorAll('#settings-wrap .bk-theme-opt')];
+      if (opts.length !== 3) return 'count:' + opts.length;
+      const cls = opts.map(o => o.className);
+      const sameBase = cls.every(c => c.includes('sheet-opt') && c.includes('bk-theme-opt'));
+      const checks = opts.map(o => {
+        const check = o.querySelector('.bk-theme-check');
+        return check ? !check.classList.contains('hidden') : 'missing';
+      });
+      return { sameBase, checks };
+    });
+    expect(themeState.sameBase, '主题三项应统一样式').toBe(true);
+    expect(themeState.checks.filter(Boolean).length, '应恰有一项选中').toBe(1);
+    await expect(page).toHaveScreenshot(`sheet-settings-360-${theme}.png`, {
+      fullPage: false,
+      animations: 'disabled',
+    });
+  });
+}

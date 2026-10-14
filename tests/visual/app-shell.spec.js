@@ -111,3 +111,24 @@ for (const theme of ['light', 'dark']) {
     await expect(h1).toBeGreaterThan(0);
   });
 }
+
+/* 上传页大字号复测：360 宽 + 文字缩放 130% / 150%（模拟三星浏览器大字号）。
+ * 用 CSS zoom 放大文字，断言仍无横向溢出。
+ */
+for (const theme of ['light', 'dark']) {
+  for (const zoom of [130, 150]) {
+    test(`app-shell-upload-zoom${zoom}-${theme}`, async ({ page }) => {
+      await setup(page, { theme, owner: true });
+      await gotoReady(page, '/admin/', '#adm-main:not(.hidden)');
+      // 模拟文字缩放：放大根字体
+      await page.evaluate((z) => {
+        document.documentElement.style.fontSize = (16 * z / 100) + 'px';
+      }, zoom);
+      await page.evaluate(() => document.fonts.ready);
+      await page.waitForTimeout(300);
+      const overflow = await page.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      expect(overflow, `文字缩放 ${zoom}% 时不应横向溢出`).toBeLessThanOrEqual(0);
+    });
+  }
+}
