@@ -98,13 +98,3 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: pages deploy public --project-name=styrigx-book --commit-dirty=true
-
-      - name: Deploy PR preview to Cloudflare Pages
-        if: github.event_name == 'pull_request'
-        uses: cloudflare/wrangler-action@v3
-        env:
-          BRANCH: ${{ github.head_ref }}
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy public --project-name=styrigx-book --branch="$BRANCH" --commit-dirty=true
