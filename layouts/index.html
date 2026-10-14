@@ -3,39 +3,14 @@
 {{ $shelfBase := cond $isEn "/en/book/" "/book/" }}
 {{ $readBase := cond $isEn "/en/read/" "/read/" }}
 {{ $adminBase := cond $isEn "/en/admin/" "/admin/" }}
-{{/* 3.0 书架首页：页头（书库 ▾ + 搜索/筛选/⋮）+ 胶囊 + 最近阅读/最近添加条 +
-   书架网格（列表/网格/大封面）+ 继续阅读 FAB + 详情弹层 + 筛选弹层。
+{{/* 3.0 书架首页：主站同款大标题（subpage-head，noBack）+ 胶囊 + 最近阅读/最近添加条 +
+   书架网格（列表/网格/大封面）+ 详情弹层 + 筛选弹层 + 底部搜索胶囊。
    PR 2 起的入口（收藏、阅读统计、书签与笔记、多选）不渲染。 */}}
+{{ $headActions := printf `%s%s` (printf `<button id="bk-filter-btn" type="button" class="bk-icbtn" aria-label="%s">%s</button>` (cond $isEn "Sort and filter" "排序与筛选") (partial "icon.html" (dict "name" "sliders" "uid" "head-filter"))) (printf `<button id="bk-menu-btn" type="button" class="bk-icbtn hidden" aria-label="%s"><svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg></button>` (cond $isEn "More" "更多")) }}
 <main id="bk-main" class="w-full max-w-7xl mx-auto px-4 sm:px-6 pb-6">
-  {{/* ===== 页头：书库 ▾ + 搜索 / 筛选 / ⋮ ===== */}}
-  <section class="relative flex items-center justify-between pt-2 pb-3">
-    <h1 class="min-w-0">
-      <button id="bk-group-btn" type="button" class="flex items-center gap-1 text-[26px] leading-none font-extrabold tracking-tight text-m-on-surface py-2 pr-2" aria-haspopup="menu" aria-expanded="false">
-        <span>{{ if $isEn }}Library{{ else }}书库{{ end }}</span>
-        <span class="text-[15px] text-m-on-surface-variant translate-y-[1px]">▾</span>
-      </button>
-    </h1>
-    <div class="flex items-center gap-0.5 shrink-0">
-      <button id="bk-search-btn" type="button" class="bk-icbtn" aria-label="{{ if $isEn }}Search{{ else }}搜索{{ end }}">{{ partial "icon.html" (dict "name" "search" "uid" "head-search") }}</button>
-      <button id="bk-filter-btn" type="button" class="bk-icbtn" aria-label="{{ if $isEn }}Sort and filter{{ else }}排序与筛选{{ end }}">{{ partial "icon.html" (dict "name" "sliders" "uid" "head-filter") }}</button>
-      <button id="bk-menu-btn" type="button" class="bk-icbtn hidden" aria-label="{{ if $isEn }}More{{ else }}更多{{ end }}">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg>
-      </button>
-    </div>
-    {{/* 分组下拉：全部书籍 / 在读（Owner）/ 主站书单 */}}
-    <div id="bk-group-menu" class="bk-menu hidden" role="menu"></div>
-    {{/* ⋮ 菜单：上传书籍 / 随机打开一本 / 为无封面的书提取封面 */}}
-    <div id="bk-more-menu" class="bk-menu hidden" role="menu"></div>
-  </section>
-
-  {{/* ===== 搜索条（点搜索图标展开） ===== */}}
-  <div id="bk-searchbar" class="hidden items-center gap-2 pb-3">
-    <div class="flex-1 flex items-center gap-2 rounded-full bg-m-container px-4 h-12">
-      {{ partial "icon.html" (dict "name" "search" "uid" "searchbar") }}
-      <input id="bk-search-input" type="search" class="flex-1 min-w-0 bg-transparent outline-none text-[15px] placeholder:text-m-on-surface-variant" placeholder="{{ if $isEn }}Search by title or author{{ else }}搜索书名或作者{{ end }}" autocomplete="off">
-    </div>
-    <button id="bk-search-close" type="button" class="bk-icbtn" aria-label="{{ if $isEn }}Close search{{ else }}关闭搜索{{ end }}">{{ partial "icon.html" (dict "name" "x-mark" "uid" "search-close") }}</button>
-  </div>
+  {{ partial "subpage-head.html" (dict "title" (cond $isEn "Library" "书库") "isEn" $isEn "noBack" true "actions" ($headActions | safeHTML)) }}
+  {{/* ⋮ 菜单：上传书籍 / 随机打开一本 / 为无封面的书提取封面 */}}
+  <div id="bk-more-menu" class="bk-menu hidden" role="menu"></div>
 
   {{/* ===== 选中条件胶囊 ===== */}}
   <div id="bk-chips" class="flex flex-wrap gap-2 pb-3"></div>
@@ -61,22 +36,17 @@
     {{/* 桌面右侧栏：仅最近阅读卡（PR 2 的统计/书签卡不渲染） */}}
     <aside id="bk-side" class="hidden lg:block w-[280px] shrink-0"></aside>
   </div>
-  {{/* FAB 占位：页面底部留 FAB 高度（56px）+ 16px 空白 */}}
-  <div id="bk-fab-spacer" class="hidden lg:hidden h-[72px]"></div>
 </main>
+<style>body:has(#bk-cap) footer{padding-bottom:calc(96px + env(safe-area-inset-bottom,0px))}</style>
 
-{{/* ===== 继续阅读 FAB（Owner，手机） ===== */}}
-<button id="bk-fab" type="button" class="hidden fixed z-40 right-4 bottom-4 lg:hidden" aria-label="">
-  <span id="bk-fab-expanded" class="flex items-center gap-3 rounded-full bg-m-primary text-m-on-primary shadow-lg pl-2 pr-5 py-2 max-w-[calc(100vw-2rem)]">
-    <span id="bk-fab-thumb" class="relative block w-10 h-[52px] shrink-0 rounded-lg overflow-hidden bg-m-container-high"></span>
-    <span class="min-w-0 text-left">
-      <span id="bk-fab-title" class="block truncate text-[15px] font-bold leading-tight"></span>
-      <span id="bk-fab-sub" class="block text-[13px] opacity-80 leading-tight mt-0.5"></span>
-    </span>
-  </span>
-  <span id="bk-fab-collapsed" class="hidden w-14 h-14 rounded-full bg-m-primary text-m-on-primary shadow-lg overflow-hidden items-center justify-center"></span>
-</button>
-<span id="bk-fab-icon" class="hidden">{{ partial "icon.html" (dict "name" "book-line" "uid" "fab") }}</span>
+{{/* ===== 底部搜索胶囊（主站「我的文件」同款：胶囊 + 麦克风，点击弹起跟键盘） ===== */}}
+<div id="bk-cap" class="bk-cap" role="search">
+  <svg class="bk-cap-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+  <input id="bk-cap-input" type="search" autocomplete="off" enterkeyhint="search" placeholder="{{ if $isEn }}Search by title or author{{ else }}搜索书名或作者{{ end }}" aria-label="{{ if $isEn }}Search books{{ else }}搜索书籍{{ end }}">
+  <button type="button" class="bk-cap-mic" data-mic aria-label="{{ if $isEn }}Voice search{{ else }}语音搜索{{ end }}" style="display:none">
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 15a3.5 3.5 0 0 0 3.5-3.5v-5a3.5 3.5 0 1 0-7 0v5A3.5 3.5 0 0 0 12 15zm6-3.5a6 6 0 0 1-12 0H4a8 8 0 0 0 7 7.94V22h2v-2.06A8 8 0 0 0 20 11.5h-2z"/></svg>
+  </button>
+</div>
 
 {{/* ===== 详情弹层（沿用 #sheet-wrap，顶部已有拖动条） ===== */}}
 <div id="sheet-wrap" class="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="{{ if $isEn }}Book details{{ else }}书籍详情{{ end }}">
@@ -96,9 +66,12 @@
     <div class="sheet-handle"></div>
     <div class="flex items-start justify-between px-5 pt-1">
       <h2 class="text-lg font-extrabold">{{ if $isEn }}Sort and filter{{ else }}排序与筛选{{ end }}</h2>
-      <button type="button" class="bk-icbtn -mr-2 -mt-1" id="filter-gear" aria-label="{{ if $isEn }}Library settings{{ else }}书库设置{{ end }}">{{ partial "icon.html" (dict "name" "gear" "uid" "filter-gear") }}</button>
+      <div class="flex items-center gap-1 -mr-2 -mt-1">
+        <button type="button" class="bk-icbtn" id="filter-gear" aria-label="{{ if $isEn }}Library settings{{ else }}书库设置{{ end }}">{{ partial "icon.html" (dict "name" "gear" "uid" "filter-gear") }}</button>
+        <button type="button" class="bk-icbtn" data-close="filter" aria-label="{{ if $isEn }}Close{{ else }}关闭{{ end }}">{{ partial "icon.html" (dict "name" "x-mark" "uid" "filter-x") }}</button>
+      </div>
     </div>
-    <div id="filter-body" class="overflow-y-auto overscroll-contain px-5 pb-4"></div>
+    <div id="filter-body" class="flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 pb-4"></div>
     <div class="shrink-0 px-5 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] border-t border-m-outline/30 bg-m-container-lowest flex gap-3">
       <button id="filter-clear" type="button" class="flex-1 h-12 rounded-full bg-m-container text-m-on-surface text-[15px] font-bold">{{ if $isEn }}Clear all{{ else }}清除全部{{ end }}</button>
       <button id="filter-done" type="button" class="flex-1 h-12 rounded-full bg-m-primary text-m-on-primary text-[15px] font-bold">{{ if $isEn }}Done{{ else }}完成{{ end }}</button>
@@ -125,15 +98,17 @@
   <div class="bk-overlay-backdrop absolute inset-0 bg-black/40" data-close="settings"></div>
   <div class="bk-panel bg-m-container-lowest text-m-on-surface shadow-2xl">
     <div class="sheet-handle"></div>
+    <div class="flex items-start justify-between px-5 pt-1">
+      <h2 class="text-lg font-extrabold">{{ if $isEn }}Library settings{{ else }}书库设置{{ end }}</h2>
+      <button type="button" class="bk-icbtn -mr-2 -mt-1" data-close="settings" aria-label="{{ if $isEn }}Close{{ else }}关闭{{ end }}">{{ partial "icon.html" (dict "name" "x-mark" "uid" "settings-x") }}</button>
+    </div>
     <div class="px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
-      <h2 class="text-lg font-extrabold mb-4">{{ if $isEn }}Library settings{{ else }}书库设置{{ end }}</h2>
-      <p class="text-sm text-m-on-surface-variant mb-3">{{ if $isEn }}Theme{{ else }}主题{{ end }}</p>
-      <div class="flex flex-col gap-1" role="radiogroup" aria-label="{{ if $isEn }}Theme{{ else }}主题{{ end }}">
-        <button type="button" class="sheet-opt text-[15px] bk-theme-opt" data-theme="system">{{ if $isEn }}Follow system{{ else }}跟随系统{{ end }}</button>
-        <button type="button" class="sheet-opt text-[15px] bk-theme-opt" data-theme="light">{{ if $isEn }}Light{{ else }}浅色{{ end }}</button>
-        <button type="button" class="sheet-opt text-[15px] bk-theme-opt" data-theme="dark">{{ if $isEn }}Dark{{ else }}深色{{ end }}</button>
+      <p class="text-sm text-m-on-surface-variant mb-3 mt-2">{{ if $isEn }}Theme{{ else }}主题{{ end }}</p>
+      <div class="flex flex-col" role="radiogroup" aria-label="{{ if $isEn }}Theme{{ else }}主题{{ end }}">
+        <button type="button" class="sheet-opt text-[15px] bk-theme-opt" data-theme="system"><span class="flex-1">{{ if $isEn }}Follow system{{ else }}跟随系统{{ end }}</span><span class="bk-theme-check hidden">{{ partial "icon.html" (dict "name" "check" "uid" "theme-system") }}</span></button>
+        <button type="button" class="sheet-opt text-[15px] bk-theme-opt" data-theme="light"><span class="flex-1">{{ if $isEn }}Light{{ else }}浅色{{ end }}</span><span class="bk-theme-check hidden">{{ partial "icon.html" (dict "name" "check" "uid" "theme-light") }}</span></button>
+        <button type="button" class="sheet-opt text-[15px] bk-theme-opt" data-theme="dark"><span class="flex-1">{{ if $isEn }}Dark{{ else }}深色{{ end }}</span><span class="bk-theme-check hidden">{{ partial "icon.html" (dict "name" "check" "uid" "theme-dark") }}</span></button>
       </div>
-      <button type="button" class="sheet-opt justify-center text-[15px] font-bold mt-2" data-close="settings">{{ if $isEn }}Close{{ else }}关闭{{ end }}</button>
     </div>
   </div>
 </div>
@@ -246,7 +221,6 @@ var query = '';
 var sheetBook = null;     // 详情弹层当前书
 var confirmCb = null;
 var toastTimer = null;
-var fabTimer = null;
 
 var H = window.SgxUploadQueue.helpers(isEn);
 var coverTitleHTML = window.SgxBookCover.coverTitleHTML;
@@ -347,12 +321,9 @@ function closeOverlay(id){
   }
 }
 function closeAllMenus(){
-  $('#bk-group-menu').classList.add('hidden');
   $('#bk-more-menu').classList.add('hidden');
-  $('#bk-group-btn').setAttribute('aria-expanded', 'false');
 }
 document.addEventListener('click', function(e){
-  if(!e.target.closest('#bk-group-menu') && !e.target.closest('#bk-group-btn')) closeAllMenus();
   if(!e.target.closest('#bk-more-menu') && !e.target.closest('#bk-menu-btn')) $('#bk-more-menu').classList.add('hidden');
 });
 document.addEventListener('keydown', function(e){
@@ -372,39 +343,6 @@ document.querySelectorAll('.bk-overlay-backdrop').forEach(function(bd){
 document.querySelectorAll('[data-close]').forEach(function(btn){
   if(btn.classList.contains('bk-overlay-backdrop')) return;
   btn.addEventListener('click', function(){ closeOverlay(btn.dataset.close + '-wrap'); });
-});
-
-/* ================= 分组下拉 ================= */
-function renderGroupMenu(){
-  var items = [
-    { key: 'all', label: T.all },
-    { key: 'shelf', label: T.shelf }
-  ];
-  if(owner) items.splice(1, 0, { key: 'reading', label: T.reading });
-  $('#bk-group-menu').innerHTML = items.map(function(it){
-    var check = it.key === group
-      ? '<span class="bk-menu-check">' + CHECK_SVG + '</span>' : '<span class="bk-menu-check"></span>';
-    return '<button type="button" class="bk-menu-item" data-group="' + it.key + '" role="menuitem">'
-      + check + '<span>' + esc(it.label) + '</span></button>';
-  }).join('');
-  $('#bk-group-menu').querySelectorAll('[data-group]').forEach(function(btn){
-    btn.addEventListener('click', function(){
-      group = btn.dataset.group;
-      closeAllMenus();
-      renderAll();
-    });
-  });
-}
-$('#bk-group-btn').addEventListener('click', function(e){
-  e.stopPropagation();
-  var menu = $('#bk-group-menu');
-  var willOpen = menu.classList.contains('hidden');
-  closeAllMenus();
-  if(willOpen){
-    renderGroupMenu();
-    menu.classList.remove('hidden');
-    $('#bk-group-btn').setAttribute('aria-expanded', 'true');
-  }
 });
 
 /* ================= ⋮ 菜单（Owner） ================= */
@@ -445,27 +383,48 @@ async function runBackfill(){
   }catch(e){ toast(T.failed); }
 }
 
-/* ================= 搜索 ================= */
-var searchTimer = null;
-function setSearchOpen(open){
-  var bar = $('#bk-searchbar');
-  bar.classList.toggle('hidden', !open);
-  bar.classList.toggle('flex', open);
-  if(open){ $('#bk-search-input').focus(); }
-  else { query = ''; $('#bk-search-input').value = ''; renderAll(); }
-}
-$('#bk-search-btn').addEventListener('click', function(){
-  setSearchOpen($('#bk-searchbar').classList.contains('hidden'));
-});
-$('#bk-search-close').addEventListener('click', function(){ setSearchOpen(false); });
-$('#bk-search-input').addEventListener('input', function(){
-  clearTimeout(searchTimer);
-  var v = this.value;
-  searchTimer = setTimeout(function(){ query = v.trim(); renderAll(); }, 150);
-});
-$('#bk-search-input').addEventListener('keydown', function(e){
-  if(e.key === 'Escape') setSearchOpen(false);
-});
+/* ================= 底部搜索胶囊（主站同款：聚焦拉满宽，visualViewport 跟键盘） ================= */
+(function(){
+  var cap = document.getElementById('bk-cap');
+  var input = document.getElementById('bk-cap-input');
+  var mic = cap.querySelector('[data-mic]');
+  /* 麦克风：只检测 SpeechRecognition 接口是否存在，不支持则不显示 */
+  if('webkitSpeechRecognition' in window || 'SpeechRecognition' in window){
+    mic.style.display = '';
+  }
+  var searchTimer = null;
+  input.addEventListener('input', function(){
+    clearTimeout(searchTimer);
+    var v = this.value;
+    searchTimer = setTimeout(function(){ query = v.trim(); renderAll(); }, 150);
+  });
+  input.addEventListener('keydown', function(e){
+    if(e.key === 'Escape'){ input.blur(); }
+  });
+  /* 跟键盘：visualViewport 变化时把胶囊放到键盘上沿，收起时回落 */
+  function syncKb(){
+    if(!cap.classList.contains('open')) return;
+    var vv = window.visualViewport;
+    if(!vv) return;
+    var kbH = window.innerHeight - vv.height - vv.offsetTop;
+    if(kbH > 40){
+      cap.style.bottom = 'calc(' + Math.round(kbH) + 'px + 12px)';
+    }else{
+      cap.style.bottom = '';
+    }
+  }
+  input.addEventListener('focus', function(){
+    cap.classList.add('open');
+    setTimeout(syncKb, 350);
+  });
+  input.addEventListener('blur', function(){
+    cap.classList.remove('open');
+    cap.style.bottom = '';
+  });
+  if(window.visualViewport){
+    window.visualViewport.addEventListener('resize', syncKb);
+  }
+})();
 
 /* ================= 筛选 ================= */
 function defaultSort(){ return owner ? 'recent' : 'added'; }
@@ -624,14 +583,20 @@ function applyTheme(mode){
   var dark = mode === 'dark' || (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
   document.documentElement.classList.toggle('dark', dark);
   document.querySelectorAll('.bk-theme-opt').forEach(function(btn){
-    btn.classList.toggle('bk-theme-active', btn.dataset.theme === mode);
+    var active = btn.dataset.theme === mode;
+    btn.classList.toggle('bk-theme-active', active);
+    var check = btn.querySelector('.bk-theme-check');
+    if(check) check.classList.toggle('hidden', !active);
   });
 }
 function openSettingsSheet(){
   var cur = 'system';
   try{ cur = localStorage.getItem('sgx-theme-mode') || 'system'; }catch(e){}
   document.querySelectorAll('.bk-theme-opt').forEach(function(btn){
-    btn.classList.toggle('bk-theme-active', btn.dataset.theme === cur);
+    var active = btn.dataset.theme === cur;
+    btn.classList.toggle('bk-theme-active', active);
+    var check = btn.querySelector('.bk-theme-check');
+    if(check) check.classList.toggle('hidden', !active);
   });
   openOverlay('settings-wrap');
 }
@@ -781,65 +746,6 @@ function renderStrip(){
     side.innerHTML = '';
   }
 }
-
-/* ================= 继续阅读 FAB ================= */
-function fabBook(){
-  var inProgress = books.filter(function(b){ return readState(b) === 'reading'; });
-  if(!inProgress.length) return null;
-  inProgress.sort(function(a, b){ return Number(b.progress_updated_at || 0) - Number(a.progress_updated_at || 0); });
-  return inProgress[0];
-}
-function renderFAB(){
-  var fab = $('#bk-fab');
-  var spacer = $('#bk-fab-spacer');
-  if(!owner){
-    fab.classList.add('hidden');
-    spacer.classList.add('hidden');
-    return;
-  }
-  var b = fabBook();
-  if(!b){
-    fab.classList.add('hidden');
-    spacer.classList.add('hidden');
-    return;
-  }
-  fab.classList.remove('hidden');
-  spacer.classList.remove('hidden');
-  var p = Math.round(pctOf(b) || 0);
-  fab.setAttribute('aria-label', (isEn ? 'Continue reading ' : '继续阅读 《') + b.title + (isEn ? '' : '》'));
-  fab.dataset.bookId = b.id;
-  $('#bk-fab-title').textContent = b.title;
-  $('#bk-fab-sub').textContent = T.continueReading + ' · ' + p + '%';
-  var url = coverUrl(b);
-  var thumb = $('#bk-fab-thumb');
-  thumb.innerHTML = url
-    ? coverImgHTML(url, b.title, b.author, 'sm', 'w-full h-full object-cover')
-    : genCoverHTML(b.title, b.author, 'sm');
-  var collapsed = $('#bk-fab-collapsed');
-  collapsed.innerHTML = url
-    ? coverImgHTML(url, b.title, b.author, 'sm', 'w-full h-full object-cover')
-    : '<span class="text-m-on-primary">' + $('#bk-fab-icon').innerHTML + '</span>';
-  setFabExpanded(true);
-}
-function setFabExpanded(expanded){
-  $('#bk-fab-expanded').classList.toggle('hidden', !expanded);
-  var c = $('#bk-fab-collapsed');
-  c.classList.toggle('hidden', expanded);
-  c.classList.toggle('flex', !expanded);
-}
-window.addEventListener('scroll', function(){
-  if($('#bk-fab').classList.contains('hidden')) return;
-  setFabExpanded(false);
-  clearTimeout(fabTimer);
-  fabTimer = setTimeout(function(){ setFabExpanded(true); }, 200);
-}, { passive: true });
-$('#bk-fab').addEventListener('click', function(){
-  var b = books.find(function(x){ return x.id === $('#bk-fab').dataset.bookId; });
-  if(!b) return;
-  /* 轻触进阅读器：封面放大过渡（减弱动效时改为淡入，见 .bk-fab-leaving） */
-  $('#bk-fab').classList.add('bk-fab-leaving');
-  setTimeout(function(){ window.location.href = readUrl(b); }, 200);
-});
 
 /* ================= 详情弹层 ================= */
 function closeSheet(){
@@ -1056,7 +962,6 @@ function renderAll(){
   renderChips();
   renderStrip();
   renderGrid();
-  renderFAB();
 }
 
 /* ================= 启动 ================= */

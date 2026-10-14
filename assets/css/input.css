@@ -245,10 +245,10 @@ footer { padding-bottom: calc(var(--dock-h) + env(safe-area-inset-bottom, 0px));
   padding-bottom:14px;
   -webkit-mask-image:linear-gradient(to bottom,#000 0%,#000 62%,transparent 100%);
   mask-image:linear-gradient(to bottom,#000 0%,#000 62%,transparent 100%)}
-.dark .layout-phone body.subpage-scrolled #site-nav{background:rgba(30,30,32,0.72)}
+.dark.layout-phone body.subpage-scrolled #site-nav{background:rgba(30,30,32,0.72)}
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .layout-phone body.subpage-scrolled #site-nav{background:#fff}
-  .dark .layout-phone body.subpage-scrolled #site-nav{background:#1e1e20}
+  .dark.layout-phone body.subpage-scrolled #site-nav{background:#1e1e20}
 }
 .layout-phone body.subpage-scrolled #nav-brand,
 .layout-phone body.subpage-scrolled #nav-time-center{opacity:0;pointer-events:none}
@@ -894,9 +894,6 @@ mark.smk{background:var(--m-primary-container);color:var(--m-on-primary-containe
  * 会把 FAB 缩略图标题撑到 46px 撑爆并被裁掉，故 cqw 只在 .bk-cover 内生效 */
 .bk-cover .bk-gen-title{font-size:max(12px,13cqw)}
 .bk-cover .bk-gen-author{font-size:10cqw}
-/* FAB 缩略图 40×52 太小放不下标题：只留渐变底色，书名由旁边的 FAB 标题承载 */
-#bk-fab-thumb .bk-gen-title{display:none}
-#bk-fab-thumb .bk-gen{padding:4px}
 .bk-gen-sm .bk-gen-author{display:none}
 /* 小封面（书架条带）：单行省略。line-clamp + keep-all 在小尺寸下
  * 会把「…」裁成一个点（末行段 + 省略号超宽，keep-all 不许拆段让位），且 4 字段会
@@ -944,12 +941,28 @@ mark.smk{background:var(--m-primary-container);color:var(--m-on-primary-containe
 .bk-seg{display:flex;background:var(--m-container);border-radius:999px;padding:4px;gap:2px;margin-top:8px}
 .bk-seg-item{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;height:40px;border-radius:999px;font-size:13px;font-weight:600;color:var(--m-on-surface-variant)}
 .bk-seg-item.active{background:var(--m-container-lowest);color:var(--m-on-surface);box-shadow:0 1px 4px rgba(0,0,0,.12)}
-.bk-theme-active{font-weight:800;color:var(--m-primary)}
+/* 书库设置主题三项：与排序筛选行同一样式，三行完全一致；选中仅文字主色+对勾，无边框 */
+.bk-theme-opt{-webkit-appearance:none;appearance:none;background:transparent;border:0!important;border-radius:1rem}
+#settings-wrap .bk-theme-opt + .bk-theme-opt{border-top:0!important}
+.bk-theme-active{font-weight:800;color:var(--m-primary);-webkit-appearance:none;appearance:none;background:transparent;border:0!important}
 
-/* FAB 离场过渡：封面放大 + 淡出；减弱动效时只淡入/淡出 */
-#bk-fab{transition:transform .2s ease,opacity .2s ease}
-#bk-fab.bk-fab-leaving{transform:scale(1.06);opacity:0}
-@media (prefers-reduced-motion: reduce){
-  #bk-fab{transition:opacity .2s ease}
-  #bk-fab.bk-fab-leaving{transform:none;opacity:0}
-}
+/* 主站同款页脚第二行（复用 styrigx-space 样式） */
+.sgx-powered{margin-top:4px;font-size:11px;line-height:1.5;text-align:center;color:color-mix(in srgb,var(--m-on-surface-variant) 62%,transparent)}
+
+/* 底部搜索胶囊（主站「我的文件」同款：平时底部窄胶囊，聚焦时拉满宽跟键盘上沿） */
+.bk-cap{position:fixed;left:50%;transform:translateX(-50%);z-index:41;bottom:calc(12px + env(safe-area-inset-bottom,0px));display:flex;align-items:center;gap:10px;height:56px;border-radius:999px;padding:0 20px;width:min(64vw,300px);background:var(--m-container-lowest);border:1px solid var(--m-outline);box-shadow:0 8px 24px -8px rgba(0,0,0,.25);transition:width .25s ease,left .25s ease,right .25s ease,transform .25s ease,border-radius .25s ease}
+.bk-cap input{flex:1;min-width:0;background:transparent;border:0;outline:none;font-size:17px;color:var(--m-on-surface);padding:0}
+.bk-cap input::placeholder{color:var(--m-on-surface-variant)}
+.bk-cap.open{left:16px;right:16px;transform:none;width:auto;border-radius:28px}
+.bk-cap-ic{width:22px;height:22px;flex-shrink:0;color:var(--m-on-surface-variant)}
+.bk-cap-mic{display:inline-flex;align-items:center;justify-content:center;background:none;border:0;padding:0;margin:0;cursor:pointer;color:var(--m-on-surface-variant);flex-shrink:0}
+.bk-cap-mic svg{width:22px;height:22px;display:block}
+@media (prefers-reduced-motion: reduce){.bk-cap{transition:none}}
+
+/* 主题选项选中态：右侧对勾（与行样式统一） */
+.bk-theme-check{color:var(--m-primary);flex-shrink:0}
+.bk-theme-check svg{width:20px;height:20px;display:block}
+
+/* 底部弹层固定高度：打开时不随内容跳动（六.2） */
+.layout-phone #filter-wrap .bk-panel,.layout-phone #settings-wrap .bk-panel{height:min(72vh,560px)}
+.layout-dex #filter-wrap .bk-panel,.layout-dex #settings-wrap .bk-panel{height:min(72vh,560px)}

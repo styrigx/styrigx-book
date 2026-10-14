@@ -397,15 +397,13 @@ await test('前端：上传中途被拒直接跳转（不弹 confirm）', () => 
   assert.ok(src.includes('授权已失效，请重新授权'), '应有中文提示文案');
 });
 
-/* 前端：visitor 不渲染继续阅读 FAB 入口（3.0：上传 FAB 已删除，FAB 改为继续阅读） */
+/* 前端：继续阅读 FAB 已删除（App 化 v1.1：与底部搜索栏冲突，入口保留在「最近阅读」） */
 import { readFileSync } from 'node:fs';
-await test('前端：继续阅读 FAB 默认隐藏，仅 owner 显示', () => {
+await test('前端：继续阅读 FAB 已删除', () => {
   const idxHtml = readFileSync(new URL('../layouts/index.html', import.meta.url), 'utf8');
-  // FAB 默认有 hidden 类
-  assert.ok(idxHtml.includes('id="bk-fab"'));
-  assert.ok(/id="bk-fab"[^>]*class="[^"]*hidden/.test(idxHtml), 'FAB 应默认隐藏');
-  // renderFAB 非 owner 时隐藏
-  assert.ok(idxHtml.includes('if(!owner)'), '应根据 owner 状态控制 FAB 显示');
+  // FAB 已删除：DOM 中不应存在
+  assert.ok(!idxHtml.includes('id="bk-fab"'), 'FAB 应已删除');
+  assert.ok(!idxHtml.includes('renderFAB'), 'renderFAB 应已删除');
 });
 
 await test('前端：无上传 FAB（上传入口在 ⋮ 菜单与空状态）', () => {

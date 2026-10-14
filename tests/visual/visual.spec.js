@@ -51,12 +51,71 @@ const SHELF = [
   ['shelf-desktop-light', DESKTOP, 'light'],
   ['shelf-desktop-dark', DESKTOP, 'dark'],
 ];
+/* Gray 要求：书库首页 360×800 浅/深（现有只有 390 宽） */
+const MOBILE_360 = { width: 360, height: 800 };
+const SHELF_360 = [
+  ['shelf-360-light', MOBILE_360, 'light'],
+  ['shelf-360-dark', MOBILE_360, 'dark'],
+];
 for (const [name, viewport, theme] of SHELF) {
   test(name, async ({ page }) => {
     await setup(page, { viewport, theme, owner: false });
     await gotoReady(page, '/', '#bk-grid:not(.hidden)');
     await waitShelfReady(page);
     await expect(page).toHaveScreenshot(`${name}.png`, {
+      fullPage: false,
+      animations: 'disabled',
+    });
+  });
+}
+for (const [name, viewport, theme] of SHELF_360) {
+  test(name, async ({ page }) => {
+    await setup(page, { viewport, theme, owner: false });
+    await gotoReady(page, '/', '#bk-grid:not(.hidden)');
+    await waitShelfReady(page);
+    await expect(page).toHaveScreenshot(`${name}.png`, {
+      fullPage: false,
+      animations: 'disabled',
+    });
+  });
+}
+/* Gray 要求：首页滚到底，最后一排书和两行页脚完整露在搜索胶囊上方 */
+for (const theme of ['light', 'dark']) {
+  test(`shelf-360-bottom-${theme}`, async ({ page }) => {
+    await setup(page, { viewport: MOBILE_360, theme, owner: false });
+    await gotoReady(page, '/', '#bk-grid:not(.hidden)');
+    await waitShelfReady(page);
+    // 滚到底
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await page.waitForTimeout(500);
+    await page.evaluate(() => document.fonts.ready);
+    // 断言：页脚文字下边缘 ≤ 搜索胶囊上边缘（不被挡住）
+    const overlap = await page.evaluate(() => {
+      const footerText = document.querySelector('footer .sgx-powered');
+      const cap = document.querySelector('.bk-cap');
+      if (!footerText || !cap) return { footerText: !!footerText, cap: !!cap };
+      const fr = footerText.getBoundingClientRect();
+      const cr = cap.getBoundingClientRect();
+      return {
+        footerBottom: fr.bottom,
+        capTop: cr.top,
+        ok: fr.bottom <= cr.top,
+      };
+    });
+    expect(overlap.ok, `页脚文字下边缘(${overlap.footerBottom})应≤胶囊上边缘(${overlap.capTop})`).toBe(true);
+    // Gray 要求：深色滚动后顶栏背景色与页面深色背景一致（不能是浅色遮罩）
+    if (theme === 'dark') {
+      const topbarBg = await page.evaluate(() => {
+        const nav = document.querySelector('#site-nav');
+        const bodyBg = getComputedStyle(document.body).backgroundColor;
+        const navBg = nav ? getComputedStyle(nav).backgroundColor : 'missing';
+        return { navBg, bodyBg };
+      });
+      // 顶栏是半透明毛玻璃（rgba 0.72），不能是浅色（255,255,255）
+      expect(topbarBg.navBg, `深色顶栏背景应为深色，不能是浅色: ${topbarBg.navBg}`).not.toContain('255, 255, 255');
+      expect(topbarBg.navBg, `深色顶栏背景应为深色: ${topbarBg.navBg}`).toMatch(/rgba?\(30,\s*30,\s*32/);
+    }
+    await expect(page).toHaveScreenshot(`shelf-360-bottom-${theme}.png`, {
       fullPage: false,
       animations: 'disabled',
     });
@@ -85,6 +144,18 @@ test('admin-upload', async ({ page }) => {
     animations: 'disabled',
   });
 });
+
+/* Gray 要求：上传页 360×800 浅/深（现有只有 390 宽） */
+for (const theme of ['light', 'dark']) {
+  test(`admin-upload-360-${theme}`, async ({ page }) => {
+    await setup(page, { viewport: MOBILE_360, theme, owner: true });
+    await gotoReady(page, '/admin/', '#adm-main:not(.hidden)');
+    await expect(page).toHaveScreenshot(`admin-upload-360-${theme}.png`, {
+      fullPage: false,
+      animations: 'disabled',
+    });
+  });
+}
 
 /* 管理页：选中长书名文件后（手机宽度），断言无横向溢出 */
 test('admin-upload-longname', async ({ page }) => {
@@ -174,6 +245,107 @@ for (const owner of [true, false]) {
     await setup(page, { viewport: MOBILE, theme: 'light', owner, books: [] });
     await gotoReady(page, '/', '#bk-empty:not(.hidden)');
     await expect(page).toHaveScreenshot(`${name}.png`, {
+      fullPage: false,
+      animations: 'disabled',
+    });
+  });
+}
+
+/* ===== App 化 v1.1 新增：排序与筛选 / 书库设置弹层（360×800 浅/深） =====
+ * 断言：右上角有 ×；底部按钮不挡住「布局」选项；主题三项选中态一致。
+ * 截图进基线（待站长确认）。
+ */
+const SHEET_360 = { width: 360, height: 800 };
+
+async function openFilterSheet(page) {
+  await page.locator('#bk-filter-btn').click();
+  await expect(page.locator('#filter-wrap.open')).toHaveCount(1, { timeout: 10000 });
+  await page.evaluate(() => document.fonts.ready);
+}
+
+for (const theme of ['light', 'dark']) {
+  test(`sheet-filter-360-${theme}`, async ({ page }) => {
+    await setup(page, { viewport: SHEET_360, theme, owner: false });
+    await gotoReady(page, '/', '#bk-grid:not(.hidden)');
+    await waitShelfReady(page);
+    await openFilterSheet(page);
+    // 右上角 × 存在且可见
+    const closeBtn = page.locator('#filter-wrap [data-close="filter"].bk-icbtn');
+    await expect(closeBtn).toBeVisible();
+    // 底部按钮不挡住布局选项：两者 bounding box 不相交
+    const overlap = await page.evaluate(() => {
+      const seg = document.querySelector('#filter-body .bk-seg');
+      const bar = document.querySelector('#filter-wrap .shrink-0.flex.gap-3');
+      if (!seg || !bar) return 'missing';
+      const r1 = seg.getBoundingClientRect();
+      const r2 = bar.getBoundingClientRect();
+      const xOverlap = Math.max(0, Math.min(r1.right, r2.right) - Math.max(r1.left, r2.left));
+      const yOverlap = Math.max(0, Math.min(r1.bottom, r2.bottom) - Math.max(r1.top, r2.top));
+      return xOverlap * yOverlap;
+    });
+    expect(overlap, '底部按钮不应挡住布局选项').toBe(0);
+    await expect(page).toHaveScreenshot(`sheet-filter-360-${theme}.png`, {
+      fullPage: false,
+      animations: 'disabled',
+    });
+  });
+
+  test(`sheet-settings-360-${theme}`, async ({ page }) => {
+    await setup(page, { viewport: SHEET_360, theme, owner: false });
+    await gotoReady(page, '/', '#bk-grid:not(.hidden)');
+    await waitShelfReady(page);
+    await openFilterSheet(page);
+    await page.locator('#filter-gear').click();
+    await expect(page.locator('#settings-wrap.open')).toHaveCount(1, { timeout: 10000 });
+    await page.evaluate(() => document.fonts.ready);
+    // 右上角 × 存在且可见
+    const closeBtn = page.locator('#settings-wrap [data-close="settings"].bk-icbtn');
+    await expect(closeBtn).toBeVisible();
+    // 主题三项：同一行样式类，选中项有可见对勾；三行边框/背景计算值完全相同
+    const themeState = await page.evaluate(() => {
+      const opts = [...document.querySelectorAll('#settings-wrap .bk-theme-opt')];
+      if (opts.length !== 3) return 'count:' + opts.length;
+      const cls = opts.map(o => o.className);
+      const sameBase = cls.every(c => c.includes('sheet-opt') && c.includes('bk-theme-opt'));
+      const checks = opts.map(o => {
+        const check = o.querySelector('.bk-theme-check');
+        return check ? !check.classList.contains('hidden') : 'missing';
+      });
+      // Gray 要求：三行在浅色和深色下，四边 border 宽度、box-shadow、outline、background
+      // 的计算值全部相同；并检查 ::before/::after（选中仅文字主色+对勾，不加边框）
+      const styles = opts.map(o => {
+        const s = getComputedStyle(o);
+        const before = getComputedStyle(o, '::before');
+        const after = getComputedStyle(o, '::after');
+        return {
+          bg: s.backgroundColor,
+          btw: s.borderTopWidth, brw: s.borderRightWidth,
+          bbw: s.borderBottomWidth, blw: s.borderLeftWidth,
+          bts: s.borderTopStyle,
+          shadow: s.boxShadow,
+          olw: s.outlineWidth, ols: s.outlineStyle,
+          beforeBg: before.backgroundColor, beforeBw: before.borderTopWidth,
+          beforeShadow: before.boxShadow, beforeContent: before.content,
+          afterBg: after.backgroundColor, afterBw: after.borderTopWidth,
+          afterShadow: after.boxShadow, afterContent: after.content,
+        };
+      });
+      const sameStyle = styles.every(st =>
+        st.bg === styles[0].bg && st.btw === styles[0].btw &&
+        st.brw === styles[0].brw && st.bbw === styles[0].bbw &&
+        st.blw === styles[0].blw && st.bts === styles[0].bts &&
+        st.shadow === styles[0].shadow &&
+        st.olw === styles[0].olw && st.ols === styles[0].ols &&
+        st.beforeBg === styles[0].beforeBg && st.beforeBw === styles[0].beforeBw &&
+        st.beforeShadow === styles[0].beforeShadow && st.beforeContent === styles[0].beforeContent &&
+        st.afterBg === styles[0].afterBg && st.afterBw === styles[0].afterBw &&
+        st.afterShadow === styles[0].afterShadow && st.afterContent === styles[0].afterContent);
+      return { sameBase, checks, sameStyle, styles };
+    });
+    expect(themeState.sameBase, '主题三项应统一样式').toBe(true);
+    expect(themeState.checks.filter(Boolean).length, '应恰有一项选中').toBe(1);
+    expect(themeState.sameStyle, '三行边框/背景计算值应完全相同: ' + JSON.stringify(themeState.styles)).toBe(true);
+    await expect(page).toHaveScreenshot(`sheet-settings-360-${theme}.png`, {
       fullPage: false,
       animations: 'disabled',
     });

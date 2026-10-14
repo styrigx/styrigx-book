@@ -48,11 +48,17 @@ async function assertReaderLoaded(page) {
   await expect(page.locator('body')).not.toContainText('页面不存在', { timeout: 10000 });
 }
 
-test('悬浮条：点继续阅读进入 /read/，不是 /%22/read/%22', async ({ page }) => {
+test('最近阅读：点继续阅读进入 /read/，不是 /%22/read/%22', async ({ page }) => {
+  /* App 化 v1.1：悬浮条已删除，继续阅读入口在「最近阅读」条 */
   await setup(page);
-  const fab = page.locator('#bk-fab:not(.hidden)');
-  await expect(fab).toBeVisible({ timeout: 10000 });
-  await fab.click();
+  const stripItem = page.locator('#bk-strip [data-book]').first();
+  await expect(stripItem).toBeVisible({ timeout: 10000 });
+  await stripItem.click();
+  const sheet = page.locator('#sheet-wrap.open');
+  await expect(sheet.first()).toBeVisible({ timeout: 10000 });
+  // 点详情弹层的继续阅读链接（<a> 标签）
+  const continueLink = sheet.locator('a:has-text("继续阅读"), a:has-text("Continue"), a:has-text("开始阅读"), a:has-text("Start")').first();
+  await continueLink.click();
   await page.waitForURL('**/read/**', { timeout: 10000 });
   assertReaderUrl(page);
   await assertReaderLoaded(page);

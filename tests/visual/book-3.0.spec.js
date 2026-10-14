@@ -93,7 +93,8 @@ test('visitor：公开书 ≥ 8 本时显示最近添加条（5 本，无角标�
   await expect(page.locator('#bk-strip .bk-badge')).toHaveCount(0);
 });
 
-test('owner：角标（42% 胶囊 / 已读勾）+ 最近阅读条 5 本 + FAB（最近在读 pdf2）+ ⋮ 菜单 3 项；不逐本查进度', async ({ page }) => {
+test('owner：角标（42% 胶囊 / 已读勾）+ 最近阅读条 5 本 + ⋮ 菜单 3 项；不逐本查进度', async ({ page }) => {
+  /* App 化 v1.1：FAB 已删除（与底部搜索栏冲突），入口保留在「最近阅读」 */
   const progressHits = await trackProgressRequests(page);
   await setup(page, { viewport: MOBILE, owner: true, books: OWNER_BOOKS });
   await gotoReady(page, '/', '#bk-grid:not(.hidden)');
@@ -111,31 +112,8 @@ test('owner：角标（42% 胶囊 / 已读勾）+ 最近阅读条 5 本 + FAB（
   await expect(page.locator('#bk-strip [data-book="epub2"]')).toContainText('未读');
   await expect(page.locator('#bk-strip [data-book="pdf1"]')).toContainText('已读');
 
-  /* FAB：最近一本在读是 pdf2（无封面 → 收起态显示书本图标，aria-label 带书名） */
-  const fab = page.locator('#bk-fab:not(.hidden)');
-  await expect(fab).toHaveCount(1);
-  await expect(fab).toHaveAttribute('aria-label', '继续阅读 《塞尔达传说：旷野之息设定集》');
-  await expect(page.locator('#bk-fab-title')).toHaveText('塞尔达传说：旷野之息设定集');
-  await expect(page.locator('#bk-fab-sub')).toContainText('继续阅读 · 2%');
-  /* FAB 展开态：小封面可见（排版封面被包在缩略图内，不再铺满整个 FAB） */
-  const thumbBox = await page.locator('#bk-fab-thumb').boundingBox();
-  const genBox = await page.locator('#bk-fab-thumb .bk-gen').boundingBox();
-  expect(thumbBox).not.toBeNull();
-  expect(genBox).not.toBeNull();
-  expect(genBox.width).toBeLessThanOrEqual(thumbBox.width + 1);
-  expect(genBox.height).toBeLessThanOrEqual(thumbBox.height + 1);
-  /* FAB 收起态：滚动时缩成 56px 圆钮（只留书本图标），停下恢复展开 */
-  await page.evaluate(() => window.scrollTo(0, 300));
-  expect(await page.evaluate(() => !document.querySelector('#bk-fab-collapsed').classList.contains('hidden'))).toBe(true);
-  const collapsedBox = await page.locator('#bk-fab-collapsed:not(.hidden)').boundingBox();
-  expect(collapsedBox).not.toBeNull();
-  expect(collapsedBox.width).toBe(56);
-  expect(collapsedBox.height).toBe(56);
-  await page.waitForFunction(() => {
-    const c = document.querySelector('#bk-fab-collapsed');
-    return c && c.classList.contains('hidden');
-  }, { timeout: 5000 });
-  await expect(page.locator('#bk-fab-expanded:not(.hidden)')).toHaveCount(1);
+  /* FAB 已删除 */
+  await expect(page.locator('#bk-fab')).toHaveCount(0);
 
   /* ⋮ 菜单：3 项文字 */
   await page.locator('#bk-menu-btn').click();
@@ -148,24 +126,25 @@ test('owner：角标（42% 胶囊 / 已读勾）+ 最近阅读条 5 本 + FAB（
   expect(progressHits).toEqual([]);
 });
 
-test('owner：分组切换（全部 / 在读 / 主站书单）', async ({ page }) => {
-  await setup(page, { viewport: MOBILE, owner: true, books: OWNER_BOOKS });
-  await gotoReady(page, '/', '#bk-grid:not(.hidden)');
-  await waitShelf(page);
-
-  await page.locator('#bk-group-btn').click();
-  const menu = page.locator('#bk-group-menu:not(.hidden)');
-  await expect(menu).toContainText('全部书籍');
-  await expect(menu).toContainText('在读');
-  await expect(menu).toContainText('主站书单');
-
-  await menu.locator('[data-group="reading"]').click();
-  await expect(page.locator('#bk-grid [data-book]')).toHaveCount(3); // epub1/pdf2/epub4
-
-  await page.locator('#bk-group-btn').click();
-  await page.locator('#bk-group-menu [data-group="shelf"]').click();
-  await expect(page.locator('#bk-grid [data-book]')).toHaveCount(5); // epub3 不上书单
-});
+/* App 化 v1.1：分组下拉（#bk-group-btn）已删除，测试作废 */
+// test('owner：分组切换（全部 / 在读 / 主站书单）', async ({ page }) => {
+//   await setup(page, { viewport: MOBILE, owner: true, books: OWNER_BOOKS });
+//   await gotoReady(page, '/', '#bk-grid:not(.hidden)');
+//   await waitShelf(page);
+//
+//   await page.locator('#bk-group-btn').click();
+//   const menu = page.locator('#bk-group-menu:not(.hidden)');
+//   await expect(menu).toContainText('全部书籍');
+//   await expect(menu).toContainText('在读');
+//   await expect(menu).toContainText('主站书单');
+//
+//   await menu.locator('[data-group="reading"]').click();
+//   await expect(page.locator('#bk-grid [data-book]')).toHaveCount(3); // epub1/pdf2/epub4
+//
+//   await page.locator('#bk-group-btn').click();
+//   await page.locator('#bk-group-menu [data-group="shelf"]').click();
+//   await expect(page.locator('#bk-grid [data-book]')).toHaveCount(5); // epub3 不上书单
+// });
 
 test('owner：筛选弹层（排序单选 + 状态多选 + 布局三段式 + 格式复选）+ 胶囊清除 + 清除全部', async ({ page }) => {
   await setup(page, { viewport: MOBILE, owner: true, books: OWNER_BOOKS });
@@ -384,11 +363,12 @@ test('搜索：按书名/作者过滤，150ms 防抖', async ({ page }) => {
   await gotoReady(page, '/', '#bk-grid:not(.hidden)');
   await waitShelf(page);
 
-  await page.locator('#bk-search-btn').click();
-  await expect(page.locator('#bk-searchbar:not(.hidden)')).toHaveCount(1);
-  await page.locator('#bk-search-input').fill('盖茨比');
+  /* App 化 v1.1：底部搜索胶囊（#bk-cap-input），聚焦展开 */
+  await page.locator('#bk-cap-input').click();
+  await expect(page.locator('#bk-cap.open')).toHaveCount(1);
+  await page.locator('#bk-cap-input').fill('盖茨比');
   await expect(page.locator('#bk-grid [data-book]')).toHaveCount(1, { timeout: 10000 });
-  await page.locator('#bk-search-close').click();
+  await page.locator('#bk-cap-input').fill('');
   await expect(page.locator('#bk-grid [data-book]')).toHaveCount(6);
 });
 
