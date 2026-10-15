@@ -311,8 +311,6 @@ html { scroll-padding-top: calc(var(--nav-h) + 16px); }
   background:rgba(255,255,255,0.7);backdrop-filter:blur(24px) saturate(180%);-webkit-backdrop-filter:blur(24px) saturate(180%);
   border:1px solid rgba(0,0,0,0.04);box-shadow:0 6px 20px rgba(0,0,0,0.10);z-index:55}
 .dark .subpage-more.stuck{background:rgba(30,30,32,0.7);border-color:rgba(255,255,255,0.06)}
-/* 上传页（bk-admin）：压缩标题区大留白，让拖放区进首屏上半部（默认 42svh 标题区） */
-.bk-admin .subpage-head{min-height:230px;padding-top:calc(var(--nav-h,64px) + 8px + env(safe-area-inset-top,0px));padding-bottom:20px}
 /* ===== 上传页横向溢出根因修复（book 手机验收返工第 8 项） =====
  * 根因：队列卡片里文件名 p.truncate 的 white-space:nowrap 产生约 514px max-content，
  * 逐层向上传播——min-w-0 只管 min-content，管不住 max-content；main.bk-admin 身为
