@@ -6,16 +6,23 @@
 'use strict';
 
 const { test, expect } = require('@playwright/test');
-const { mockBookAPIs, setTheme, freezeTime, gotoReady } = require('../visual/helpers.js');
+const { mockBookAPIs, setTheme, freezeTime, gotoReady, BOOKS } = require('../visual/helpers.js');
 
-async function getStuckGeom(page, url, readySel, moreSel) {
+/* 书不够多时页面滚不到触发吸顶的高度（与 topbar-exit.spec.js 同做法） */
+const MANY_BOOKS = [...BOOKS, ...BOOKS, ...BOOKS];
+
+async function getStuckGeom(page, url, readySel, moreSel, hasBack) {
   await setTheme(page, 'light');
   await freezeTime(page);
-  await mockBookAPIs(page, { owner: true });
+  await mockBookAPIs(page, { owner: true, books: MANY_BOOKS });
   await gotoReady(page, url, readySel);
   await page.addStyleTag({ content: '*{animation:none!important;transition:none!important}' });
+  /* 真实滚动触发吸顶：滚到底，等 .stuck 出现（不用 waitForTimeout 硬等） */
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-  await page.waitForTimeout(800);
+  if (hasBack) {
+    await page.waitForSelector('.subpage-back.stuck', { timeout: 5000 });
+  }
+  await page.waitForSelector(`${moreSel}.stuck`, { timeout: 5000 });
   return page.evaluate(({ moreSel }) => {
     const q = s => document.querySelector(s);
     const r = s => { const e = q(s); if (!e) return null; const b = e.getBoundingClientRect(); return { top: b.top, left: b.left, right: b.right, width: b.width, height: b.height }; };
@@ -36,10 +43,12 @@ for (const [vpName, vp] of [['phone-412', { width: 412, height: 915 }], ['phone-
     test.use({ viewport: vp });
 
     test('两页吸顶后 ←⋮ 样式一致（±1px）', async ({ page }) => {
-      const shelf = await getStuckGeom(page, '/', '#bk-grid:not(.hidden)', '#bk-menu-btn');
-      const upload = await getStuckGeom(page, '/admin/', '#adm-main:not(.hidden)', '.subpage-more');
+      /* 书库首页 noBack:true，没有 ←；只比较 ⋮。上传页有 ←⋮。 */
+      /* 上传页内容较短，用较矮视口保证能滚到触发吸顶 */
+      const shelf = await getStuckGeom(page, '/', '#bk-grid:not(.hidden)', '#bk-menu-btn', false);
+      await page.setViewportSize({ width: vp.width, height: 500 });
+      const upload = await getStuckGeom(page, '/admin/', '#adm-main:not(.hidden)', '.subpage-more', true);
 
-      expect(shelf.backStuck, '书库 ← stuck').toBe(true);
       expect(shelf.moreStuck, '书库 ⋮ stuck').toBe(true);
       expect(upload.backStuck, '上传 ← stuck').toBe(true);
       expect(upload.moreStuck, '上传 ⋮ stuck').toBe(true);
