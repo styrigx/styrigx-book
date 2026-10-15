@@ -158,6 +158,98 @@ test('A3 topbar stuck: time/wx fade, mini-title visible', async ({ page }) => {
   expect(miniVisible, '小标题应可见').toBe(true);
 });
 
+/* ============ 吸顶 bug 修复断言（#33 视觉核对） ============ */
+test('吸顶后头像淡出', async ({ page }) => {
+  await setTheme(page, 'light');
+  await freezeTime(page);
+  await mockBookAPIs(page, { owner: true, books: MANY_BOOKS });
+  await gotoReady(page, '/', '#bk-grid:not(.hidden)');
+  await page.evaluate(() => {
+    const head = document.querySelector('[data-subpage-head]');
+    window.scrollTo(0, head.offsetHeight);
+  });
+  await page.waitForFunction(() => {
+    return document.getElementById('site-nav').classList.contains('stuck');
+  }, null, { timeout: 5000 });
+  await page.waitForFunction(() => {
+    const a = parseFloat(getComputedStyle(document.getElementById('nav-home')).opacity);
+    return a === 0;
+  }, null, { timeout: 5000 });
+  // 头像 opacity 0 + 不响应点击（淡出后视觉上不压小标题）
+  const r = await page.evaluate(() => {
+    const home = document.getElementById('nav-home');
+    return {
+      avatarOpacity: parseFloat(getComputedStyle(home).opacity),
+      pointerEvents: getComputedStyle(home).pointerEvents,
+    };
+  });
+  expect(r.avatarOpacity, '吸顶后头像 opacity 应为 0').toBe(0);
+  expect(r.pointerEvents, '吸顶后头像不应响应点击').toBe('none');
+});
+
+test('吸顶前后返回图标是同一个 ←', async ({ page }) => {
+  await setTheme(page, 'light');
+  await freezeTime(page);
+  await mockBookAPIs(page, { owner: true, books: MANY_BOOKS });
+  await gotoReady(page, '/', '#bk-grid:not(.hidden)');
+  const before = await page.evaluate(() => {
+    const btn = document.querySelector('.subpage-back');
+    return {
+      svgCount: btn.querySelectorAll('svg').length,
+      foldCount: btn.querySelectorAll('.sgx-bk-fold').length,
+      html: btn.innerHTML.length,
+    };
+  });
+  expect(before.svgCount, '展开态应有 svg 图标').toBe(1);
+  expect(before.foldCount, '不应有 ‹ 的 span').toBe(0);
+  await page.evaluate(() => {
+    const head = document.querySelector('[data-subpage-head]');
+    window.scrollTo(0, head.offsetHeight);
+  });
+  await page.waitForFunction(() => {
+    const btn = document.querySelector('.subpage-back');
+    return btn && btn.classList.contains('stuck');
+  }, null, { timeout: 5000 });
+  const after = await page.evaluate(() => {
+    const btn = document.querySelector('.subpage-back.stuck');
+    return {
+      svgCount: btn.querySelectorAll('svg').length,
+      svgVisible: getComputedStyle(btn.querySelector('svg')).display !== 'none',
+    };
+  });
+  expect(after.svgCount, '吸顶态仍应有 svg 图标').toBe(1);
+  expect(after.svgVisible, '吸顶态 svg 应可见（不是 ‹）').toBe(true);
+});
+
+test('书库与上传页标题区结构一致', async ({ page }) => {
+  await setTheme(page, 'light');
+  await freezeTime(page);
+  await mockBookAPIs(page, { owner: true });
+  // 书库首页
+  await gotoReady(page, '/', '#bk-grid:not(.hidden)');
+  const shelf = await page.evaluate(() => {
+    const head = document.querySelector('[data-subpage-head]');
+    const title = head.querySelector('.subpage-title').getBoundingClientRect();
+    const back = head.querySelector('.subpage-back').getBoundingClientRect();
+    const more = head.querySelector('#bk-menu-btn').getBoundingClientRect();
+    return { headH: head.offsetHeight, titleBottom: title.bottom, backTop: back.top, moreTop: more.top };
+  });
+  expect(shelf.backTop, '书库：← 顶部应在标题底部之下').toBeGreaterThan(shelf.titleBottom);
+  expect(shelf.moreTop, '书库：⋮ 顶部应在标题底部之下').toBeGreaterThan(shelf.titleBottom);
+  // 上传页
+  await gotoReady(page, '/admin/', '#adm-main:not(.hidden)');
+  const upload = await page.evaluate(() => {
+    const head = document.querySelector('[data-subpage-head]');
+    const title = head.querySelector('.subpage-title').getBoundingClientRect();
+    const back = head.querySelector('.subpage-back').getBoundingClientRect();
+    const more = head.querySelector('.subpage-more').getBoundingClientRect();
+    return { headH: head.offsetHeight, titleBottom: title.bottom, backTop: back.top, moreTop: more.top };
+  });
+  expect(upload.backTop, '上传页：← 顶部应在标题底部之下').toBeGreaterThan(upload.titleBottom);
+  expect(upload.moreTop, '上传页：⋮ 顶部应在标题底部之下').toBeGreaterThan(upload.titleBottom);
+  expect(Math.abs(shelf.headH - upload.headH), '两页标题区高度差应 ≤1px').toBeLessThanOrEqual(1);
+});
+
 /* ============ A4：点头像刷新 ============ */
 test('A4 avatar click: full reload to home', async ({ page }) => {
   await setupOwner(page);

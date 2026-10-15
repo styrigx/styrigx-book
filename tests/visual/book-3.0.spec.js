@@ -69,7 +69,8 @@ test('visitor：无角标 / FAB / ⋮ 菜单 / 最近阅读条；6 本 < 8 本�
   await waitShelf(page);
 
   await expect(page.locator('#bk-fab:not(.hidden)')).toHaveCount(0);
-  await expect(page.locator('#bk-menu-btn:not(.hidden)')).toHaveCount(0);
+  /* R3：访客也显示 ⋮ 菜单（之前断言为 0 已过时） */
+  await expect(page.locator('#bk-menu-btn:not(.hidden)')).toHaveCount(1);
   await expect(page.locator('.bk-badge')).toHaveCount(0);
   await expect(page.locator('#bk-strip:not(.hidden)')).toHaveCount(0);
   /* 排序胶囊默认「添加时间」，无阅读状态胶囊 */
