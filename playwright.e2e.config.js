@@ -31,6 +31,7 @@ module.exports = defineConfig({
   },
   use: {
     baseURL: 'http://localhost:8932',
+    timezoneId: 'Asia/Shanghai',
   },
   reporter: [['list']],
   timeout: 60000,

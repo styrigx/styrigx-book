@@ -62,6 +62,8 @@ function isWhitelisted(path) {
   /* /api/session-check：锁屏会话确认，middleware 放行，由接口自己验签、自己返回 401，
      前端才能区分“已锁定”（→ reload 走 302 到主站锁屏）与“网络错误”（→ fail open） */
   if (path === '/api/session-check') return true;
+  /* /api/geo：天气定位（IP 城市+经纬度，只返回非敏感字段），公开放行 */
+  if (path === '/api/geo') return true;
   if (path === '/api/shelf' || path.startsWith('/api/shelf/')) return true;
   const dot = path.lastIndexOf('.');
   const slash = path.lastIndexOf('/');

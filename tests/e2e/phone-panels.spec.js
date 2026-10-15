@@ -109,11 +109,16 @@ test.describe('四、⋮ 下拉菜单', () => {
     /* 右对齐：菜单右沿 = 按钮右沿（±1px） */
     expect(Math.abs(m.x + m.width - (b.x + b.width)),
       `菜单应右对齐（菜单右 ${m.x + m.width}，按钮右 ${b.x + b.width})`).toBeLessThanOrEqual(1);
-    /* 菜单项齐全：上传书籍 / 随机打开一本 / 为无封面的书提取封面 */
-    await expect(menu.locator('.bk-menu-item')).toHaveCount(3);
-    await expect(menu).toContainText('上传书籍');
-    await expect(menu).toContainText('随机打开一本');
-    await expect(menu).toContainText('为无封面的书提取封面');
+    /* 菜单项齐全（站长视角 5 项，按任务书顺序）：排序与筛选 / 书库设置 / 上传书籍 / 随机打开一本 / 为无封面的书提取封面 */
+    await expect(menu.locator('.bk-menu-item')).toHaveCount(5);
+    const itemTexts = await menu.locator('.bk-menu-item').allTextContents();
+    expect(itemTexts.map((t) => t.trim())).toEqual([
+      '排序与筛选',
+      '书库设置',
+      '上传书籍',
+      '随机打开一本',
+      '为无封面的书提取封面',
+    ]);
   });
 
   test('点「上传书籍」跳 /admin/', async ({ page }) => {
@@ -167,14 +172,15 @@ test.describe('五、半屏下沉弹层', () => {
   test('排序与筛选：50dvh + 标题行三栏数值 + 内容滚到底不被底栏挡', async ({ page }) => {
     await setupOwner(page);
     await gotoReady(page, '/', '#bk-grid:not(.hidden)');
-    await page.locator('#bk-filter-btn').click();
+    const { menu: filterMenu } = await openMoreMenu(page);
+    await filterMenu.locator('[data-more="filter"]').click();
     const wrap = page.locator('#filter-wrap.open');
     await expect(wrap).toBeVisible();
     await waitSheetSettled(page, '#filter-wrap');
 
     const m = await titlebarMetrics(page, '#filter-wrap');
-    expect(m.leftBtn, '排序与筛选左栏应为齿轮按钮').not.toBeNull();
-    expectTitlebar(m, { hasGear: true });
+    expect(m.leftBtn, '排序与筛选左栏应为 48px 空位（齿轮已删）').toBeNull();
+    expectTitlebar(m, { hasGear: false });
 
     /* 内容区：flex:1 + 内部滚动；底栏固定带 safe-area */
     const layout = await page.evaluate(() => {
@@ -212,9 +218,8 @@ test.describe('五、半屏下沉弹层', () => {
   test('书库设置：50dvh + 左 48px 空位 + 标题居中', async ({ page }) => {
     await setupOwner(page);
     await gotoReady(page, '/', '#bk-grid:not(.hidden)');
-    await page.locator('#bk-filter-btn').click();
-    await expect(page.locator('#filter-wrap.open')).toBeVisible();
-    await page.locator('#filter-gear').click();
+    const { menu: settingsMenu } = await openMoreMenu(page);
+    await settingsMenu.locator('[data-more="settings"]').click();
     const wrap = page.locator('#settings-wrap.open');
     await expect(wrap).toBeVisible();
     await waitSheetSettled(page, '#settings-wrap');

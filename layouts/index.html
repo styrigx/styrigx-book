@@ -6,7 +6,7 @@
 {{/* 3.0 书架首页：主站同款大标题（subpage-head，noBack）+ 胶囊 + 最近阅读/最近添加条 +
    书架网格（列表/网格/大封面）+ 详情弹层 + 筛选弹层 + 底部搜索胶囊。
    PR 2 起的入口（收藏、阅读统计、书签与笔记、多选）不渲染。 */}}
-{{ $headActions := printf `%s%s%s` (printf `<button id="bk-filter-btn" type="button" class="bk-icbtn" aria-label="%s">%s</button>` (cond $isEn "Sort and filter" "排序与筛选") (partial "icon.html" (dict "name" "sliders" "uid" "head-filter"))) (printf `<button id="bk-menu-btn" type="button" class="bk-icbtn hidden" aria-label="%s"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg></button>` (cond $isEn "More" "更多")) `<div id="bk-more-menu" class="bk-menu hidden" role="menu"></div>` }}
+{{ $headActions := printf `%s%s` (printf `<button id="bk-menu-btn" type="button" class="bk-icbtn" aria-label="%s"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg></button>` (cond $isEn "More" "更多")) `<div id="bk-more-menu" class="bk-menu hidden" role="menu"></div>` }}
 <main id="bk-main" class="w-full max-w-7xl mx-auto px-4 sm:px-6 pb-6">
   {{ partial "subpage-head.html" (dict "title" (cond $isEn "Library" "书库") "isEn" $isEn "noBack" true "actions" ($headActions | safeHTML)) }}
   {{/* ===== 选中条件胶囊 ===== */}}
@@ -39,11 +39,24 @@
 {{/* ===== 底部搜索胶囊（主站「我的文件」同款：胶囊 + 麦克风，点击弹起跟键盘） ===== */}}
 <div id="bk-cap" class="bk-cap" role="search">
   <svg class="bk-cap-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
-  <input id="bk-cap-input" type="search" autocomplete="off" enterkeyhint="search" placeholder="{{ if $isEn }}Search by title or author{{ else }}搜索书名或作者{{ end }}" aria-label="{{ if $isEn }}Search books{{ else }}搜索书籍{{ end }}">
+  <input id="bk-cap-input" type="search" autocomplete="off" enterkeyhint="search" placeholder="{{ if $isEn }}Search by title or author{{ else }}搜索书名或作者{{ end }}" data-ph="{{ if $isEn }}Search by title or author{{ else }}搜索书名或作者{{ end }}" data-ph-short="{{ if $isEn }}Search books{{ else }}搜索书名{{ end }}" aria-label="{{ if $isEn }}Search books{{ else }}搜索书籍{{ end }}">
   <button type="button" class="bk-cap-mic" data-mic aria-label="{{ if $isEn }}Voice search{{ else }}语音搜索{{ end }}" style="display:none">
     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 15a3.5 3.5 0 0 0 3.5-3.5v-5a3.5 3.5 0 1 0-7 0v5A3.5 3.5 0 0 0 12 15zm6-3.5a6 6 0 0 1-12 0H4a8 8 0 0 0 7 7.94V22h2v-2.06A8 8 0 0 0 20 11.5h-2z"/></svg>
   </button>
 </div>
+<script>
+/* 窄屏搜索框 placeholder 防截断：宽度 <380px 时用短文案（data-ph-short，走 i18n 模板） */
+(function(){
+  var input=document.getElementById('bk-cap-input');
+  if(!input)return;
+  function apply(){
+    var narrow=window.innerWidth<380;
+    input.placeholder=narrow?(input.getAttribute('data-ph-short')||input.getAttribute('data-ph')):(input.getAttribute('data-ph')||input.getAttribute('data-ph-short'));
+  }
+  apply();
+  window.addEventListener('resize',apply);
+})();
+</script>
 
 {{/* ===== 详情弹层（沿用 #sheet-wrap，顶部已有拖动条） ===== */}}
 <div id="sheet-wrap" class="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="{{ if $isEn }}Book details{{ else }}书籍详情{{ end }}">
@@ -62,7 +75,7 @@
   <div class="bk-panel bg-m-container-lowest text-m-on-surface shadow-2xl">
     <div class="sheet-handle"></div>
     <div class="bk-titlebar">
-      <div class="bk-titlebar-side"><button type="button" class="bk-icbtn" id="filter-gear" aria-label="{{ if $isEn }}Library settings{{ else }}书库设置{{ end }}">{{ partial "icon.html" (dict "name" "gear" "uid" "filter-gear") }}</button></div>
+      <div class="bk-titlebar-side"></div>
       <div class="bk-titlebar-mid"><h2 class="text-lg font-extrabold">{{ if $isEn }}Sort and filter{{ else }}排序与筛选{{ end }}</h2></div>
       <div class="bk-titlebar-side"><button type="button" class="bk-icbtn" data-close="filter" aria-label="{{ if $isEn }}Close{{ else }}关闭{{ end }}">{{ partial "icon.html" (dict "name" "x-mark" "uid" "filter-x") }}</button></div>
     </div>
@@ -138,6 +151,8 @@
 <script src="{{ (resources.Get "js/book-cover.js" | minify | fingerprint).RelPermalink }}"></script>
 {{/* 搜索胶囊键盘跟随 + 语音弹窗（移植主站 vk.js/capsule.js/voice-sheet.js 机制，ES module） */}}
 <script type="module" src="{{ (resources.Get "js/sgx/entry.js" | js.Build | minify | fingerprint).RelPermalink }}"></script>
+{{/* R4 退出逻辑：← / 手势返回 → 主站「我的文件」（只书库首页） */}}
+<script src="{{ (resources.Get "js/sgx/shell/exit-to-host.js" | minify | fingerprint).RelPermalink }}"></script>
 {{/* 语音弹窗文案（sgx-i18n-core 子集，主站同款键名） */}}
 <script id="sgx-i18n-core" type="application/json">{"vsAria":{"zh":"语音输入","en":"Voice input"},"vsClose":{"zh":"关闭","en":"Close"},"vsSpeak":{"zh":"立即说出","en":"Speak now"},"vsLang":{"zh":"中文（中国）","en":"English (US)"},"vsNoPerm":{"zh":"需要麦克风权限","en":"Microphone permission needed"},"vsRetry":{"zh":"没听清，点麦克风重试","en":"Didn't catch that, tap the mic to retry"}}</script>
 <script>
@@ -150,7 +165,7 @@ var adminBase = {{ $adminBase }};
 /* ================= 文案 ================= */
 var T = isEn ? {
   all:'All books', reading:'Reading', shelf:'Featured shelf',
-  search:'Search', searchPh:'Search by title or author', closeSearch:'Close search',
+  search:'Search', searchPh:'Search by title or author', searchPhShort:'Search books', closeSearch:'Close search',
   sortFilter:'Sort and filter', sort:'Sort', sortTitle:'Title', sortAuthor:'Author',
   sortAdded:'Date added', sortRecent:'Recently read',
   status:'Reading status (multi-select, Owner only)',
@@ -177,7 +192,7 @@ var T = isEn ? {
   readDone:'Read', uploadFirst:'Upload your first book'
 } : {
   all:'全部书籍', reading:'在读', shelf:'主站书单',
-  search:'搜索', searchPh:'搜索书名或作者', closeSearch:'关闭搜索',
+  search:'搜索', searchPh:'搜索书名或作者', searchPhShort:'搜索书名', closeSearch:'关闭搜索',
   sortFilter:'排序与筛选', sort:'排序', sortTitle:'书名', sortAuthor:'作者',
   sortAdded:'添加时间', sortRecent:'最近阅读',
   status:'阅读状态（多选，仅 Owner）',
@@ -345,15 +360,25 @@ document.querySelectorAll('[data-close]').forEach(function(btn){
   btn.addEventListener('click', function(){ closeOverlay(btn.dataset.close + '-wrap'); });
 });
 
-/* ================= ⋮ 菜单（Owner） ================= */
+/* ================= ⋮ 菜单（访客 3 项 / Owner 5 项） ================= */
 function renderMoreMenu(){
-  $('#bk-more-menu').innerHTML =
-    '<a class="bk-menu-item" href="' + esc(adminBase) + '" role="menuitem"><span>' + esc(T.uploadBooks) + '</span></a>'
-    + '<button type="button" class="bk-menu-item" data-more="random" role="menuitem"><span>' + esc(T.randomOpen) + '</span></button>'
-    + '<button type="button" class="bk-menu-item" data-more="backfill" role="menuitem"><span>' + esc(T.backfill) + '</span></button>';
+  var isOwner = !!window.__bkOwner;
+  var items =
+    '<button type="button" class="bk-menu-item" data-more="filter" role="menuitem"><span>' + esc(T.sortFilter) + '</span></button>'
+    + '<button type="button" class="bk-menu-item" data-more="settings" role="menuitem"><span>' + esc(T.settings) + '</span></button>';
+  if (isOwner) {
+    items += '<a class="bk-menu-item" href="' + esc(adminBase) + '" role="menuitem"><span>' + esc(T.uploadBooks) + '</span></a>';
+  }
+  items += '<button type="button" class="bk-menu-item" data-more="random" role="menuitem"><span>' + esc(T.randomOpen) + '</span></button>';
+  if (isOwner) {
+    items += '<button type="button" class="bk-menu-item" data-more="backfill" role="menuitem"><span>' + esc(T.backfill) + '</span></button>';
+  }
+  $('#bk-more-menu').innerHTML = items;
   $('#bk-more-menu').querySelectorAll('[data-more]').forEach(function(btn){
     btn.addEventListener('click', function(){
       $('#bk-more-menu').classList.add('hidden');
+      if(btn.dataset.more === 'filter') openFilterSheet();
+      if(btn.dataset.more === 'settings') openSettingsSheet();
       if(btn.dataset.more === 'random') randomOpen();
       if(btn.dataset.more === 'backfill') runBackfill();
     });
@@ -526,10 +551,6 @@ function renderFilterSheet(){
     });
   });
 }
-$('#filter-gear').addEventListener('click', function(){
-  closeOverlay('filter-wrap');
-  openSettingsSheet();
-});
 $('#filter-done').addEventListener('click', function(){
   if(!draft) return;
   sort = draft.sort; statuses = draft.statuses; formats = draft.formats; layout = draft.layout;
@@ -541,7 +562,6 @@ $('#filter-clear').addEventListener('click', function(){
   closeOverlay('filter-wrap');
   renderAll();
 });
-$('#bk-filter-btn').addEventListener('click', function(){ openFilterSheet(); });
 
 /* 书库设置：主题（沿用 baseof 的 sgx-theme-mode） */
 function applyTheme(mode){
@@ -948,8 +968,8 @@ async function loadBooks(){
 async function boot(){
   var me = await fetchMe();
   owner = !!(me && me.role === 'owner');
+  window.__bkOwner = owner;
   sort = defaultSort();
-  if(owner) $('#bk-menu-btn').classList.remove('hidden');
   try{
     await loadBooks();
   }catch(e){

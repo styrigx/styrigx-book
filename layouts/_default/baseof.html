@@ -61,14 +61,34 @@ window.__setHeadH();
 <link rel="stylesheet" href="{{ (resources.Get "css/main.css" | minify | fingerprint).RelPermalink }}">
 </head>
 <body class="bg-m-surface text-m-on-surface font-sans antialiased" style="background-image:var(--m-wallpaper);background-attachment:fixed">
-{{/* 极简顶栏：左 头像+Styrigx（回主站）；滚过标题区后由 .subpage-mini-title 显示居中小标题 */}}
+{{/* 顶栏：三栏 grid（左时间 / 中头像 / 右天气），与主站同款时钟面板+天气面板 */}}
 {{ $avatar := resources.Get "images/avatar.png" }}
-<header id="site-nav" class="fixed top-0 inset-x-0 z-50 h-12 flex items-center px-4 backdrop-blur-xl bg-m-surface/70 border-b border-m-outline/40">
-  <a href="https://styrigx.com" class="flex items-center gap-2 text-sm font-semibold text-m-on-surface hover:opacity-80">
+{{ $home := "/" }}{{ if $isEn }}{{ $home = "/en/" }}{{ end }}
+<header id="site-nav">
+  <button type="button" id="nav-time-center" class="nav-tray-btn" aria-label="{{ if $isEn }}Clock and calendar{{ else }}时钟和日历{{ end }}" title="{{ if $isEn }}Clock and calendar{{ else }}时钟和日历{{ end }}"><span id="nav-time" class="clock-num">--:--</span></button>
+  <a id="nav-home" href="{{ $home }}" aria-label="{{ if $isEn }}Library home{{ else }}书库首页{{ end }}">
     {{ with $avatar }}<img src="{{ .RelPermalink }}" alt="" class="w-7 h-7 rounded-full object-cover">{{ end }}
-    <span>Styrigx</span>
   </a>
+  <button type="button" id="nav-wx" class="nav-tray-btn" style="display:none" aria-label="{{ if $isEn }}Weather{{ else }}天气{{ end }}" title="{{ if $isEn }}Weather{{ else }}天气{{ end }}"><span id="nav-wx-ic" aria-hidden="true"></span><span id="nav-wx-t" class="clock-num"></span></button>
 </header>
+{{/* 时钟面板：双时钟 + 日历（从主站 244492c 移植） */}}
+<div id="dex-clock-pop" class="hidden" role="dialog" aria-label="{{ if $isEn }}Clock{{ else }}时钟{{ end }}">
+  <div class="dex-pop-card">
+    <div class="flex items-end justify-between gap-4">
+      <div class="min-w-0">
+        <div id="dex-pop-local" class="text-4xl font-extrabold clock-num">--:--</div>
+        <div id="dex-pop-local-c" class="text-xs text-m-on-surface-variant mt-1"></div>
+      </div>
+      <div class="text-right shrink-0">
+        <div id="dex-pop-r" class="text-2xl font-bold clock-num">--:--</div>
+        <div id="dex-pop-r-c" class="text-xs text-m-on-surface-variant mt-1"></div>
+      </div>
+    </div>
+    <div id="dex-pop-cal" class="mt-3 pt-3 border-t border-m-outline"></div>
+  </div>
+</div>
+{{/* 天气面板（从顶栏往下展开） */}}
+<div id="nav-wx-pop" role="dialog" aria-label="{{ if $isEn }}Weather{{ else }}天气{{ end }}"></div>
 {{ block "main" . }}{{ end }}
 <footer class="relative z-10 mt-4">
   <div class="max-w-[1100px] mx-auto px-6 py-8 text-center">
@@ -77,6 +97,18 @@ window.__setHeadH();
   </div>
 </footer>
 <script>
+/* 量取顶栏实际高度写入 --nav-h（顶栏 fixed，main 的 padding-top 依赖它）。来自 styrigx-space 2e7793d baseof.html:222-227 */
+(function(){
+  function setH(){
+    var n=document.getElementById('site-nav');
+    if(n)document.documentElement.style.setProperty('--nav-h',n.offsetHeight+'px');
+  }
+  window.addEventListener('resize',setH);
+  window.addEventListener('load',setH);
+  setH();
+})();
+</script>
+<script>
 /* 子页面返回键：有历史则回退，否则回书架首页 */
 document.addEventListener('click',function(e){
   var b=e.target.closest('[data-go-back]');
@@ -84,25 +116,45 @@ document.addEventListener('click',function(e){
   if(window.history.length>1){history.back()}
   else{location.href='{{ if $isEn }}/en/{{ else }}/{{ end }}'}
 });
-/* 子页面标题区滚动行为：滚过标题区后显示居中小标题 + 悬浮返回键 */
+/* 子页面标题区滚动行为：滚过标题区后显示居中小标题；返回键/三点吸顶（.stuck）；顶栏时间天气淡出 */
 (function(){
   var head=document.querySelector('[data-subpage-head]');
   if(!head)return;
   var mini=document.querySelector('.subpage-mini-title');
-  var flt=document.querySelector('.subpage-back-float');
+  var nav=document.getElementById('site-nav');
+  var backBtn=head.querySelector('.subpage-back');
+  var moreBtn=head.querySelector('.subpage-actions .subpage-more, .subpage-actions #bk-menu-btn');
   function onScroll(){
-    var past=window.scrollY>head.offsetHeight*0.55;
+    var y=window.scrollY||0;
+    var past=y>head.offsetHeight*0.55;
     if(mini)mini.classList.toggle('show',past);
-    if(flt)flt.classList.toggle('show',past);
     head.classList.toggle('head-past',past);
     document.body.classList.toggle('subpage-scrolled',past);
+    if(nav)nav.classList.toggle('stuck',past);
+    /* 吸顶：滚到「顶栏底边+8px」时按钮加 .stuck（与主站 head-buttons.js 同公式） */
+    if(backBtn||moreBtn){
+      var hr=head.getBoundingClientRect();
+      var gap=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sgx-head-btn-gap'))||8;
+      var btnH=(backBtn&&backBtn.offsetHeight)||(moreBtn&&moreBtn.offsetHeight)||44;
+      var docTop=hr.top+y+hr.height-gap-btnH;
+      var navH=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--nav-h'))||48;
+      var stick=y>0&&y>=docTop-(navH+8);
+      if(backBtn)backBtn.classList.toggle('stuck',stick);
+      if(moreBtn)moreBtn.classList.toggle('stuck',stick);
+    }
   }
   window.addEventListener('scroll',onScroll,{passive:true});
+  window.addEventListener('resize',onScroll);
   onScroll();
 })();
 </script>
 {{/* SGX 锁屏同步：切回前台 / bfcache 恢复时向服务端确认会话（各页面 pagejs 之前加载） */}}
 <script src="{{ (resources.Get "js/sgx-lock-sync.js" | minify | fingerprint).RelPermalink }}"></script>
+{{/* 顶栏：时间 / 头像 / 天气（ES module；js.Build 需 format:esm 否则 export 丢失） */}}
+<script type="module">
+import { initTopbar } from '{{ (resources.Get "js/sgx/shell/topbar.js" | js.Build (dict "format" "esm") | minify | fingerprint).RelPermalink }}';
+initTopbar();
+</script>
 {{ block "pagejs" . }}{{ end }}
 </body>
 </html>

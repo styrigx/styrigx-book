@@ -86,8 +86,9 @@ for (const theme of ['light', 'dark']) {
   test(`app-shell-sheets-${theme}`, async ({ page }) => {
     await setup(page, { theme, owner: true });
     await gotoReady(page, '/', '#bk-grid:not(.hidden)');
-    // 打开排序与筛选弹层
-    await page.click('#bk-filter-btn');
+    // 打开排序与筛选弹层（经 ⋮ 菜单）
+    await page.click('#bk-menu-btn');
+    await page.click('#bk-more-menu [data-more="filter"]');
     const filterWrap = page.locator('#filter-wrap');
     await expect(filterWrap).toHaveClass(/open/);
     // 右上角有 ×
@@ -97,9 +98,9 @@ for (const theme of ['light', 'dark']) {
     // 关闭
     await filterWrap.locator('[data-close="filter"].bk-icbtn').click();
     await expect(filterWrap).not.toHaveClass(/open/);
-    // 打开书库设置（通过齿轮）
-    await page.click('#bk-filter-btn');
-    await page.click('#filter-gear');
+    // 打开书库设置（经 ⋮ 菜单直接打开）
+    await page.click('#bk-menu-btn');
+    await page.click('#bk-more-menu [data-more="settings"]');
     const settingsWrap = page.locator('#settings-wrap');
     await expect(settingsWrap).toHaveClass(/open/);
     await expect(settingsWrap.locator('[data-close="settings"].bk-icbtn')).toBeVisible();

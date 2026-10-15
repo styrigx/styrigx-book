@@ -1,16 +1,19 @@
-{{/* 子页面统一标题区（One UI 8.5 设置风格，与主站 styrigx-space 同款）：
+{{/* 子页面统一标题区（One UI 8.5 设置风格，与主站 A 定稿后同款）：
    进入时：大标题居中（40px 粗体、调色板主色），顶部大留白，内容模块下沉；
-   滚过标题区后：顶部居中小标题（.subpage-mini-title.show）。
+   滚过标题区后：顶部居中小标题（.subpage-mini-title.show）；左返回 + 右三点吸顶成磨砂圆。
    用法：{{ partial "subpage-head.html" (dict "title" .Title "isEn" $isEn) }}
-   一级页（书库首页/上传页）传 "noBack" true：展开态和折叠态都不显示返回按钮。 */}}
+   "actions"：三点按钮位的 HTML（有功能的页面传入自己的按钮）；为空时输出只有图标的三点按钮
+     （44×44，与主站同图标，点击无反应）。
+   "noBack"：历史参数，不再起作用，子页一律输出返回键。
+   返回键：展开态与吸顶态都用同一个 ←（arrow-left 图标）；吸顶后变磨砂圆钮（与主站一致）。
+   吸顶逻辑见 baseof.html 内联脚本；展开/折叠阈值与主站一致。 */}}
 {{ $en := .isEn }}
-{{ $noBack := .noBack }}
+{{ $dots := `<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.9"/><circle cx="12" cy="12" r="1.9"/><circle cx="12" cy="19" r="1.9"/></svg>` }}
 <header class="subpage-head" data-subpage-head>
-  {{ if not $noBack }}<button type="button" class="subpage-back" data-go-back aria-label="{{ if $en }}Back{{ else }}返回{{ end }}">{{ partial "icon.html" "arrow-left" }}</button>{{ end }}
+  <button type="button" class="subpage-back" data-go-back aria-label="{{ if $en }}Back{{ else }}返回{{ end }}">{{ partial "icon.html" "arrow-left" }}</button>
   <div class="subpage-hero">
     <h1 class="subpage-title">{{ .title }}</h1>
   </div>
-  {{ with .actions }}<div class="subpage-actions">{{ . }}</div>{{ end }}
+  {{ with .actions }}<div class="subpage-actions">{{ . }}</div>{{ else }}<div class="subpage-actions"><button type="button" class="subpage-more" aria-label="{{ if $en }}More options{{ else }}更多选项{{ end }}">{{ $dots | safeHTML }}</button></div>{{ end }}
 </header>
-{{ if not $noBack }}<button type="button" class="subpage-back-float" data-go-back aria-label="{{ if $en }}Back{{ else }}返回{{ end }}">{{ partial "icon.html" "arrow-left" }}</button>{{ end }}
 <div class="subpage-mini-title" aria-hidden="true">{{ .title }}</div>
