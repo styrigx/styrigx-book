@@ -15,7 +15,7 @@ const { mockBookAPIs, setTheme, freezeTime, gotoReady } = require('../visual/hel
 
 // 主站常量（来自 styrigx-space 2e7793d）
 const MAIN = {
-  navH: 48,           // 主站 2e7793d 实测：手机 48px（#nav-time-center 绝对定位不占高度；input.css:487 的 64px 是变量默认值，JS 用实测 offsetHeight 覆盖）
+  navH: 64,           // 与 space 当前手机顶栏一致
   navInnerMaxW: 1100, // baseof.html:197 max-w-[1100px]
   navInnerPx: 16,     // px-4
   navInnerPy: 10,     // py-2.5
@@ -43,10 +43,10 @@ for (const [vpName, vp] of [['phone-412', { width: 412, height: 915 }], ['phone-
   test.describe(vpName, () => {
     test.use({ viewport: vp });
 
-    test('顶栏高度 48px（主站 2e7793d 手机实测）', async ({ page }) => {
+    test('顶栏高度 64px（与 space 当前手机顶栏一致）', async ({ page }) => {
       const g = await getTopbarGeom(page, '/', '#bk-grid:not(.hidden)');
       expect(Math.abs(g.nav.height - MAIN.navH), '#site-nav 高度').toBeLessThanOrEqual(2);
-      expect(g.navH_var, '--nav-h 变量').toBe('48px');
+      expect(g.navH_var, '--nav-h 变量').toBe('64px');
     });
 
     test('头像 28×28（主站 w-7 h-7）', async ({ page }) => {
