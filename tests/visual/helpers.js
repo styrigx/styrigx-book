@@ -139,6 +139,7 @@ async function freezeTime(page) {
  * @param readySelector 页面主体就绪的标志选择器
  */
 async function gotoReady(page, url, readySelector) {
+  if (!readySelector) throw new Error('gotoReady 缺少 readySelector');
   await page.goto(url, { waitUntil: 'domcontentloaded' });
   await expect(page.locator(readySelector).first()).toBeVisible({ timeout: 15000 });
   await page.evaluate(() => document.fonts.ready);

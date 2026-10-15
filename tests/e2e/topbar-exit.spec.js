@@ -25,7 +25,7 @@ async function setupVisitor(page) {
 /* ============ A1：标题区 ============ */
 test('A1 homepage: single subpage-head with back and more', async ({ page }) => {
   await setupOwner(page);
-  await gotoReady(page, '/');
+  await gotoReady(page, '/', '#bk-grid:not(.hidden)');
   const heads = page.locator('[data-subpage-head]');
   await expect(heads, '首页应只有 1 个 [data-subpage-head]').toHaveCount(1);
   await expect(heads.locator('.subpage-back'), '应有 .subpage-back').toHaveCount(1);
@@ -34,7 +34,7 @@ test('A1 homepage: single subpage-head with back and more', async ({ page }) => 
 
 test('A1 upload page: single subpage-head with back and more', async ({ page }) => {
   await setupOwner(page);
-  await gotoReady(page, '/admin/');
+  await gotoReady(page, '/admin/', '#adm-main:not(.hidden)');
   const heads = page.locator('[data-subpage-head]');
   await expect(heads, '上传页应只有 1 个 [data-subpage-head]').toHaveCount(1);
   await expect(heads.locator('.subpage-back'), '应有 .subpage-back').toHaveCount(1);
@@ -44,7 +44,7 @@ test('A1 upload page: single subpage-head with back and more', async ({ page }) 
 /* ============ A2：⋮ 菜单 ============ */
 test('A2 visitor menu: 3 items in order, no filter-btn/gear', async ({ page }) => {
   await setupVisitor(page);
-  await gotoReady(page, '/');
+  await gotoReady(page, '/', '#bk-grid:not(.hidden)');
   // 无 #bk-filter-btn 和 #filter-gear
   await expect(page.locator('#bk-filter-btn'), '不应有 #bk-filter-btn').toHaveCount(0);
   await expect(page.locator('#filter-gear'), '不应有 #filter-gear').toHaveCount(0);
@@ -64,7 +64,7 @@ test('A2 visitor menu: 3 items in order, no filter-btn/gear', async ({ page }) =
 
 test('A2 owner menu: 5 items in order', async ({ page }) => {
   await setupOwner(page);
-  await gotoReady(page, '/');
+  await gotoReady(page, '/', '#bk-grid:not(.hidden)');
   const btn = page.locator('#bk-menu-btn');
   await expect(btn, '站长应看到 ⋮ 按钮').toBeVisible();
   await btn.click();
@@ -83,7 +83,7 @@ test('A2 owner menu: 5 items in order', async ({ page }) => {
 /* ============ A3：顶栏几何 ============ */
 test('A3 topbar geometry: time left, avatar center, wx right, no Styrigx text', async ({ page }) => {
   await setupOwner(page);
-  await gotoReady(page, '/');
+  await gotoReady(page, '/', '#bk-grid:not(.hidden)');
   // 无 "Styrigx" 文字节点
   const styrigxText = await page.evaluate(() => {
     const nav = document.getElementById('site-nav');
@@ -122,7 +122,7 @@ test('A3 topbar geometry: time left, avatar center, wx right, no Styrigx text', 
 
 test('A3 topbar stuck: time/wx fade, mini-title visible', async ({ page }) => {
   await setupOwner(page);
-  await gotoReady(page, '/');
+  await gotoReady(page, '/', '#bk-grid:not(.hidden)');
   // 滚过标题区
   await page.evaluate(() => {
     const head = document.querySelector('[data-subpage-head]');
@@ -149,7 +149,7 @@ test('A3 topbar stuck: time/wx fade, mini-title visible', async ({ page }) => {
 /* ============ A4：点头像刷新 ============ */
 test('A4 avatar click: full reload to home', async ({ page }) => {
   await setupOwner(page);
-  await gotoReady(page, '/');
+  await gotoReady(page, '/', '#bk-grid:not(.hidden)');
   // 监听导航
   const navPromise = page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 10000 });
   await page.locator('#nav-home').click();
@@ -160,7 +160,7 @@ test('A4 avatar click: full reload to home', async ({ page }) => {
 /* ============ A5：退出逻辑 ============ */
 test('A5 exit guard installed on homepage', async ({ page }) => {
   await setupOwner(page);
-  await gotoReady(page, '/');
+  await gotoReady(page, '/', '#bk-grid:not(.hidden)');
   const hasGuard = await page.evaluate(() => {
     return !!(history.state && history.state.sgxGuard);
   });
@@ -169,7 +169,7 @@ test('A5 exit guard installed on homepage', async ({ page }) => {
 
 test('A5 back button exits to host files', async ({ page }) => {
   await setupOwner(page);
-  await gotoReady(page, '/');
+  await gotoReady(page, '/', '#bk-grid:not(.hidden)');
   // 拦截 location.replace
   await page.evaluate(() => {
     window.__exitUrl = null;
@@ -184,7 +184,7 @@ test('A5 back button exits to host files', async ({ page }) => {
 /* ============ A6：弹层打开时返回只关弹层 ============ */
 test('A6 back with menu open: closes menu, no exit', async ({ page }) => {
   await setupOwner(page);
-  await gotoReady(page, '/');
+  await gotoReady(page, '/', '#bk-grid:not(.hidden)');
   // 打开 ⋮ 菜单
   await page.locator('#bk-menu-btn').click();
   await expect(page.locator('#bk-more-menu:not(.hidden)'), '菜单应打开').toBeVisible();
@@ -205,7 +205,7 @@ test('A6 back with menu open: closes menu, no exit', async ({ page }) => {
 /* ============ A7：P1 无横向溢出 ============ */
 test('A7 no horizontal overflow: homepage', async ({ page }) => {
   await setupOwner(page);
-  await gotoReady(page, '/');
+  await gotoReady(page, '/', '#bk-grid:not(.hidden)');
   const overflow = await page.evaluate(() => {
     return document.documentElement.scrollWidth <= document.documentElement.clientWidth;
   });
@@ -214,7 +214,7 @@ test('A7 no horizontal overflow: homepage', async ({ page }) => {
 
 test('A7 no horizontal overflow: upload page', async ({ page }) => {
   await setupOwner(page);
-  await gotoReady(page, '/admin/');
+  await gotoReady(page, '/admin/', '#adm-main:not(.hidden)');
   const overflow = await page.evaluate(() => {
     return document.documentElement.scrollWidth <= document.documentElement.clientWidth;
   });
@@ -226,7 +226,7 @@ test('A8 no cookie: defaults, no error', async ({ page }) => {
   await setupOwner(page);
   // 清除 sgx-ui cookie
   await page.context().clearCookies();
-  await gotoReady(page, '/');
+  await gotoReady(page, '/', '#bk-grid:not(.hidden)');
   // 页面不应报错，时间应显示（默认本地时间）
   const timeText = await page.locator('#nav-time').textContent();
   expect(timeText.trim(), '无 cookie 时时间应显示默认值').not.toBe('--:--');
@@ -246,7 +246,7 @@ test('A8 with cookie: time follows tz1/h12', async ({ page }) => {
     domain: 'localhost',
     path: '/',
   }]);
-  await gotoReady(page, '/');
+  await gotoReady(page, '/', '#bk-grid:not(.hidden)');
   const timeText = await page.locator('#nav-time').textContent();
   // 东京时间 + 12 小时制：应包含 AM/PM 或与本地时间不同
   // 至少验证时间已按 cookie 渲染（非 --:--）
