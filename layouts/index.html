@@ -39,11 +39,24 @@
 {{/* ===== 底部搜索胶囊（主站「我的文件」同款：胶囊 + 麦克风，点击弹起跟键盘） ===== */}}
 <div id="bk-cap" class="bk-cap" role="search">
   <svg class="bk-cap-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
-  <input id="bk-cap-input" type="search" autocomplete="off" enterkeyhint="search" placeholder="{{ if $isEn }}Search by title or author{{ else }}搜索书名或作者{{ end }}" aria-label="{{ if $isEn }}Search books{{ else }}搜索书籍{{ end }}">
+  <input id="bk-cap-input" type="search" autocomplete="off" enterkeyhint="search" placeholder="{{ if $isEn }}Search by title or author{{ else }}搜索书名或作者{{ end }}" data-ph="{{ if $isEn }}Search by title or author{{ else }}搜索书名或作者{{ end }}" data-ph-short="{{ if $isEn }}Search books{{ else }}搜索书名{{ end }}" aria-label="{{ if $isEn }}Search books{{ else }}搜索书籍{{ end }}">
   <button type="button" class="bk-cap-mic" data-mic aria-label="{{ if $isEn }}Voice search{{ else }}语音搜索{{ end }}" style="display:none">
     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 15a3.5 3.5 0 0 0 3.5-3.5v-5a3.5 3.5 0 1 0-7 0v5A3.5 3.5 0 0 0 12 15zm6-3.5a6 6 0 0 1-12 0H4a8 8 0 0 0 7 7.94V22h2v-2.06A8 8 0 0 0 20 11.5h-2z"/></svg>
   </button>
 </div>
+<script>
+/* 窄屏搜索框 placeholder 防截断：宽度 <380px 时用短文案（data-ph-short，走 i18n 模板） */
+(function(){
+  var input=document.getElementById('bk-cap-input');
+  if(!input)return;
+  function apply(){
+    var narrow=window.innerWidth<380;
+    input.placeholder=narrow?(input.getAttribute('data-ph-short')||input.getAttribute('data-ph')):(input.getAttribute('data-ph')||input.getAttribute('data-ph-short'));
+  }
+  apply();
+  window.addEventListener('resize',apply);
+})();
+</script>
 
 {{/* ===== 详情弹层（沿用 #sheet-wrap，顶部已有拖动条） ===== */}}
 <div id="sheet-wrap" class="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="{{ if $isEn }}Book details{{ else }}书籍详情{{ end }}">
@@ -152,7 +165,7 @@ var adminBase = {{ $adminBase }};
 /* ================= 文案 ================= */
 var T = isEn ? {
   all:'All books', reading:'Reading', shelf:'Featured shelf',
-  search:'Search', searchPh:'Search by title or author', closeSearch:'Close search',
+  search:'Search', searchPh:'Search by title or author', searchPhShort:'Search books', closeSearch:'Close search',
   sortFilter:'Sort and filter', sort:'Sort', sortTitle:'Title', sortAuthor:'Author',
   sortAdded:'Date added', sortRecent:'Recently read',
   status:'Reading status (multi-select, Owner only)',
@@ -179,7 +192,7 @@ var T = isEn ? {
   readDone:'Read', uploadFirst:'Upload your first book'
 } : {
   all:'全部书籍', reading:'在读', shelf:'主站书单',
-  search:'搜索', searchPh:'搜索书名或作者', closeSearch:'关闭搜索',
+  search:'搜索', searchPh:'搜索书名或作者', searchPhShort:'搜索书名', closeSearch:'关闭搜索',
   sortFilter:'排序与筛选', sort:'排序', sortTitle:'书名', sortAuthor:'作者',
   sortAdded:'添加时间', sortRecent:'最近阅读',
   status:'阅读状态（多选，仅 Owner）',
