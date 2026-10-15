@@ -138,9 +138,9 @@ document.addEventListener('click',function(e){
 </script>
 {{/* SGX 锁屏同步：切回前台 / bfcache 恢复时向服务端确认会话（各页面 pagejs 之前加载） */}}
 <script src="{{ (resources.Get "js/sgx-lock-sync.js" | minify | fingerprint).RelPermalink }}"></script>
-{{/* 顶栏：时间 / 头像 / 天气（ES module） */}}
+{{/* 顶栏：时间 / 头像 / 天气（ES module；js.Build 需 format:esm 否则 export 丢失） */}}
 <script type="module">
-import { initTopbar } from '{{ (resources.Get "js/sgx/shell/topbar.js" | js.Build | minify | fingerprint).RelPermalink }}';
+import { initTopbar } from '{{ (resources.Get "js/sgx/shell/topbar.js" | js.Build (dict "format" "esm") | minify | fingerprint).RelPermalink }}';
 initTopbar();
 </script>
 {{ block "pagejs" . }}{{ end }}
