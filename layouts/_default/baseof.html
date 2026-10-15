@@ -67,7 +67,7 @@ window.__setHeadH();
 <header id="site-nav">
   <button type="button" id="nav-time-center" class="nav-tray-btn" aria-label="{{ if $isEn }}Clock and calendar{{ else }}时钟和日历{{ end }}" title="{{ if $isEn }}Clock and calendar{{ else }}时钟和日历{{ end }}"><span id="nav-time" class="clock-num">--:--</span></button>
   <a id="nav-home" href="{{ $home }}" aria-label="{{ if $isEn }}Library home{{ else }}书库首页{{ end }}">
-    {{ with $avatar }}<img src="{{ .RelPermalink }}" alt="" class="w-8 h-8 rounded-full object-cover">{{ end }}
+    {{ with $avatar }}<img src="{{ .RelPermalink }}" alt="" class="w-7 h-7 rounded-full object-cover">{{ end }}
   </a>
   <button type="button" id="nav-wx" class="nav-tray-btn" style="display:none" aria-label="{{ if $isEn }}Weather{{ else }}天气{{ end }}" title="{{ if $isEn }}Weather{{ else }}天气{{ end }}"><span id="nav-wx-ic" aria-hidden="true"></span><span id="nav-wx-t" class="clock-num"></span></button>
 </header>
@@ -96,6 +96,18 @@ window.__setHeadH();
     <p class="sgx-powered">Powered by Styrigx UI</p>
   </div>
 </footer>
+<script>
+/* 量取顶栏实际高度写入 --nav-h（顶栏 fixed，main 的 padding-top 依赖它）。来自 styrigx-space 2e7793d baseof.html:222-227 */
+(function(){
+  function setH(){
+    var n=document.getElementById('site-nav');
+    if(n)document.documentElement.style.setProperty('--nav-h',n.offsetHeight+'px');
+  }
+  window.addEventListener('resize',setH);
+  window.addEventListener('load',setH);
+  setH();
+})();
+</script>
 <script>
 /* 子页面返回键：有历史则回退，否则回书架首页 */
 document.addEventListener('click',function(e){
