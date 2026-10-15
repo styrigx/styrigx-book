@@ -36,8 +36,8 @@
       menu.classList.add('hidden');
       return true;
     }
-    // 排序筛选 / 书库设置 / 其他 overlay
-    var overlays = document.querySelectorAll('.bk-overlay:not(.hidden)');
+    // 排序筛选 / 书库设置 / 其他 overlay（用 .open 判定，见 input.css:948）
+    var overlays = document.querySelectorAll('.bk-overlay.open');
     for (var i = 0; i < overlays.length; i++) {
       var ov = overlays[i];
       // 触发关闭：优先点 × 按钮，否则直接隐藏
