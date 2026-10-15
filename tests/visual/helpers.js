@@ -106,8 +106,22 @@ async function mockBookAPIs(page, opts = {}) {
   await page.route('**/api/admin/books', route =>
     route.fulfill({ status: 200, contentType: 'application/json', body: booksBody }));
 
+  /* 天气 mock：/api/geo → 深圳（固定值，保证截图确定性） */
+  await page.route('**/api/geo', route =>
+    route.fulfill({ status: 200, contentType: 'application/json',
+      body: JSON.stringify({ latitude: 22.54, longitude: 114.06, city: '深圳' }) }));
+
   /* 非本地请求一律拦截（字体/库全部本地 vendor，不应有外网请求） */
   await page.route(/^(https?:)?\/\/(?!localhost|127\.0\.0\.1)/, route => route.abort());
+
+  /* 天气 mock（固定值，保证截图确定性）：必须在 abort 规则之后注册（后注册优先）。
+   * open-meteo → 22° 晴（weather_code 0） */
+  await page.route('**/api.open-meteo.com/v1/forecast*', route =>
+    route.fulfill({ status: 200, contentType: 'application/json',
+      body: JSON.stringify({
+        current: { temperature_2m: 22, weather_code: 0 },
+        daily: { temperature_2m_max: [25], temperature_2m_min: [18] },
+      }) }));
 }
 
 /**
