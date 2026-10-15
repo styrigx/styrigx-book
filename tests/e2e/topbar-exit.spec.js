@@ -23,13 +23,15 @@ async function setupVisitor(page) {
 }
 
 /* ============ A1：标题区 ============ */
-test('A1 homepage: single subpage-head with back and more', async ({ page }) => {
+test('A1 homepage: single subpage-head with back and functional menu', async ({ page }) => {
   await setupOwner(page);
   await gotoReady(page, '/', '#bk-grid:not(.hidden)');
   const heads = page.locator('[data-subpage-head]');
   await expect(heads, '首页应只有 1 个 [data-subpage-head]').toHaveCount(1);
   await expect(heads.locator('.subpage-back'), '应有 .subpage-back').toHaveCount(1);
-  await expect(heads.locator('.subpage-more'), '应有 .subpage-more（⋮ 占位）').toHaveCount(1);
+  // 首页的 ⋮ 是功能菜单 #bk-menu-btn（非 .subpage-more 占位），设计意图确认
+  await expect(heads.locator('#bk-menu-btn'), '首页应有 #bk-menu-btn 功能菜单').toHaveCount(1);
+  await expect(heads.locator('.subpage-more'), '首页不应有 .subpage-more 占位').toHaveCount(0);
 });
 
 test('A1 upload page: single subpage-head with back and more', async ({ page }) => {
