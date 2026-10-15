@@ -258,8 +258,16 @@ for (const owner of [true, false]) {
 const SHEET_360 = { width: 360, height: 800 };
 
 async function openFilterSheet(page) {
-  await page.locator('#bk-filter-btn').click();
+  await page.locator('#bk-menu-btn').click();
+  await page.locator('#bk-more-menu [data-more="filter"]').click();
   await expect(page.locator('#filter-wrap.open')).toHaveCount(1, { timeout: 10000 });
+  await page.evaluate(() => document.fonts.ready);
+}
+
+async function openSettingsSheet(page) {
+  await page.locator('#bk-menu-btn').click();
+  await page.locator('#bk-more-menu [data-more="settings"]').click();
+  await expect(page.locator('#settings-wrap.open')).toHaveCount(1, { timeout: 10000 });
   await page.evaluate(() => document.fonts.ready);
 }
 
@@ -296,10 +304,7 @@ for (const theme of ['light', 'dark']) {
     await setup(page, { viewport: SHEET_360, theme, owner: false });
     await gotoReady(page, '/', '#bk-grid:not(.hidden)');
     await waitShelfReady(page);
-    await openFilterSheet(page);
-    await page.locator('#filter-gear').click();
-    await expect(page.locator('#settings-wrap.open')).toHaveCount(1, { timeout: 10000 });
-    await page.evaluate(() => document.fonts.ready);
+    await openSettingsSheet(page);
     // 右上角 × 存在且可见
     const closeBtn = page.locator('#settings-wrap [data-close="settings"].bk-icbtn');
     await expect(closeBtn).toBeVisible();

@@ -151,7 +151,8 @@ test('owner：筛选弹层（排序单选 + 状态多选 + 布局三段式 + 格
   await gotoReady(page, '/', '#bk-grid:not(.hidden)');
   await waitShelf(page);
 
-  await page.locator('#bk-filter-btn').click();
+  await page.locator('#bk-menu-btn').click();
+  await page.locator('#bk-more-menu [data-more="filter"]').click();
   const sheet = page.locator('#filter-wrap.open');
   await expect(sheet).toHaveCount(1);
   await expect(sheet.locator('input[name="bk-sort"]')).toHaveCount(4);
@@ -177,7 +178,8 @@ test('owner：筛选弹层（排序单选 + 状态多选 + 布局三段式 + 格
   await expect(page.locator('#bk-grid [data-book]')).toHaveCount(4);
 
   /* 清除全部 → 回默认（排序最近阅读，网格 6 本） */
-  await page.locator('#bk-filter-btn').click();
+  await page.locator('#bk-menu-btn').click();
+  await page.locator('#bk-more-menu [data-more="filter"]').click();
   await page.locator('#filter-clear').click();
   await expect(page.locator('#bk-grid [data-book]')).toHaveCount(6);
   await expect(page.locator('#bk-chips')).toContainText('排序：最近阅读');
