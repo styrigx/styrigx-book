@@ -275,7 +275,7 @@ html { scroll-padding-top: calc(var(--nav-h) + 16px); }
   justify-content:flex-end}
 .layout-phone .subpage-hero{position:relative;top:0}
 .layout-phone .subpage-actions{top:auto;bottom:var(--sgx-head-btn-gap)}
-.layout-dex .subpage-head{min-height:25vh;min-height:25svh;padding-top:calc(64px + env(safe-area-inset-top,0px))}
+.layout-dex .subpage-head{min-height:25vh;min-height:25svh;padding-top:calc(64px + env(safe-area-inset-top,0px));padding-bottom:clamp(120px,20vh,200px)}
 /* 上滑标题区滚走时轻微淡出 + 缩小 */
 .subpage-hero{transition:opacity .25s ease,transform .25s ease}
 .subpage-head.head-past .subpage-hero{opacity:.15;transform:scale(.96)}
