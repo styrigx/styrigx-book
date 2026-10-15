@@ -217,9 +217,25 @@ footer { padding-bottom: calc(var(--dock-h) + env(safe-area-inset-bottom, 0px));
 
 /* ===== 顶栏：透明无底色无线，直接融在背景里；手机、DeX 全局显示 ===== */
 /* --nav-h 与主站同值：主站 CSS 默认 64px，但内联 JS 用顶栏实测高度覆盖，实测 48px */
-:root { --nav-h: 48px; }
-#site-nav { position: fixed; top: 0; left: 0; right: 0; background: transparent; border: 0; box-shadow: none; }
-#site-nav .nav-inner{position:relative}
+:root { --nav-h: 48px; --sgx-head-btn-gap: 8px; }
+/* 顶栏：三栏 grid（左时间 / 中头像 / 右天气），左右等宽 */
+#site-nav { position: fixed; top: 0; left: 0; right: 0; z-index: 50; height: var(--nav-h);
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+  padding: 0 16px; background: transparent; border: 0; box-shadow: none; }
+#nav-time-center { justify-self: start; }
+#nav-home { justify-self: center; display: inline-flex; align-items: center; }
+#nav-wx { justify-self: end; }
+/* 顶栏托盘按钮（时间/天气） */
+.nav-tray-btn { display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: .9rem; min-height: 44px;
+  font-size: 13px; font-weight: 600; color: var(--m-on-surface); white-space: nowrap; flex-shrink: 0; }
+.nav-tray-btn:hover { background: rgba(0,0,0,.05); }
+.dark .nav-tray-btn:hover { background: rgba(255,255,255,.08); }
+#nav-wx-ic { font-size: 16px; line-height: 1; }
+#nav-wx-t, #nav-time { font-variant-numeric: tabular-nums; }
+#nav-time { font-size: 15px; }
+/* 顶栏时间/天气淡出（滚过标题区后 .stuck）：opacity 0 + 不响应点击，小标题居中显示 */
+#nav-time-center, #nav-wx { transition: opacity .2s ease; }
+#site-nav.stuck #nav-time-center, #site-nav.stuck #nav-wx { opacity: 0; pointer-events: none; }
 /* DeX 顶栏：统一磨砂玻璃，去硬线 */
 .layout-dex #site-nav { background: rgba(255,255,255,0.7);
   backdrop-filter: blur(24px) saturate(180%); -webkit-backdrop-filter: blur(24px) saturate(180%); }
@@ -228,18 +244,7 @@ footer { padding-bottom: calc(var(--dock-h) + env(safe-area-inset-bottom, 0px));
   .layout-dex #site-nav { background: #fff; }
   .dark.layout-dex #site-nav, .layout-dex.dark #site-nav { background: #1e1e20; }
 }
-/* 顶栏中间时间（带日期）：绝对居中，点击展开日历面板 */
-#nav-time-center{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
-  display:flex;align-items:baseline;gap:6px;white-space:nowrap;min-height:44px;align-items:center;
-  padding:0 12px;border-radius:999px;color:var(--m-on-surface)}
-#nav-time-center:active{background:rgba(0,0,0,.05)}
-.dark #nav-time-center:active{background:rgba(255,255,255,.08)}
-#nav-time{font-size:15px}
-#nav-time-date{font-size:12px;font-weight:500;color:var(--m-on-surface-variant)}
-/* 顶栏右侧：音乐音符 + 天气 */
-#nav-right{display:flex;align-items:center;gap:2px;margin-left:auto;flex-shrink:0;position:relative;z-index:1}
-/* 手机子页面滚动后：顶栏与小标题/圆形返回键合并为同一层模糊底 */
-#nav-brand,#nav-time-center{transition:opacity .2s ease}
+/* 手机子页面滚动后：顶栏与小标题合并为同一层模糊底 */
 .layout-phone body.subpage-scrolled #site-nav{background:rgba(255,255,255,0.72);
   backdrop-filter:blur(20px) saturate(180%);-webkit-backdrop-filter:blur(20px) saturate(180%);
   /* 模糊层加高：覆盖居中小标题下方 16px，渐隐更长，小标题不直接贴在卡片上 */
@@ -251,8 +256,6 @@ footer { padding-bottom: calc(var(--dock-h) + env(safe-area-inset-bottom, 0px));
   .layout-phone body.subpage-scrolled #site-nav{background:#fff}
   .dark.layout-phone body.subpage-scrolled #site-nav{background:#1e1e20}
 }
-.layout-phone body.subpage-scrolled #nav-brand,
-.layout-phone body.subpage-scrolled #nav-time-center{opacity:0;pointer-events:none}
 main { padding-top: calc(var(--nav-h) + 16px + env(safe-area-inset-top, 0px)); }
 /* 手机子页面：标题区从屏幕顶部开始（顶栏透明叠在上面），main 不再额外留白 */
 .layout-phone main:has([data-subpage-head]){padding-top:0}
@@ -270,23 +273,44 @@ html { scroll-padding-top: calc(var(--nav-h) + 16px); }
   padding-bottom:clamp(120px,20vh,200px);
   justify-content:flex-end}
 .layout-phone .subpage-hero{position:relative;top:0}
-.layout-phone .subpage-back{top:calc(var(--nav-h,64px) + 12px + env(safe-area-inset-top,0px))}
-.layout-phone .subpage-actions{top:auto;bottom:8px}
+.layout-phone .subpage-actions{top:auto;bottom:var(--sgx-head-btn-gap)}
 .layout-dex .subpage-head{min-height:25vh;min-height:25svh;padding-top:calc(64px + env(safe-area-inset-top,0px))}
 /* 上滑标题区滚走时轻微淡出 + 缩小 */
 .subpage-hero{transition:opacity .25s ease,transform .25s ease}
 .subpage-head.head-past .subpage-hero{opacity:.15;transform:scale(.96)}
 .reduced-motion .subpage-hero{transition:none}
-.subpage-back{position:absolute;left:16px;top:calc(12px + env(safe-area-inset-top,0px));
+/* 返回键：展开态 ←（左下，与三点对称）；吸顶时变 ‹ 磨砂圆（与主站一致） */
+.subpage-back{position:absolute;left:16px;top:auto;bottom:var(--sgx-head-btn-gap);
   width:44px;height:44px;border-radius:999px;display:inline-flex;align-items:center;
   justify-content:center;color:var(--m-on-surface);flex-shrink:0;z-index:2}
 .subpage-back:hover{background:rgba(0,0,0,.05)}
 .dark .subpage-back:hover{background:rgba(255,255,255,.08)}
 .subpage-back svg{width:24px;height:24px}
+.subpage-back .sgx-bk-fold{display:none;font-size:26px;line-height:1;font-weight:400;color:var(--m-primary)}
+.subpage-back.stuck{position:fixed;top:calc(var(--nav-h) + 8px + env(safe-area-inset-top,0px));bottom:auto;margin:0;
+  background:rgba(255,255,255,0.7);backdrop-filter:blur(24px) saturate(180%);-webkit-backdrop-filter:blur(24px) saturate(180%);
+  border:1px solid rgba(0,0,0,0.04);box-shadow:0 6px 20px rgba(0,0,0,0.10);
+  z-index:55;color:var(--m-primary)}
+.dark .subpage-back.stuck{background:rgba(30,30,32,0.7);border-color:rgba(255,255,255,0.06)}
+.subpage-back.stuck svg{display:none}
+.subpage-back.stuck .sgx-bk-fold{display:block}
+.subpage-back,.subpage-more{transition:background-color .2s ease,border-color .2s ease,box-shadow .2s ease}
+.reduced-motion .subpage-back,.reduced-motion .subpage-more{transition:none}
 .subpage-hero{min-width:0;max-width:640px}
 .subpage-title{font-size:40px;font-weight:800;letter-spacing:-0.02em;line-height:1.15;color:var(--m-primary)}
 .subpage-sub{margin-top:10px;font-size:14px;color:var(--m-on-surface-variant)}
-.subpage-actions{position:absolute;right:16px;top:calc(12px + env(safe-area-inset-top,0px));display:flex;gap:8px;flex-shrink:0;z-index:2}
+.subpage-actions{position:absolute;right:16px;top:auto;bottom:var(--sgx-head-btn-gap);display:flex;gap:8px;flex-shrink:0;z-index:2}
+/* 三点按钮（44×44，与主站一致） */
+.subpage-more{width:44px;height:44px;border-radius:999px;border:0;cursor:pointer;
+  display:inline-flex;align-items:center;justify-content:center;
+  background:transparent;color:var(--m-on-surface);flex-shrink:0}
+.subpage-more:hover{background:rgba(0,0,0,.05)}
+.dark .subpage-more:hover{background:rgba(255,255,255,.08)}
+.subpage-more:focus-visible{outline:2px solid var(--m-primary);outline-offset:2px}
+.subpage-more.stuck{position:fixed;top:calc(var(--nav-h) + 8px + env(safe-area-inset-top,0px));bottom:auto;
+  background:rgba(255,255,255,0.7);backdrop-filter:blur(24px) saturate(180%);-webkit-backdrop-filter:blur(24px) saturate(180%);
+  border:1px solid rgba(0,0,0,0.04);box-shadow:0 6px 20px rgba(0,0,0,0.10);z-index:55}
+.dark .subpage-more.stuck{background:rgba(30,30,32,0.7);border-color:rgba(255,255,255,0.06)}
 /* 上传页（bk-admin）：压缩标题区大留白，让拖放区进首屏上半部（默认 42svh 标题区） */
 .bk-admin .subpage-head{min-height:230px;padding-top:calc(var(--nav-h,64px) + 8px + env(safe-area-inset-top,0px));padding-bottom:20px}
 /* ===== 上传页横向溢出根因修复（book 手机验收返工第 8 项） =====
@@ -309,25 +333,6 @@ html { scroll-padding-top: calc(var(--nav-h) + 16px); }
   overflow:hidden;text-overflow:ellipsis;transition:opacity .2s ease,transform .2s ease}
 .subpage-mini-title.show{opacity:1;transform:translateX(-50%)}
 .reduced-motion .subpage-mini-title{transition:none}
-/* 滚过标题区后的悬浮圆形返回键（手机） */
-.subpage-back-float{position:fixed;left:16px;top:calc(12px + env(safe-area-inset-top,0px));z-index:55;
-  width:48px;height:48px;border-radius:999px;display:flex;align-items:center;justify-content:center;
-  background:rgba(255,255,255,0.7);backdrop-filter:blur(24px) saturate(180%);-webkit-backdrop-filter:blur(24px) saturate(180%);
-  border:1px solid rgba(0,0,0,0.04);box-shadow:0 6px 20px rgba(0,0,0,0.10);
-  opacity:0;pointer-events:none;transform:translateY(-8px);transition:opacity .2s ease,transform .2s ease}
-.dark .subpage-back-float{background:rgba(30,30,32,0.7);border-color:rgba(255,255,255,0.06)}
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .subpage-back-float{background:#fff}.dark .subpage-back-float{background:#1e1e20}
-}
-.subpage-back-float.show{opacity:1;pointer-events:auto;transform:none}
-.subpage-back-float svg{width:24px;height:24px;color:var(--m-primary)}
-/* 滚过子页面标题区后：站点头栏只留毛玻璃底，品牌与通用标题隐去，
-   让位给悬浮返回键 + 当前页小标题（避免「管理/书架」与「书库」重叠、返回键压住 Styrigx） */
-body.subpage-scrolled #site-nav > a,
-body.subpage-scrolled #site-nav > span{opacity:0;pointer-events:none;transition:opacity .2s ease}
-#site-nav > a,#site-nav > span{transition:opacity .2s ease}
-.layout-dex .subpage-back-float{display:none}
-.reduced-motion .subpage-back-float{transition:none}
 
 /* ===== 数据卡片固定最小高度：数据到来前后尺寸不变 ===== */
 #dual-clock { min-height: 168px; }
@@ -670,13 +675,20 @@ body.subpage-scrolled #site-nav > span{opacity:0;pointer-events:none;transition:
 .wxp-temp{font-size:40px;font-weight:800;letter-spacing:-0.02em}
 .wxp-hilo{margin-top:8px;font-size:13px;color:var(--m-on-surface-variant)}
 
-/* ----- 顶栏时钟/天气面板（从顶栏往下展开，不超出屏幕） ----- */
+/* ----- 顶栏时钟面板（从主站 244492c 移植现行样式） ----- */
 #dex-clock-pop{display:none;position:fixed;right:12px;top:calc(var(--nav-h) + 8px);z-index:90;width:min(320px,92vw);
   max-height:calc(100dvh - var(--nav-h) - 24px);overflow-y:auto}
 #dex-clock-pop.open{display:block}
 #dex-clock-pop:not(.open){pointer-events:none}
 .dex-pop-card{background:var(--m-container-lowest);border:1px solid var(--m-outline);border-radius:1.5rem;
-  box-shadow:0 24px 64px -16px rgba(0,0,0,.4);padding:18px}
+  background-image:var(--card-noise);
+  box-shadow:inset 0 0.5px 0 rgba(255,255,255,.65),
+    0 1px 2px rgba(16,24,40,.08),
+    0 24px 64px -16px rgba(16,24,40,.30);
+  padding:18px}
+.dark .dex-pop-card{box-shadow:inset 0 0.5px 0 rgba(255,255,255,.09),
+    0 1px 2px rgba(0,0,0,.45),
+    0 24px 64px -16px rgba(0,0,0,.55)}
 .dex-cal-h{font-weight:700;font-size:14px;margin-bottom:8px}
 .dex-cal-g{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center;font-size:12px}
 .dex-cal-w{color:var(--m-on-surface-variant);font-weight:600;padding:4px 0}
