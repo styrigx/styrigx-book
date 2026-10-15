@@ -237,6 +237,8 @@ footer { padding-bottom: calc(var(--dock-h) + env(safe-area-inset-bottom, 0px));
 /* 顶栏时间/天气/头像淡出（滚过标题区后 .stuck）：opacity 0 + 不响应点击，小标题居中显示 */
 #nav-time-center, #nav-wx, #nav-home { transition: opacity .2s ease; }
 #site-nav.stuck #nav-time-center, #site-nav.stuck #nav-wx, #site-nav.stuck #nav-home { opacity: 0; pointer-events: none; }
+/* 与主站 2e7793d 一致：body.subpage-scrolled 时顶栏内容让位（input.css:833-838） */
+body.subpage-scrolled #nav-time-center, body.subpage-scrolled #nav-wx, body.subpage-scrolled #nav-home { opacity: 0; pointer-events: none; }
 /* DeX 顶栏：统一磨砂玻璃，去硬线 */
 .layout-dex #site-nav { background: rgba(255,255,255,0.7);
   backdrop-filter: blur(24px) saturate(180%); -webkit-backdrop-filter: blur(24px) saturate(180%); }
