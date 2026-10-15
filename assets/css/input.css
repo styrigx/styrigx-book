@@ -276,6 +276,8 @@ html { scroll-padding-top: calc(var(--nav-h) + 16px); }
 .layout-phone .subpage-hero{position:relative;top:0}
 .layout-phone .subpage-actions{top:auto;bottom:var(--sgx-head-btn-gap)}
 .layout-dex .subpage-head{min-height:25vh;min-height:25svh;padding-top:calc(64px + env(safe-area-inset-top,0px));padding-bottom:clamp(120px,20vh,200px)}
+/* DeX/PC：标题区按主站 1100px 居中（主站 .subpage-head 实测 1068px = 1100-32px px-4），按钮相对标题区定位 */
+.layout-dex .subpage-head{max-width:1068px;margin-left:auto;margin-right:auto}
 /* 上滑标题区滚走时轻微淡出 + 缩小 */
 .subpage-hero{transition:opacity .25s ease,transform .25s ease}
 .subpage-head.head-past .subpage-hero{opacity:.15;transform:scale(.96)}
