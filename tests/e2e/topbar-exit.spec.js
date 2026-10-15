@@ -8,7 +8,10 @@
 'use strict';
 
 const { test, expect } = require('@playwright/test');
-const { mockBookAPIs, setTheme, freezeTime, gotoReady } = require('../visual/helpers.js');
+const { mockBookAPIs, setTheme, freezeTime, gotoReady, BOOKS } = require('../visual/helpers.js');
+
+// A3 需要页面可滚动：用 3 倍书量撑高页面
+const MANY_BOOKS = [...BOOKS, ...BOOKS, ...BOOKS];
 
 async function setupOwner(page) {
   await setTheme(page, 'light');
@@ -123,7 +126,9 @@ test('A3 topbar geometry: time left, avatar center, wx right, no Styrigx text', 
 });
 
 test('A3 topbar stuck: time/wx fade, mini-title visible', async ({ page }) => {
-  await setupOwner(page);
+  await setTheme(page, 'light');
+  await freezeTime(page);
+  await mockBookAPIs(page, { owner: true, books: MANY_BOOKS });
   await gotoReady(page, '/', '#bk-grid:not(.hidden)');
   // 滚过标题区
   await page.evaluate(() => {
@@ -132,6 +137,11 @@ test('A3 topbar stuck: time/wx fade, mini-title visible', async ({ page }) => {
   });
   await page.waitForFunction(() => {
     return document.getElementById('site-nav').classList.contains('stuck');
+  }, null, { timeout: 5000 });
+  // 等 opacity transition (.2s) 完成
+  await page.waitForFunction(() => {
+    const t = parseFloat(getComputedStyle(document.getElementById('nav-time-center')).opacity);
+    return t === 0;
   }, null, { timeout: 5000 });
   // 时间和天气 opacity 0
   const opacity = await page.evaluate(() => {
@@ -172,15 +182,16 @@ test('A5 exit guard installed on homepage', async ({ page }) => {
 test('A5 back button exits to host files', async ({ page }) => {
   await setupOwner(page);
   await gotoReady(page, '/', '#bk-grid:not(.hidden)');
-  // 拦截 location.replace
-  await page.evaluate(() => {
-    window.__exitUrl = null;
-    const origReplace = location.replace.bind(location);
-    location.replace = function (url) { window.__exitUrl = url; };
+  // 拦截到 styrigx.com 的导航（location.replace 无法在 Chromium 里 stub）
+  let navUrl = null;
+  await page.route('https://styrigx.com/**', route => {
+    navUrl = route.request().url();
+    route.abort();
   });
   await page.locator('[data-subpage-head] .subpage-back').click();
-  const exitUrl = await page.evaluate(() => window.__exitUrl);
-  expect(exitUrl, '← 应 replace 到主站 files').toBe('https://styrigx.com/files/');
+  // 等待导航尝试
+  await page.waitForTimeout(800);
+  expect(navUrl, '← 应导航到主站 files').toBe('https://styrigx.com/files/');
 });
 
 /* ============ A6：弹层打开时返回只关弹层 ============ */
@@ -190,17 +201,18 @@ test('A6 back with menu open: closes menu, no exit', async ({ page }) => {
   // 打开 ⋮ 菜单
   await page.locator('#bk-menu-btn').click();
   await expect(page.locator('#bk-more-menu:not(.hidden)'), '菜单应打开').toBeVisible();
-  // 拦截 location.replace
-  await page.evaluate(() => {
-    window.__exitUrl = null;
-    location.replace = function (url) { window.__exitUrl = url; };
+  // 拦截到 styrigx.com 的导航（location.replace 无法在 Chromium 里 stub）
+  let navUrl = null;
+  await page.route('https://styrigx.com/**', route => {
+    navUrl = route.request().url();
+    route.abort();
   });
   // 执行 goBack（触发 popstate）
   await page.goBack();
   // 菜单应关闭，URL 不变，未退出
   await expect(page.locator('#bk-more-menu:not(.hidden)'), '菜单应关闭').toHaveCount(0);
-  const exitUrl = await page.evaluate(() => window.__exitUrl);
-  expect(exitUrl, '不应触发退出').toBeNull();
+  await page.waitForTimeout(500);
+  expect(navUrl, '不应触发退出').toBeNull();
   expect(page.url(), 'URL 不应变').toMatch(/\/$/);
 });
 
