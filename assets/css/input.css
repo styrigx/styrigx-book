@@ -233,9 +233,9 @@ footer { padding-bottom: calc(var(--dock-h) + env(safe-area-inset-bottom, 0px));
 #nav-wx-ic { font-size: 16px; line-height: 1; }
 #nav-wx-t, #nav-time { font-variant-numeric: tabular-nums; }
 #nav-time { font-size: 15px; }
-/* 顶栏时间/天气淡出（滚过标题区后 .stuck）：opacity 0 + 不响应点击，小标题居中显示 */
-#nav-time-center, #nav-wx { transition: opacity .2s ease; }
-#site-nav.stuck #nav-time-center, #site-nav.stuck #nav-wx { opacity: 0; pointer-events: none; }
+/* 顶栏时间/天气/头像淡出（滚过标题区后 .stuck）：opacity 0 + 不响应点击，小标题居中显示 */
+#nav-time-center, #nav-wx, #nav-home { transition: opacity .2s ease; }
+#site-nav.stuck #nav-time-center, #site-nav.stuck #nav-wx, #site-nav.stuck #nav-home { opacity: 0; pointer-events: none; }
 /* DeX 顶栏：统一磨砂玻璃，去硬线 */
 .layout-dex #site-nav { background: rgba(255,255,255,0.7);
   backdrop-filter: blur(24px) saturate(180%); -webkit-backdrop-filter: blur(24px) saturate(180%); }
