@@ -279,21 +279,18 @@ html { scroll-padding-top: calc(var(--nav-h) + 16px); }
 .subpage-hero{transition:opacity .25s ease,transform .25s ease}
 .subpage-head.head-past .subpage-hero{opacity:.15;transform:scale(.96)}
 .reduced-motion .subpage-hero{transition:none}
-/* 返回键：展开态 ←（左下，与三点对称）；吸顶时变 ‹ 磨砂圆（与主站一致） */
+/* 返回键：展开态 ←（左下，与三点对称）；吸顶时变磨砂圆（与主站一致），图标不变 */
 .subpage-back{position:absolute;left:16px;top:auto;bottom:var(--sgx-head-btn-gap);
   width:44px;height:44px;border-radius:999px;display:inline-flex;align-items:center;
   justify-content:center;color:var(--m-on-surface);flex-shrink:0;z-index:2}
 .subpage-back:hover{background:rgba(0,0,0,.05)}
 .dark .subpage-back:hover{background:rgba(255,255,255,.08)}
 .subpage-back svg{width:24px;height:24px}
-.subpage-back .sgx-bk-fold{display:none;font-size:26px;line-height:1;font-weight:400;color:var(--m-primary)}
 .subpage-back.stuck{position:fixed;top:calc(var(--nav-h) + 8px + env(safe-area-inset-top,0px));bottom:auto;margin:0;
   background:rgba(255,255,255,0.7);backdrop-filter:blur(24px) saturate(180%);-webkit-backdrop-filter:blur(24px) saturate(180%);
   border:1px solid rgba(0,0,0,0.04);box-shadow:0 6px 20px rgba(0,0,0,0.10);
   z-index:55;color:var(--m-primary)}
 .dark .subpage-back.stuck{background:rgba(30,30,32,0.7);border-color:rgba(255,255,255,0.06)}
-.subpage-back.stuck svg{display:none}
-.subpage-back.stuck .sgx-bk-fold{display:block}
 .subpage-back,.subpage-more{transition:background-color .2s ease,border-color .2s ease,box-shadow .2s ease}
 .reduced-motion .subpage-back,.reduced-motion .subpage-more{transition:none}
 .subpage-hero{min-width:0;max-width:640px}
