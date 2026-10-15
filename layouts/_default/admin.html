@@ -21,7 +21,7 @@
   <div id="adm-main" class="hidden">
     <section class="mb-10 rounded-[1.75rem] bg-m-container-lowest border border-m-outline/40 p-4 sm:p-5 shadow-sm">
       <h2 class="text-base font-extrabold text-m-on-surface mb-1 px-1">{{ if $isEn }}Add books{{ else }}上传新书{{ end }}</h2>
-      <p class="text-xs text-m-on-surface-variant mb-4 px-1">{{ if $isEn }}Files are parsed locally first — fill in the info, then upload.{{ else }}文件先在本地解析，填好信息后再上传。{{ end }}</p>
+      <p id="adm-desc" class="text-xs text-m-on-surface-variant mb-1 px-1">{{ if $isEn }}Files are parsed locally first — fill in the info, then upload.{{ else }}文件先在本地解析，填好信息后再上传。{{ end }}</p>
       {{ partial "upload-queue.html" (dict "prefix" "adm" "isEn" $isEn) }}
       <p class="text-xs text-m-on-surface-variant mt-4 px-1 leading-relaxed">{{ if $isEn }}Large files upload in parts; a failed part retries automatically. After upload, the cover and page count are extracted automatically. If an upload fails, please re-upload.{{ else }}大文件分片上传，单片失败自动重试。上传后自动提取封面与页数入库。上传失败后需重新上传。{{ end }}</p>
     </section>
@@ -66,8 +66,8 @@ async function boot(){
       if(br.ok){
         var bj = await br.json();
         if(bj && bj.total > 0){
-          var hero = document.querySelector('.subpage-hero');
-          if(hero) hero.insertAdjacentHTML('beforeend', '<p class="subpage-sub">' + (isEn ? 'Total ' + bj.total + ' books · ' + H.fmtSize(bj.bytes || 0) + ' used' : '共 ' + bj.total + ' 本 · 已用 ' + H.fmtSize(bj.bytes || 0)) + '</p>');
+          var desc = document.getElementById('adm-desc');
+          if(desc) desc.insertAdjacentHTML('afterend', '<p class="text-xs text-m-on-surface-variant mb-4 px-1">' + (isEn ? 'Total ' + bj.total + ' books · ' + H.fmtSize(bj.bytes || 0) + ' used' : '共 ' + bj.total + ' 本 · 已用 ' + H.fmtSize(bj.bytes || 0)) + '</p>');
         }
       }
     }catch(e){}

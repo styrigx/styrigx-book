@@ -217,7 +217,7 @@ footer { padding-bottom: calc(var(--dock-h) + env(safe-area-inset-bottom, 0px));
 
 /* ===== 顶栏：透明无底色无线，直接融在背景里；手机、DeX 全局显示 ===== */
 /* --nav-h 与主站 2e7793d 实测一致：手机 48px（主站 #nav-time-center 绝对定位不占高度，实测 48px），DeX 64px。顶栏实测高度由内联 JS 写回 */
-:root { --nav-h: 48px; --sgx-head-btn-gap: 8px; }
+:root { --nav-h: 64px; --sgx-head-btn-gap: 8px; }
 .layout-dex { --nav-h: 64px; }
 /* 顶栏：三栏 grid（左时间 / 中头像 / 右天气），左右等宽；高度与主站实测一致（手机 48px / DeX 64px） */
 #site-nav { position: fixed; top: 0; left: 0; right: 0; z-index: 50; height: var(--nav-h);
@@ -272,7 +272,7 @@ html { scroll-padding-top: calc(var(--nav-h) + 16px); }
    标题区从屏幕顶部开始（顶栏透明叠在上面），大标题沉底：标题区整体约 25% 屏高，
    大标题下方到第一块内容不超过 32px（head 的 padding-bottom）。折叠动画逻辑不变。 */
 .layout-phone .subpage-head{min-height:var(--head-h,max(200px,25svh));
-  padding-top:calc(var(--nav-h,64px) + 20px + env(safe-area-inset-top,0px));
+  padding-top:calc(64px + 20px + env(safe-area-inset-top,0px));
   padding-bottom:clamp(120px,20vh,200px);
   justify-content:flex-end}
 .layout-phone .subpage-hero{position:relative;top:0}
@@ -288,8 +288,10 @@ html { scroll-padding-top: calc(var(--nav-h) + 16px); }
 .subpage-back{position:absolute;left:16px;top:auto;bottom:var(--sgx-head-btn-gap);
   width:44px;height:44px;border-radius:999px;display:inline-flex;align-items:center;
   justify-content:center;color:var(--m-on-surface);flex-shrink:0;z-index:2}
+@media (hover:hover){
 .subpage-back:hover{background:rgba(0,0,0,.05)}
 .dark .subpage-back:hover{background:rgba(255,255,255,.08)}
+}
 .subpage-back svg{width:24px;height:24px}
 .subpage-back.stuck{position:fixed;top:calc(var(--nav-h) + 8px + env(safe-area-inset-top,0px));bottom:auto;margin:0;
   left:max(16px,calc((100vw - 1100px)/2 + 16px));
@@ -307,8 +309,10 @@ html { scroll-padding-top: calc(var(--nav-h) + 16px); }
 .subpage-more{width:44px;height:44px;border-radius:999px;border:0;cursor:pointer;
   display:inline-flex;align-items:center;justify-content:center;
   background:transparent;color:var(--m-on-surface);flex-shrink:0}
+@media (hover:hover){
 .subpage-more:hover{background:rgba(0,0,0,.05)}
 .dark .subpage-more:hover{background:rgba(255,255,255,.08)}
+}
 .subpage-more:focus-visible{outline:2px solid var(--m-primary);outline-offset:2px}
 .subpage-more.stuck{position:fixed;top:calc(var(--nav-h) + 8px + env(safe-area-inset-top,0px));bottom:auto;
   right:max(16px,calc((100vw - 1100px)/2 + 16px));
