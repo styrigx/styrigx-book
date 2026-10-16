@@ -13,7 +13,7 @@
 <style>
 @font-face{font-family:'Inter';font-style:normal;font-weight:400 800;font-display:optional;src:url('/fonts/inter-latin.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}
 @font-face{font-family:'Inter Fallback';src:local('Arial');size-adjust:107%;ascent-override:90%;descent-override:23%;line-gap-override:0%;}
-:root{--nav-h:64px}/* 与主站同值 */
+:root{--nav-h:68px}/* 顶栏卡片底边位置：16 + 52 */
 </style>
 <script>
 /* 主题预读：渲染前应用，避免闪烁（sgx-theme-mode: system/light/dark） */
@@ -42,10 +42,12 @@ function __applyLayout(){
   if(window.__setHeadH)window.__setHeadH();
 }
 __applyLayout();
+/* 标题区高度：手机 max(280px, 35% 可见高度)，DeX max(200px, 25svh) 用 CSS 兜底。
+   JS 只在加载时和横竖屏切换时更新 --head-h（手机）。 */
 window.__setHeadH=function(){
   if(!document.documentElement.classList.contains('layout-phone'))return;
   var h=window.innerHeight||0;
-  if(h>0)document.documentElement.style.setProperty('--head-h',Math.round(h*0.25)+'px');
+  if(h>0)document.documentElement.style.setProperty('--head-h',Math.max(280,Math.round(h*0.35))+'px');
 };
 window.__setHeadH();
 (function(){
@@ -61,34 +63,23 @@ window.__setHeadH();
 <link rel="stylesheet" href="{{ (resources.Get "css/main.css" | minify | fingerprint).RelPermalink }}">
 </head>
 <body class="bg-m-surface text-m-on-surface font-sans antialiased" style="background-image:var(--m-wallpaper);background-attachment:fixed">
-{{/* 顶栏：三栏 grid（左时间 / 中头像 / 右天气），与主站同款时钟面板+天气面板 */}}
+{{/* 顶栏 v2.0：返回圆 + 长条（品牌组 + ⋮）+ 导航圆 */}}
 {{ $avatar := resources.Get "images/avatar.png" }}
-{{ $home := "/" }}{{ if $isEn }}{{ $home = "/en/" }}{{ end }}
 <header id="site-nav">
-  <button type="button" id="nav-time-center" class="nav-tray-btn" aria-label="{{ if $isEn }}Clock and calendar{{ else }}时钟和日历{{ end }}" title="{{ if $isEn }}Clock and calendar{{ else }}时钟和日历{{ end }}"><span id="nav-time" class="clock-num">--:--</span></button>
-  <a id="nav-home" href="{{ $home }}" aria-label="{{ if $isEn }}Library home{{ else }}书库首页{{ end }}">
-    {{ with $avatar }}<img src="{{ .RelPermalink }}" alt="" class="w-7 h-7 rounded-full object-cover">{{ end }}
-  </a>
-  <button type="button" id="nav-wx" class="nav-tray-btn" style="display:none" aria-label="{{ if $isEn }}Weather{{ else }}天气{{ end }}" title="{{ if $isEn }}Weather{{ else }}天气{{ end }}"><span id="nav-wx-ic" aria-hidden="true"></span><span id="nav-wx-t" class="clock-num"></span></button>
-</header>
-{{/* 时钟面板：双时钟 + 日历（从主站 244492c 移植） */}}
-<div id="dex-clock-pop" class="hidden" role="dialog" aria-label="{{ if $isEn }}Clock{{ else }}时钟{{ end }}">
-  <div class="dex-pop-card">
-    <div class="flex items-end justify-between gap-4">
-      <div class="min-w-0">
-        <div id="dex-pop-local" class="text-4xl font-extrabold clock-num">--:--</div>
-        <div id="dex-pop-local-c" class="text-xs text-m-on-surface-variant mt-1"></div>
-      </div>
-      <div class="text-right shrink-0">
-        <div id="dex-pop-r" class="text-2xl font-bold clock-num">--:--</div>
-        <div id="dex-pop-r-c" class="text-xs text-m-on-surface-variant mt-1"></div>
-      </div>
+  <div class="sgx-topbar">
+    <button type="button" class="sgx-tb-back" data-go-back aria-label="{{ if $isEn }}Back{{ else }}返回{{ end }}">{{ partial "icon.html" "chevron-left" }}</button>
+    <div class="sgx-tb-pill">
+      <button type="button" class="sgx-tb-brand" id="nav-home" aria-label="{{ if $isEn }}Library home{{ else }}书库首页{{ end }}">
+        {{ with $avatar }}<img src="{{ .RelPermalink }}" alt="" class="sgx-tb-avatar">{{ end }}
+        <span class="sgx-tb-text">Styrigx</span>
+      </button>
+      <button type="button" class="sgx-tb-more" id="bk-menu-btn" aria-label="{{ if $isEn }}More options{{ else }}更多选项{{ end }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.9"/><circle cx="12" cy="12" r="1.9"/><circle cx="12" cy="19" r="1.9"/></svg></button>
     </div>
-    <div id="dex-pop-cal" class="mt-3 pt-3 border-t border-m-outline"></div>
+    <button type="button" class="sgx-tb-nav" aria-label="{{ if $isEn }}Apps{{ else }}导航{{ end }}" aria-haspopup="menu" aria-expanded="false">{{ partial "icon.html" "apps-grid" }}</button>
   </div>
-</div>
-{{/* 天气面板（从顶栏往下展开） */}}
-<div id="nav-wx-pop" role="dialog" aria-label="{{ if $isEn }}Weather{{ else }}天气{{ end }}"></div>
+  <div id="sgx-tb-navmenu" class="bk-menu hidden" role="menu" aria-label="{{ if $isEn }}Apps{{ else }}导航{{ end }}"></div>
+  <div id="bk-more-menu" class="bk-menu hidden" role="menu"></div>
+</header>
 {{ block "main" . }}{{ end }}
 <footer class="relative z-10 mt-4">
   <div class="max-w-[1100px] mx-auto px-6 py-8 text-center">
@@ -96,65 +87,117 @@ window.__setHeadH();
     <p class="sgx-powered">Powered by Styrigx UI</p>
   </div>
 </footer>
+{{/* 顶栏 v2.0：滚动行为 + 导航菜单 */}}
 <script>
-/* 量取顶栏实际高度写入 --nav-h（顶栏 fixed，main 的 padding-top 依赖它）。来自 styrigx-space 2e7793d baseof.html:222-227 */
+/* 顶栏菜单共用定位：fixed 锚定在按钮下方 8px、右沿与按钮右沿对齐（⋮ 菜单和九宫导航共用） */
+window.sgxAnchorMenu = function(menu, btn){
+  var r = btn.getBoundingClientRect();
+  menu.style.position = 'fixed';
+  menu.style.top = (r.bottom + 8) + 'px';
+  menu.style.right = Math.max(16, window.innerWidth - r.right) + 'px';
+  menu.style.left = 'auto';
+  menu.style.zIndex = '70';
+};
+</script>
+<script>
 (function(){
-  function setH(){
-    var n=document.getElementById('site-nav');
-    if(n)document.documentElement.style.setProperty('--nav-h',n.offsetHeight+'px');
-  }
-  window.addEventListener('resize',setH);
-  window.addEventListener('load',setH);
-  setH();
+  var isEn = document.documentElement.lang === 'en';
+  /* 品牌组点击：回书库首页 */
+  var brand = document.querySelector('.sgx-tb-brand');
+  if (brand) brand.addEventListener('click', function(){
+    location.href = isEn ? '/en/' : '/';
+  });
+  /* 小标题移入长条（页面里的 .subpage-mini-title 由 subpage-head.html 输出） */
+  var pill = document.querySelector('.sgx-tb-pill');
+  var mini = document.querySelector('.subpage-mini-title');
+  if (pill && mini) pill.appendChild(mini);
 })();
 </script>
 <script>
-/* 子页面返回键：有历史则回退，否则回书架首页 */
-document.addEventListener('click',function(e){
-  var b=e.target.closest('[data-go-back]');
-  if(!b)return;
-  if(window.history.length>1){history.back()}
-  else{location.href='{{ if $isEn }}/en/{{ else }}/{{ end }}'}
+/* 返回圆：有历史则回退，否则回书库首页（书库首页走 exit-to-host，由其 JS 接管） */
+document.addEventListener('click', function(e){
+  var b = e.target.closest('[data-go-back]');
+  if (!b || b.dataset.exitHost) return;
+  if (window.history.length > 1) { history.back(); }
+  else { location.href = document.documentElement.lang === 'en' ? '/en/' : '/'; }
 });
-/* 子页面标题区滚动行为：滚过标题区后显示居中小标题；返回键/三点吸顶（.stuck）；顶栏时间天气淡出 */
+/* 导航菜单（九宫点）：配置数组，当前站点高亮 + ✓ */
 (function(){
-  var head=document.querySelector('[data-subpage-head]');
-  if(!head)return;
-  var mini=document.querySelector('.subpage-mini-title');
-  var nav=document.getElementById('site-nav');
-  var backBtn=head.querySelector('.subpage-back');
-  var moreBtn=head.querySelector('.subpage-actions .subpage-more, .subpage-actions #bk-menu-btn');
-  function onScroll(){
-    var y=window.scrollY||0;
-    var past=y>head.offsetHeight*0.55;
-    if(mini)mini.classList.toggle('show',past);
-    head.classList.toggle('head-past',past);
-    document.body.classList.toggle('subpage-scrolled',past);
-    if(nav)nav.classList.toggle('stuck',past);
-    /* 吸顶：滚到「顶栏底边+8px」时按钮加 .stuck（与主站 head-buttons.js 同公式） */
-    if(backBtn||moreBtn){
-      var hr=head.getBoundingClientRect();
-      var gap=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sgx-head-btn-gap'))||8;
-      var btnH=(backBtn&&backBtn.offsetHeight)||(moreBtn&&moreBtn.offsetHeight)||44;
-      var docTop=hr.top+y+hr.height-gap-btnH;
-      var navH=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--nav-h'))||64;
-      var stick=y>0&&y>=docTop-(navH+8);
-      if(backBtn)backBtn.classList.toggle('stuck',stick);
-      if(moreBtn)moreBtn.classList.toggle('stuck',stick);
-    }
+  var btn = document.querySelector('.sgx-tb-nav');
+  var menu = document.getElementById('sgx-tb-navmenu');
+  if (!btn || !menu) return;
+  var isEn = document.documentElement.lang === 'en';
+  var host = location.host;
+  /* 菜单项配置：以后新增子站只需加一行 */
+  var items = [
+    { id: 'home', label: isEn ? 'Home' : '主页', url: 'https://styrigx.com' + (isEn ? '/en/' : '/'), match: /(^|\.)styrigx\.com$/ },
+    { id: 'book', label: isEn ? 'Library' : '书库', url: 'https://book.styrigx.com' + (isEn ? '/en/' : '/'), match: /(^|\.)book\.styrigx\.com$|^localhost/ },
+    { id: 'blog', label: isEn ? 'Blog' : '博客', url: 'https://blog.styrigx.com' + (isEn ? '/en/' : '/'), match: /(^|\.)blog\.styrigx\.com$/ },
+  ];
+  function isCurrent(it){ try { return it.match.test(host); } catch (e) { return false; } }
+  function render(){
+    menu.innerHTML = items.map(function(it){
+      var cur = isCurrent(it);
+      return '<button type="button" class="bk-menu-item" role="menuitem" data-nav-url="' + it.url + '"' +
+        (cur ? ' aria-current="true"' : '') + '>' +
+        '<span>' + it.label + '</span>' +
+        (cur ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>' : '') +
+        '</button>';
+    }).join('');
+    menu.querySelectorAll('[data-nav-url]').forEach(function(el){
+      el.addEventListener('click', function(){
+        var url = el.getAttribute('data-nav-url');
+        closeMenu();
+        var item = items.filter(function(it){ return it.url === url; })[0];
+        if (item && isCurrent(item)) return; /* 当前站点只关闭菜单 */
+        location.href = url;
+      });
+    });
   }
-  window.addEventListener('scroll',onScroll,{passive:true});
-  window.addEventListener('resize',onScroll);
+  function openMenu(){
+    render();
+    menu.classList.remove('hidden');
+    btn.setAttribute('aria-expanded', 'true');
+    /* 锚定在导航圆下方、右对齐 */
+    window.sgxAnchorMenu(menu, btn);
+  }
+  function closeMenu(){
+    menu.classList.add('hidden');
+    btn.setAttribute('aria-expanded', 'false');
+  }
+  btn.addEventListener('click', function(e){
+    e.stopPropagation();
+    if (menu.classList.contains('hidden')) { openMenu(); }
+    else { closeMenu(); }
+  });
+  document.addEventListener('click', function(e){
+    if (!menu.classList.contains('hidden') && !e.target.closest('#sgx-tb-navmenu') && !e.target.closest('.sgx-tb-nav')) {
+      closeMenu();
+    }
+  });
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'Escape' && !menu.classList.contains('hidden')) { closeMenu(); }
+  });
+})();
+</script>
+<script>
+/* 顶栏滚动状态（v2.0）：只给 body 加/去 sgx-stuck 类；小标题显隐由 CSS 驱动 */
+(function(){
+  var head = document.querySelector('[data-subpage-head]');
+  if (!head) return;
+  function onScroll(){
+    var y = window.scrollY || 0;
+    var past = y > head.offsetHeight * 0.55;
+    document.body.classList.toggle('sgx-stuck', past);
+  }
+  window.addEventListener('scroll', onScroll, { passive: true });
+  window.addEventListener('resize', onScroll);
   onScroll();
 })();
 </script>
 {{/* SGX 锁屏同步：切回前台 / bfcache 恢复时向服务端确认会话（各页面 pagejs 之前加载） */}}
 <script src="{{ (resources.Get "js/sgx-lock-sync.js" | minify | fingerprint).RelPermalink }}"></script>
-{{/* 顶栏：时间 / 头像 / 天气（ES module；js.Build 需 format:esm 否则 export 丢失） */}}
-<script type="module">
-import { initTopbar } from '{{ (resources.Get "js/sgx/shell/topbar.js" | js.Build (dict "format" "esm") | minify | fingerprint).RelPermalink }}';
-initTopbar();
-</script>
+
 {{ block "pagejs" . }}{{ end }}
 </body>
 </html>

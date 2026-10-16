@@ -42,17 +42,6 @@
       }
       return true;
     }
-    // 顶栏面板（时钟/天气）
-    var clockPop = document.getElementById('dex-clock-pop');
-    if (clockPop && clockPop.classList.contains('open')) {
-      document.dispatchEvent(new CustomEvent('sgx-topbar-pop-close'));
-      return true;
-    }
-    var wxPop = document.getElementById('nav-wx-pop');
-    if (wxPop && wxPop.classList.contains('open')) {
-      document.dispatchEvent(new CustomEvent('sgx-topbar-pop-close'));
-      return true;
-    }
     return false;
   }
 

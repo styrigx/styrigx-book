@@ -25,25 +25,26 @@ async function setupVisitor(page) {
   await mockBookAPIs(page, { owner: false });
 }
 
-/* ============ A1：标题区 ============ */
-test('A1 homepage: single subpage-head with back and functional menu', async ({ page }) => {
+/* ============ A1：标题区与顶栏（v2.0：标题区不再有按钮，← ⋮ 在顶栏） ============ */
+test('A1 homepage: head has no buttons, topbar has back and menu', async ({ page }) => {
   await setupOwner(page);
   await gotoReady(page, '/', '#bk-grid:not(.hidden)');
   const heads = page.locator('[data-subpage-head]');
   await expect(heads, '首页应只有 1 个 [data-subpage-head]').toHaveCount(1);
-  await expect(heads.locator('.subpage-back'), '应有 .subpage-back').toHaveCount(1);
-  // 首页的 ⋮ 是功能菜单 #bk-menu-btn（非 .subpage-more 占位），设计意图确认
-  await expect(heads.locator('#bk-menu-btn'), '首页应有 #bk-menu-btn 功能菜单').toHaveCount(1);
-  await expect(heads.locator('.subpage-more'), '首页不应有 .subpage-more 占位').toHaveCount(0);
+  await expect(heads.locator('button'), '标题区内不应有按钮').toHaveCount(0);
+  await expect(page.locator('.sgx-topbar .sgx-tb-back'), '顶栏应有返回圆').toBeVisible();
+  await expect(page.locator('.sgx-topbar #bk-menu-btn'), '顶栏应有 ⋮').toBeVisible();
+  await expect(page.locator('.sgx-topbar .sgx-tb-nav'), '顶栏应有导航圆').toBeVisible();
 });
 
-test('A1 upload page: single subpage-head with back and more', async ({ page }) => {
+test('A1 upload page: head has no buttons, topbar has back and menu', async ({ page }) => {
   await setupOwner(page);
   await gotoReady(page, '/admin/', '#adm-main:not(.hidden)');
   const heads = page.locator('[data-subpage-head]');
   await expect(heads, '上传页应只有 1 个 [data-subpage-head]').toHaveCount(1);
-  await expect(heads.locator('.subpage-back'), '应有 .subpage-back').toHaveCount(1);
-  await expect(heads.locator('.subpage-more'), '应有 .subpage-more（⋮ 占位）').toHaveCount(1);
+  await expect(heads.locator('button'), '标题区内不应有按钮').toHaveCount(0);
+  await expect(page.locator('.sgx-topbar .sgx-tb-back'), '顶栏应有返回圆').toBeVisible();
+  await expect(page.locator('.sgx-topbar #bk-menu-btn'), '顶栏应有 ⋮').toBeVisible();
 });
 
 /* ============ A2：⋮ 菜单 ============ */
@@ -85,180 +86,14 @@ test('A2 owner menu: 5 items in order', async ({ page }) => {
   expect(texts[4].trim()).toBe('为无封面的书提取封面');
 });
 
-/* ============ A3：顶栏几何 ============ */
-test('A3 topbar geometry: time left, avatar center, wx right, no Styrigx text', async ({ page }) => {
+/* A3（v1.0 卡片几何/滚动/卡片按钮/标题区结构）已由 topbar-spec.spec.js（v2.0）覆盖，此处删除 */
+
+/* ============ A4：点品牌组回书库首页（v2.0） ============ */
+test('A4 brand click: goes to library home', async ({ page }) => {
   await setupOwner(page);
-  await gotoReady(page, '/', '#bk-grid:not(.hidden)');
-  // 无 "Styrigx" 文字节点
-  const styrigxText = await page.evaluate(() => {
-    const nav = document.getElementById('site-nav');
-    if (!nav) return false;
-    const walker = document.createTreeWalker(nav, NodeFilter.SHOW_TEXT);
-    let node;
-    while ((node = walker.nextNode())) {
-      if (node.textContent.trim() === 'Styrigx') return true;
-    }
-    return false;
-  });
-  expect(styrigxText, '顶栏不应有 "Styrigx" 文字').toBe(false);
-  // 几何：时间最左，头像居中 ±1px，天气最右
-  const geom = await page.evaluate(() => {
-    const r = (id) => {
-      const el = document.getElementById(id);
-      if (!el) return null;
-      const b = el.getBoundingClientRect();
-      return { left: b.left, right: b.right, cx: b.left + b.width / 2 };
-    };
-    return {
-      time: r('nav-time-center'),
-      home: r('nav-home'),
-      wx: r('nav-wx'),
-      vw: window.innerWidth,
-    };
-  });
-  expect(geom.time, '应有 #nav-time-center').not.toBeNull();
-  expect(geom.home, '应有 #nav-home').not.toBeNull();
-  // 时间靠最左（left < 20px）
-  expect(geom.time.left, '#nav-time 应在最左').toBeLessThan(20);
-  // 头像在水平中线 ±1px
-  const centerX = geom.vw / 2;
-  expect(Math.abs(geom.home.cx - centerX), '头像应在水平中线 ±1px').toBeLessThanOrEqual(1.5);
-});
-
-test('A3 topbar stuck: time/wx fade, mini-title visible', async ({ page }) => {
-  await setTheme(page, 'light');
-  await freezeTime(page);
-  await mockBookAPIs(page, { owner: true, books: MANY_BOOKS });
-  await gotoReady(page, '/', '#bk-grid:not(.hidden)');
-  // 滚过标题区
-  await page.evaluate(() => {
-    const head = document.querySelector('[data-subpage-head]');
-    window.scrollTo(0, head.offsetHeight);
-  });
-  await page.waitForFunction(() => {
-    return document.getElementById('site-nav').classList.contains('stuck');
-  }, null, { timeout: 5000 });
-  // 等 opacity transition (.2s) 完成
-  await page.waitForFunction(() => {
-    const t = parseFloat(getComputedStyle(document.getElementById('nav-time-center')).opacity);
-    return t === 0;
-  }, null, { timeout: 5000 });
-  // 时间和天气 opacity 0
-  const opacity = await page.evaluate(() => {
-    const t = getComputedStyle(document.getElementById('nav-time-center')).opacity;
-    const w = getComputedStyle(document.getElementById('nav-wx')).opacity;
-    return { t: parseFloat(t), w: parseFloat(w) };
-  });
-  expect(opacity.t, '时间应淡出').toBe(0);
-  // 小标题可见
-  const miniVisible = await page.evaluate(() => {
-    const mini = document.querySelector('.subpage-mini-title');
-    return mini && mini.classList.contains('show');
-  });
-  expect(miniVisible, '小标题应可见').toBe(true);
-});
-
-/* ============ 吸顶 bug 修复断言（#33 视觉核对） ============ */
-test('吸顶后头像淡出', async ({ page }) => {
-  await setTheme(page, 'light');
-  await freezeTime(page);
-  await mockBookAPIs(page, { owner: true, books: MANY_BOOKS });
-  await gotoReady(page, '/', '#bk-grid:not(.hidden)');
-  await page.evaluate(() => {
-    const head = document.querySelector('[data-subpage-head]');
-    window.scrollTo(0, head.offsetHeight);
-  });
-  await page.waitForFunction(() => {
-    return document.getElementById('site-nav').classList.contains('stuck');
-  }, null, { timeout: 5000 });
-  await page.waitForFunction(() => {
-    const a = parseFloat(getComputedStyle(document.getElementById('nav-home')).opacity);
-    return a === 0;
-  }, null, { timeout: 5000 });
-  // 头像 opacity 0 + 不响应点击（淡出后视觉上不压小标题）
-  const r = await page.evaluate(() => {
-    const home = document.getElementById('nav-home');
-    return {
-      avatarOpacity: parseFloat(getComputedStyle(home).opacity),
-      pointerEvents: getComputedStyle(home).pointerEvents,
-    };
-  });
-  expect(r.avatarOpacity, '吸顶后头像 opacity 应为 0').toBe(0);
-  expect(r.pointerEvents, '吸顶后头像不应响应点击').toBe('none');
-});
-
-test('吸顶前后返回图标是同一个 ←', async ({ page }) => {
-  await setTheme(page, 'light');
-  await freezeTime(page);
-  await mockBookAPIs(page, { owner: true, books: MANY_BOOKS });
-  await gotoReady(page, '/', '#bk-grid:not(.hidden)');
-  const before = await page.evaluate(() => {
-    const btn = document.querySelector('.subpage-back');
-    return {
-      svgCount: btn.querySelectorAll('svg').length,
-      foldCount: btn.querySelectorAll('.sgx-bk-fold').length,
-      html: btn.innerHTML.length,
-    };
-  });
-  expect(before.svgCount, '展开态应有 svg 图标').toBe(1);
-  expect(before.foldCount, '不应有 ‹ 的 span').toBe(0);
-  await page.evaluate(() => {
-    const head = document.querySelector('[data-subpage-head]');
-    window.scrollTo(0, head.offsetHeight);
-  });
-  await page.waitForFunction(() => {
-    const btn = document.querySelector('.subpage-back');
-    return btn && btn.classList.contains('stuck');
-  }, null, { timeout: 5000 });
-  const after = await page.evaluate(() => {
-    const btn = document.querySelector('.subpage-back.stuck');
-    return {
-      svgCount: btn.querySelectorAll('svg').length,
-      svgVisible: getComputedStyle(btn.querySelector('svg')).display !== 'none',
-    };
-  });
-  expect(after.svgCount, '吸顶态仍应有 svg 图标').toBe(1);
-  expect(after.svgVisible, '吸顶态 svg 应可见（不是 ‹）').toBe(true);
-});
-
-test('书库与上传页标题区结构一致', async ({ page }) => {
-  await setTheme(page, 'light');
-  await freezeTime(page);
-  await mockBookAPIs(page, { owner: true });
-  // 书库首页
-  await gotoReady(page, '/', '#bk-grid:not(.hidden)');
-  const shelf = await page.evaluate(() => {
-    const head = document.querySelector('[data-subpage-head]');
-    const title = head.querySelector('.subpage-title').getBoundingClientRect();
-    const back = head.querySelector('.subpage-back').getBoundingClientRect();
-    const more = head.querySelector('#bk-menu-btn').getBoundingClientRect();
-    return { headH: head.offsetHeight, titleBottom: title.bottom, backTop: back.top, moreTop: more.top };
-  });
-  expect(shelf.backTop, '书库：← 顶部应在标题底部之下').toBeGreaterThan(shelf.titleBottom);
-  expect(shelf.moreTop, '书库：⋮ 顶部应在标题底部之下').toBeGreaterThan(shelf.titleBottom);
-  // 上传页
   await gotoReady(page, '/admin/', '#adm-main:not(.hidden)');
-  const upload = await page.evaluate(() => {
-    const head = document.querySelector('[data-subpage-head]');
-    const title = head.querySelector('.subpage-title').getBoundingClientRect();
-    const back = head.querySelector('.subpage-back').getBoundingClientRect();
-    const more = head.querySelector('.subpage-more').getBoundingClientRect();
-    return { headH: head.offsetHeight, titleBottom: title.bottom, backTop: back.top, moreTop: more.top };
-  });
-  expect(upload.backTop, '上传页：← 顶部应在标题底部之下').toBeGreaterThan(upload.titleBottom);
-  expect(upload.moreTop, '上传页：⋮ 顶部应在标题底部之下').toBeGreaterThan(upload.titleBottom);
-  expect(Math.abs(shelf.headH - upload.headH), '两页标题区高度差应 ≤1px').toBeLessThanOrEqual(1);
-});
-
-/* ============ A4：点头像刷新 ============ */
-test('A4 avatar click: full reload to home', async ({ page }) => {
-  await setupOwner(page);
-  await gotoReady(page, '/', '#bk-grid:not(.hidden)');
-  // 监听导航
-  const navPromise = page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 10000 });
-  await page.locator('#nav-home').click();
-  await navPromise;
-  expect(page.url(), '应刷新到首页').toMatch(/\/$/);
+  await Promise.all([page.waitForURL(/\/$/), page.locator('.sgx-tb-brand').click()]);
+  await expect(page.locator('#bk-grid'), '应回到书库首页').toBeAttached();
 });
 
 /* ============ A5：退出逻辑 ============ */
@@ -280,7 +115,7 @@ test('A5 back button exits to host files', async ({ page }) => {
     navUrl = route.request().url();
     route.abort();
   });
-  await page.locator('[data-subpage-head] .subpage-back').click();
+  await page.locator('.sgx-tb-back').click();
   // 等待导航尝试
   await page.waitForTimeout(800);
   expect(navUrl, '← 应导航到主站 files').toBe('https://styrigx.com/files/');
@@ -299,7 +134,7 @@ test('A5b stale sgx-exit-fired does not block exit', async ({ page }) => {
     navUrl = route.request().url();
     route.abort();
   });
-  await page.locator('[data-subpage-head] .subpage-back').click();
+  await page.locator('.sgx-tb-back').click();
   // 等待导航尝试
   await page.waitForTimeout(800);
   expect(navUrl, '← 应导航到主站 files（旧标记不应拦截）').toBe('https://styrigx.com/files/');
@@ -346,34 +181,4 @@ test('A7 no horizontal overflow: upload page', async ({ page }) => {
   expect(overflow, '上传页 scrollWidth 应 <= clientWidth').toBe(true);
 });
 
-/* ============ A8：cookie 设置同步 ============ */
-test('A8 no cookie: defaults, no error', async ({ page }) => {
-  await setupOwner(page);
-  // 清除 sgx-ui cookie
-  await page.context().clearCookies();
-  await gotoReady(page, '/', '#bk-grid:not(.hidden)');
-  // 页面不应报错，时间应显示（默认本地时间）
-  const timeText = await page.locator('#nav-time').textContent();
-  expect(timeText.trim(), '无 cookie 时时间应显示默认值').not.toBe('--:--');
-  expect(timeText.trim(), '无 cookie 时时间不应为空').not.toBe('');
-});
-
-test('A8 with cookie: time follows tz1/h12', async ({ page }) => {
-  await setupOwner(page);
-  // 设置 sgx-ui cookie：tz1=Asia/Tokyo, h12=1
-  const payload = { v: 1, tz1: 'Asia/Tokyo', tz2: '', h12: 1, clock: 'digital', wx: 0, unit: 'c', loc: 'auto', city: null };
-  const json = JSON.stringify(payload);
-  const b64 = Buffer.from(json, 'utf8').toString('base64')
-    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  await page.context().addCookies([{
-    name: 'sgx-ui',
-    value: b64,
-    domain: 'localhost',
-    path: '/',
-  }]);
-  await gotoReady(page, '/', '#bk-grid:not(.hidden)');
-  const timeText = await page.locator('#nav-time').textContent();
-  // 东京时间 + 12 小时制：应包含 AM/PM 或与本地时间不同
-  // 至少验证时间已按 cookie 渲染（非 --:--）
-  expect(timeText.trim(), '有 cookie 时时间应按 tz1/h12 显示').not.toBe('--:--');
-});
+/* ============ A8：cookie 设置同步（时间/天气已删除，本节保留占位） ============ */
