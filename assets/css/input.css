@@ -879,6 +879,8 @@ mark.smk{background:var(--m-primary-container);color:var(--m-on-primary-containe
 .bk-icbtn svg{width:24px;height:24px}
 
 /* One UI 下拉菜单（分组 / ⋮）：文字项、无图标 */
+/* 顶栏菜单挂在 #site-nav（pointer-events:none）里，菜单本身要能点 */
+#site-nav .bk-menu{pointer-events:auto}
 .bk-menu{position:absolute;top:calc(100% - 4px);min-width:200px;z-index:60;background:var(--m-container-lowest);border:1px solid var(--m-outline);border-radius:1.25rem;box-shadow:0 12px 32px -8px rgba(0,0,0,.25);padding:6px;overflow:hidden}
 #bk-group-menu{left:0}
 #bk-more-menu{right:0}
