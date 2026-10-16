@@ -227,10 +227,39 @@ test.describe('topbar-spec DeX', () => {
       const r = await page.evaluate(() => {
         const back = document.querySelector('.subpage-back').getBoundingClientRect();
         const more = document.querySelector('.subpage-actions').getBoundingClientRect();
-        return { backLeft: back.left, moreRight: window.innerWidth - more.right };
+        return {
+          backLeft: back.left,
+          moreRight: window.innerWidth - more.right,
+          scrollW: document.documentElement.scrollWidth,
+          innerW: window.innerWidth,
+        };
       });
       expect(Math.abs(r.backLeft - 106), `← left 应为 106±1，实测 ${r.backLeft.toFixed(1)}`).toBeLessThanOrEqual(1);
       expect(Math.abs(r.moreRight - 106), `⋮ right 应为 106±1，实测 ${r.moreRight.toFixed(1)}`).toBeLessThanOrEqual(1);
+      expect(r.scrollW, `scrollWidth(${r.scrollW}) 不应超过 innerWidth(${r.innerW})`).toBeLessThanOrEqual(r.innerW);
+    });
+
+    /* 验收 7c：DeX 书库首页标题区按钮位置 — 同样 106±1 */
+    test(`7c. DeX 书库首页按钮位置 [${lang}]`, async ({ page }) => {
+      await setTheme(page, 'light');
+      await mockBookAPIs(page, { owner: true });
+      await gotoReady(page, PAGES.home[lang], '#bk-grid:not(.hidden), main');
+      await expect.poll(async () =>
+        page.evaluate(() => document.documentElement.classList.contains('layout-dex'))
+      ).toBe(true);
+      const r = await page.evaluate(() => {
+        const back = document.querySelector('.subpage-back').getBoundingClientRect();
+        const more = document.querySelector('.subpage-actions').getBoundingClientRect();
+        return {
+          backLeft: back.left,
+          moreRight: window.innerWidth - more.right,
+          scrollW: document.documentElement.scrollWidth,
+          innerW: window.innerWidth,
+        };
+      });
+      expect(Math.abs(r.backLeft - 106), `← left 应为 106±1，实测 ${r.backLeft.toFixed(1)}`).toBeLessThanOrEqual(1);
+      expect(Math.abs(r.moreRight - 106), `⋮ right 应为 106±1，实测 ${r.moreRight.toFixed(1)}`).toBeLessThanOrEqual(1);
+      expect(r.scrollW, `scrollWidth(${r.scrollW}) 不应超过 innerWidth(${r.innerW})`).toBeLessThanOrEqual(r.innerW);
     });
   }
 });

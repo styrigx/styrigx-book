@@ -306,10 +306,11 @@ main > .subpage-head { margin-left: -16px; margin-right: -16px; }
   justify-content:flex-end}
 .layout-phone .subpage-hero{position:relative;top:0}
 .layout-phone .subpage-actions{top:auto;bottom:8px}
-/* DeX/电脑：高度 max(200px, 25svh)，其余同手机；按钮左右与内容区对齐 */
+/* DeX/电脑：高度 max(200px, 25svh)，其余同手机；标题区宽 min(100vw,1100px) 相对视口居中，不受父级 main 宽度影响 */
 .layout-dex .subpage-head{min-height:max(200px,25svh);
   padding-top:calc(84px + env(safe-area-inset-top,0px));padding-bottom:76px;
-  max-width:1068px;margin-left:auto;margin-right:auto}
+  max-width:none;width:min(100vw,1100px);
+  margin-left:calc(50% - min(50vw,550px));margin-right:0}
 /* 上滑标题区滚走时轻微淡出 + 缩小 */
 .subpage-hero{transition:opacity .25s ease,transform .25s ease}
 .subpage-head.head-past .subpage-hero{opacity:.15;transform:scale(.96)}
