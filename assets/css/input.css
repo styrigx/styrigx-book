@@ -215,9 +215,9 @@ main { flex: 1 0 auto; }
 footer { padding-bottom: calc(var(--dock-h) + env(safe-area-inset-bottom, 0px)); }
 .layout-dex footer { padding-bottom: env(safe-area-inset-bottom, 0px); }
 
-/* ===== 顶栏卡片 v1.0：主题色铺满顶部，卡片悬浮 ===== */
-/* --nav-h = 68px（卡片底边位置：16 + 52）。所有用到的地方都跟这个值走。 */
-:root { --nav-h: 68px; --sgx-head-btn-gap: 8px; }
+/* ===== 顶栏：主题色铺满顶部，三块悬浮（规格见 topbar v2.0） ===== */
+/* --nav-h = 68px（顶栏底边位置：16 + 52）。所有用到的地方都跟这个值走。 */
+:root { --nav-h: 68px; }
 
 /* topbar v2.0 start — Book 与 Space 一字不差，只用 --m-* 变量和 --nav-h */
 /* #site-nav：透明、无边框、无阴影，所有状态所有布局都这样；只做 pointer-events 容器 */
@@ -349,7 +349,7 @@ main > .subpage-head { margin-left: -16px; margin-right: -16px; }
 #adm-queue [data-status]>span{max-width:100%;overflow:hidden;text-overflow:ellipsis}
 /* 开关行（两个 label 都是 flex 子项，min-width:auto 不收缩）：极窄屏下换行，不撑宽 */
 #adm-queue [data-q] .flex.items-center.gap-6{flex-wrap:wrap;row-gap:.5rem}
-/* v1.0：.subpage-mini-title 已移入 .sgx-topcard，样式见顶栏卡片一节 */
+/* .subpage-mini-title 在顶栏长条 .sgx-tb-pill 里，样式见顶栏 v2.0 一节 */
 
 /* ===== 数据卡片固定最小高度：数据到来前后尺寸不变 ===== */
 #dual-clock { min-height: 168px; }
