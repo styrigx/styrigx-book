@@ -25,7 +25,7 @@
 // 其余（页面、/api/books、/api/file、/api/cover、/api/private/*、/api/admin/*、
 // /api/lock-check）均需有效 cookie；admin/private 原有的 401/403 逻辑保持不变。
 
-import { verifySessionCookieStrict } from './_sgx-cookie.js';
+import { verifySessionCookieStrict, verifySessionCookieStrictVerbose } from './_sgx-cookie.js';
 
 const LOCK_URL = 'https://styrigx.com/?lock=1';
 const COOKIE_NAME = 'sgx-verified';
@@ -246,6 +246,12 @@ export async function onRequest(context) {
       return withNoStoreForHtml(await next());
     }
   }
+  /* 拒绝时记服务端日志（原因不回给前端；日志里不记 cookie 值/签名/token） */
+  let denyReason = 'no-cookie';
+  if (cookies.length > 0) {
+    denyReason = (await verifySessionCookieStrictVerbose(cookies[0], env.SGX_LOCK_PUBLIC)).reason;
+  }
+  console.log('[sgx-auth] deny reason=' + denyReason + ' path=' + path);
   const why = cookies.length === 0 ? 'no-cookie' : 'invalid-session';
 
   /* /api/* 会话无效时回 401 JSON（不回 302），避免 fetch 跨域跟跳转报 TypeError；
