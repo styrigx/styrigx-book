@@ -296,11 +296,11 @@ main > .subpage-head { margin-left: -16px; margin-right: -16px; }
   .bk-admin > .subpage-head { margin-left: -1.5rem; margin-right: -1.5rem; }
 }
 .subpage-head{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;
-  text-align:center;min-height:max(240px,30svh);
+  text-align:center;min-height:max(280px,35svh);
   padding:calc(76px + env(safe-area-inset-top,0px)) 20px 76px}
-/* 手机：标题区高度 = max(240px, 30% 可见高度)；JS 写 --head-h，只在加载/横竖屏更新。
+/* 手机：标题区高度 = max(280px, 35% 可见高度)；JS 写 --head-h，只在加载/横竖屏更新。
    大标题底边距标题区底边 76px（按钮 44 + 底部 8 + 间距 24）。 */
-.layout-phone .subpage-head{min-height:var(--head-h,max(240px,30svh));
+.layout-phone .subpage-head{min-height:var(--head-h,max(280px,35svh));
   padding-top:calc(84px + env(safe-area-inset-top,0px));
   padding-bottom:76px;
   justify-content:flex-end}

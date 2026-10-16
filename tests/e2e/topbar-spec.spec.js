@@ -180,9 +180,9 @@ for (const lang of ['zh', 'en']) {
           moreBottomOffset: hr.bottom - more.bottom,
         };
       }, SEL);
-      // 标题区高度 = max(240, 0.3*844) = 253.2 ±1（844 高视口）
+      // 标题区高度 = max(280, 0.35*844) = 295.4 ±1（844 高视口）
       const vh = page.viewportSize().height;
-      const expectedH = Math.max(240, vh * 0.3);
+      const expectedH = Math.max(280, vh * 0.35);
       expect(Math.abs(r.headH - expectedH), `标题区高度 ${expectedH}±1`).toBeLessThanOrEqual(1);
       // 大标题底边 = 标题区底边 - 76
       expect(Math.abs(r.titleBottomOffset - 76), '大标题底边 -76±1').toBeLessThanOrEqual(1);

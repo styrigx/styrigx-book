@@ -42,12 +42,12 @@ function __applyLayout(){
   if(window.__setHeadH)window.__setHeadH();
 }
 __applyLayout();
-/* 标题区高度：手机 max(240px, 30% 可见高度)，DeX max(200px, 25svh) 用 CSS 兜底。
+/* 标题区高度：手机 max(280px, 35% 可见高度)，DeX max(200px, 25svh) 用 CSS 兜底。
    JS 只在加载时和横竖屏切换时更新 --head-h（手机）。 */
 window.__setHeadH=function(){
   if(!document.documentElement.classList.contains('layout-phone'))return;
   var h=window.innerHeight||0;
-  if(h>0)document.documentElement.style.setProperty('--head-h',Math.max(240,Math.round(h*0.3))+'px');
+  if(h>0)document.documentElement.style.setProperty('--head-h',Math.max(280,Math.round(h*0.35))+'px');
 };
 window.__setHeadH();
 (function(){
