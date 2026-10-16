@@ -246,12 +246,15 @@ export async function onRequest(context) {
       return withNoStoreForHtml(await next());
     }
   }
-  /* 拒绝时记服务端日志（原因不回给前端；日志里不记 cookie 值/签名/token） */
-  let denyReason = 'no-cookie';
-  if (cookies.length > 0) {
-    denyReason = (await verifySessionCookieStrictVerbose(cookies[0], env.SGX_LOCK_PUBLIC)).reason;
-  }
-  console.log('[sgx-auth] deny reason=' + denyReason + ' path=' + path);
+  /* 拒绝时记服务端日志（原因不回给前端；日志里不记 cookie 值/签名/token）。
+     日志不许抛错、不许影响验签结果：整段包 try/catch。 */
+  try {
+    let denyReason = 'no-cookie';
+    if (cookies.length > 0) {
+      denyReason = (await verifySessionCookieStrictVerbose(cookies[0], env.SGX_LOCK_PUBLIC)).reason;
+    }
+    console.log('[sgx-auth] deny reason=' + denyReason + ' path=' + path);
+  } catch (logErr) {}
   const why = cookies.length === 0 ? 'no-cookie' : 'invalid-session';
 
   /* /api/* 会话无效时回 401 JSON（不回 302），避免 fetch 跨域跟跳转报 TypeError；

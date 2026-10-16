@@ -159,15 +159,18 @@ async function fetchEpochData(force = false) {
       clearTimeout(timer);
     }
     const elapsedMs = Date.now() - t0;
-    const contentType = (res.headers.get('content-type') || '').split(';')[0].trim();
+    const contentType = (res.headers?.get?.('content-type') ?? '').split(';')[0].trim();
     if (!res.ok) {
-      /* 拉取失败记日志（无敏感值）：HTTP 状态码、content-type、耗时、有无缓存可用 */
-      console.log(
-        '[sgx-epoch] fetch fail status=' + res.status +
-        ' contentType=' + contentType +
-        ' elapsedMs=' + elapsedMs +
-        ' cached=' + hadCache,
-      );
+      /* 拉取失败记日志（无敏感值）：HTTP 状态码、content-type、耗时、有无缓存可用。
+         日志不许抛错：整段包 try/catch。 */
+      try {
+        console.log(
+          '[sgx-epoch] fetch fail status=' + res.status +
+          ' contentType=' + contentType +
+          ' elapsedMs=' + elapsedMs +
+          ' cached=' + hadCache,
+        );
+      } catch (logErr) {}
       throw new Error('epoch http ' + res.status);
     }
     const data = await res.json();
@@ -177,13 +180,16 @@ async function fetchEpochData(force = false) {
     epochCache = { value: data, at: now };
     return data;
   } catch (e) {
-    /* 上面 !res.ok 的情况已记过行，不重复 */
+    /* 上面 !res.ok 的情况已记过行，不重复。
+       日志不许抛错、不许影响验签结果：整段包 try/catch。 */
     if (!String((e && e.message) || '').startsWith('epoch http ')) {
-      console.log(
-        '[sgx-epoch] fetch fail error=' + ((e && e.name) || 'Error') +
-        ' elapsedMs=' + (Date.now() - t0) +
-        ' cached=' + hadCache,
-      );
+      try {
+        console.log(
+          '[sgx-epoch] fetch fail error=' + ((e && e.name) || 'Error') +
+          ' elapsedMs=' + (Date.now() - t0) +
+          ' cached=' + hadCache,
+        );
+      } catch (logErr) {}
     }
     if (epochCache.value !== null) return epochCache.value;
     return null;
