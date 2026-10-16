@@ -396,29 +396,52 @@ var drop = document.getElementById(prefix + '-drop');
 var fileInput = document.getElementById(prefix + '-file');
 /* 文件选择器开关时浏览器会改 scrollY：记录打开前的值，关闭后恢复（用户自己滚过则不恢复） */
 var scrollYBeforePicker = null;
+var pickerListeners = [];
+function bindPickerClose(){
+  /* 解绑之前残留的监听（防御） */
+  unbindPickerClose();
+  function onClose(){
+    restoreScrollY();
+    unbindPickerClose();
+  }
+  var changeH = function(){ onClose(); };
+  var cancelH = function(){ onClose(); };
+  var focusH = function(){ onClose(); };
+  fileInput.addEventListener('change', changeH);
+  fileInput.addEventListener('cancel', cancelH);
+  window.addEventListener('focus', focusH);
+  pickerListeners = [
+    [fileInput, 'change', changeH],
+    [fileInput, 'cancel', cancelH],
+    [window, 'focus', focusH]
+  ];
+}
+function unbindPickerClose(){
+  for (var i = 0; i < pickerListeners.length; i++) {
+    var t = pickerListeners[i];
+    try { t[0].removeEventListener(t[1], t[2]); } catch (e) {}
+  }
+  pickerListeners = [];
+}
 function recordScrollY(){ scrollYBeforePicker = window.scrollY || 0; }
 function restoreScrollY(){
   if (scrollYBeforePicker === null) return;
   var y0 = scrollYBeforePicker;
   scrollYBeforePicker = null;
   var cur = window.scrollY || 0;
-  /* 阈值 80px：差值更大说明用户自己滚动过，就不恢复 */
-  if (Math.abs(cur - y0) > 80) return;
+  /* 阈值 150px：差值更大说明用户自己滚动过，就不恢复 */
+  if (Math.abs(cur - y0) > 150) return;
   requestAnimationFrame(function(){ window.scrollTo(0, y0); });
 }
-function openPicker(){ recordScrollY(); fileInput.click(); }
+function openPicker(){ recordScrollY(); bindPickerClose(); fileInput.click(); }
 drop.addEventListener('click', function(){ openPicker(); });
 drop.addEventListener('keydown', function(e){ if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); openPicker(); } });
-/* 取消选择器：焦点回到 window 时恢复 scrollY */
-window.addEventListener('focus', function(){ restoreScrollY(); });
 ['dragenter', 'dragover'].forEach(function(ev){ drop.addEventListener(ev, function(e){ e.preventDefault(); drop.classList.add('border-m-primary'); }); });
 ['dragleave', 'drop'].forEach(function(ev){ drop.addEventListener(ev, function(e){ e.preventDefault(); drop.classList.remove('border-m-primary'); }); });
 drop.addEventListener('drop', function(e){
   if(e.dataTransfer && e.dataTransfer.files) addFiles(Array.prototype.slice.call(e.dataTransfer.files));
 });
 fileInput.addEventListener('change', function(){
-  /* 选择器关闭（选了文件）：先恢复 scrollY */
-  restoreScrollY();
   /* FileList 是 live 对象：先快照成数组再清空，否则循环会被截断 */
   var fs = Array.prototype.slice.call(fileInput.files);
   fileInput.value = '';
