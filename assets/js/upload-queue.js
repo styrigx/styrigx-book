@@ -394,8 +394,48 @@ async function sha256hex(file){
 /* ============ 上传队列 ============ */
 var drop = document.getElementById(prefix + '-drop');
 var fileInput = document.getElementById(prefix + '-file');
-drop.addEventListener('click', function(){ fileInput.click(); });
-drop.addEventListener('keydown', function(e){ if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); fileInput.click(); } });
+/* 文件选择器开关时浏览器会改 scrollY：记录打开前的值，关闭后恢复（用户自己滚过则不恢复） */
+var scrollYBeforePicker = null;
+var pickerListeners = [];
+function bindPickerClose(){
+  /* 解绑之前残留的监听（防御） */
+  unbindPickerClose();
+  function onClose(){
+    restoreScrollY();
+    unbindPickerClose();
+  }
+  var changeH = function(){ onClose(); };
+  var cancelH = function(){ onClose(); };
+  var focusH = function(){ onClose(); };
+  fileInput.addEventListener('change', changeH);
+  fileInput.addEventListener('cancel', cancelH);
+  window.addEventListener('focus', focusH);
+  pickerListeners = [
+    [fileInput, 'change', changeH],
+    [fileInput, 'cancel', cancelH],
+    [window, 'focus', focusH]
+  ];
+}
+function unbindPickerClose(){
+  for (var i = 0; i < pickerListeners.length; i++) {
+    var t = pickerListeners[i];
+    try { t[0].removeEventListener(t[1], t[2]); } catch (e) {}
+  }
+  pickerListeners = [];
+}
+function recordScrollY(){ scrollYBeforePicker = window.scrollY || 0; }
+function restoreScrollY(){
+  if (scrollYBeforePicker === null) return;
+  var y0 = scrollYBeforePicker;
+  scrollYBeforePicker = null;
+  var cur = window.scrollY || 0;
+  /* 阈值 150px：差值更大说明用户自己滚动过，就不恢复 */
+  if (Math.abs(cur - y0) > 150) return;
+  requestAnimationFrame(function(){ window.scrollTo(0, y0); });
+}
+function openPicker(){ recordScrollY(); bindPickerClose(); fileInput.click(); }
+drop.addEventListener('click', function(){ openPicker(); });
+drop.addEventListener('keydown', function(e){ if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); openPicker(); } });
 ['dragenter', 'dragover'].forEach(function(ev){ drop.addEventListener(ev, function(e){ e.preventDefault(); drop.classList.add('border-m-primary'); }); });
 ['dragleave', 'drop'].forEach(function(ev){ drop.addEventListener(ev, function(e){ e.preventDefault(); drop.classList.remove('border-m-primary'); }); });
 drop.addEventListener('drop', function(e){
