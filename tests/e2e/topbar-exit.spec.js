@@ -286,6 +286,25 @@ test('A5 back button exits to host files', async ({ page }) => {
   expect(navUrl, '← 应导航到主站 files').toBe('https://styrigx.com/files/');
 });
 
+test('A5b stale sgx-exit-fired does not block exit', async ({ page }) => {
+  await setupOwner(page);
+  // 页面加载前先写入旧的 sgx-exit-fired 标记（模拟第一次退出后的会话）
+  await page.addInitScript(() => {
+    sessionStorage.setItem('sgx-exit-fired', '1');
+  });
+  await gotoReady(page, '/', '#bk-grid:not(.hidden)');
+  // 拦截到 styrigx.com 的导航（location.replace 无法在 Chromium 里 stub）
+  let navUrl = null;
+  await page.route('https://styrigx.com/**', route => {
+    navUrl = route.request().url();
+    route.abort();
+  });
+  await page.locator('[data-subpage-head] .subpage-back').click();
+  // 等待导航尝试
+  await page.waitForTimeout(800);
+  expect(navUrl, '← 应导航到主站 files（旧标记不应拦截）').toBe('https://styrigx.com/files/');
+});
+
 /* ============ A6：弹层打开时返回只关弹层 ============ */
 test('A6 back with menu open: closes menu, no exit', async ({ page }) => {
   await setupOwner(page);

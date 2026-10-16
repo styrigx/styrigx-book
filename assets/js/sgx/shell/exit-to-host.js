@@ -4,7 +4,7 @@
  * - (a) ← 按钮：书库首页 [data-go-back] 一律 location.replace(HOST_FILES)。
  * - (b) 手势返回守卫：history 压一条守卫记录；popstate 回到 sgxRoot 时 location.replace(HOST_FILES)。
  * - (c) 首页弹层打开时，手势返回先关弹层，不触发退出。
- * - (d) 同会话最多触发一次（sessionStorage sgx-exit-fired）。
+ * - (d) 同一页面内只跳一次，防重复触发。
  */
 (function () {
   'use strict';
@@ -13,18 +13,11 @@
   var HOST_FILES = isEn ? 'https://styrigx.com/en/files/' : 'https://styrigx.com/files/';
   var GUARD_KEY = 'sgxGuard';
   var ROOT_KEY = 'sgxRoot';
-  var FIRED_KEY = 'sgx-exit-fired';
-
-  function isFired() {
-    try { return sessionStorage.getItem(FIRED_KEY) === '1'; } catch (e) { return false; }
-  }
-  function markFired() {
-    try { sessionStorage.setItem(FIRED_KEY, '1'); } catch (e) {}
-  }
+  var exiting = false;
 
   function doExit() {
-    if (isFired()) return;
-    markFired();
+    if (exiting) return;
+    exiting = true;
     location.replace(HOST_FILES);
   }
 
@@ -114,6 +107,9 @@
   }
   // bfcache 恢复：pageshow 时确保守卫还在（不重复压）
   window.addEventListener('pageshow', function (e) {
-    if (e.persisted) installGuard();
+    if (e.persisted) {
+      exiting = false;
+      installGuard();
+    }
   });
 })();
