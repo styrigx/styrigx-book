@@ -109,9 +109,10 @@ for (const lang of ['zh', 'en']) {
         const avatarBox = await avatar.boundingBox();
         // 头像左边距长条 12±1
         expect(Math.abs(avatarBox.x - pillBox.x - 12), `[${theme}] 头像距长条左 12±1`).toBeLessThanOrEqual(1);
-        // 头像右到文字左 8±1
+        // Styrigx 在长条内水平、垂直居中（±1）
         const tr = await textRect(page, SEL.brandText);
-        expect(Math.abs(tr.left - (avatarBox.x + avatarBox.width) - 8), `[${theme}] 头像到文字 8±1`).toBeLessThanOrEqual(1);
+        expect(Math.abs(tr.cx - (pillBox.x + pillBox.width / 2)), `[${theme}] Styrigx 水平居中`).toBeLessThanOrEqual(1);
+        expect(Math.abs(tr.cy - (pillBox.y + pillBox.height / 2)), `[${theme}] Styrigx 垂直居中`).toBeLessThanOrEqual(1);
         // ⋮ 中心距长条右边 26±1
         const more = page.locator(SEL.more);
         const moreBox = await more.boundingBox();
@@ -195,9 +196,16 @@ for (const lang of ['zh', 'en']) {
           return m ? parseFloat(getComputedStyle(m).opacity) : 0;
         });
       }, { timeout: 5000 }).toBe(1);
-      // 品牌组 opacity 0
-      const brandOpacity = await page.evaluate(() => parseFloat(getComputedStyle(document.querySelector('.sgx-tb-brand')).opacity));
-      expect(brandOpacity, '品牌组 opacity 0').toBe(0);
+      // 头像一直显示；Styrigx 隐藏；大标题已完全淡出
+      const st = await page.evaluate(() => ({
+        avatar: parseFloat(getComputedStyle(document.querySelector('.sgx-tb-avatar')).opacity),
+        brand: parseFloat(getComputedStyle(document.querySelector('.sgx-tb-brand')).opacity),
+        text: parseFloat(getComputedStyle(document.querySelector('.sgx-tb-text')).opacity),
+        hero: parseFloat(getComputedStyle(document.querySelector('.subpage-hero')).opacity),
+      }));
+      expect(st.avatar * st.brand, '头像一直显示').toBe(1);
+      await expect.poll(() => page.evaluate(() => parseFloat(getComputedStyle(document.querySelector('.sgx-tb-text')).opacity)), { timeout: 5000 }).toBe(0);
+      expect(st.hero, '大标题完全淡出').toBe(0);
       // 三个按钮可见且坐标不变
       await expectBox(page.locator(SEL.back), { left: 16, top: 16, width: 52, height: 52 }, 1, '滚动后返回圆');
       await expectBox(page.locator(SEL.nav), { left: vw - 16 - 52, top: 16, width: 52, height: 52 }, 1, '滚动后导航圆');
@@ -287,4 +295,49 @@ test.describe('topbar v2.0 DeX', () => {
       expect(noOverflow, '无横向滚动').toBe(true);
     });
   }
+});
+
+
+/* 大标题与小标题交接：不会两个标题同时出现 */
+test.describe('大标题与顶栏小标题交接', () => {
+  test('滚动全程：小标题出现时大标题 opacity 为 0；大标题碰到顶栏下沿时正好切换', async ({ page }) => {
+    await setup(page, 'zh', 'home');
+    const r = await page.evaluate(async () => {
+      const hero = document.querySelector('.subpage-hero');
+      const head = document.querySelector('[data-subpage-head]');
+      const bar = document.querySelector('.sgx-topbar').getBoundingClientRect().bottom;
+      const out = [];
+      const raf = () => new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+      for (let y = 0; y <= head.offsetHeight; y += 8) {
+        window.scrollTo(0, y);
+        await raf();
+        const top = head.getBoundingClientRect().top + hero.offsetTop;
+        out.push({ y, top, bar, op: parseFloat(getComputedStyle(hero).opacity), stuck: document.body.classList.contains('sgx-stuck') });
+      }
+      return out;
+    });
+    for (const s of r) {
+      if (s.stuck) expect(s.op, `y=${s.y} 已切到小标题时大标题必须完全消失`).toBe(0);
+      if (s.top > s.bar + 48) expect(s.op, `y=${s.y} 离顶栏还远时大标题完全显示`).toBe(1);
+      if (s.top > s.bar) expect(s.stuck, `y=${s.y} 大标题还没碰到顶栏时不切换`).toBe(false);
+    }
+    expect(r.some((s) => s.stuck), '最终会切到小标题').toBe(true);
+    expect(r.some((s) => s.op > 0 && s.op < 1), '中间有淡出过程').toBe(true);
+  });
+});
+
+/* 九宫点菜单：在 book.styrigx.com 上只有「书库」打 ✓（主页的匹配规则不能把子域名也算进去） */
+test.describe('导航菜单当前站点', () => {
+  test('book.styrigx.com 上只有书库高亮', async ({ page, baseURL }) => {
+    await mockBookAPIs(page, { books: BOOKS });
+    await page.route('http://book.styrigx.com/**', (route) => {
+      const u = new URL(route.request().url());
+      route.continue({ url: baseURL + u.pathname + u.search });
+    });
+    await page.goto('http://book.styrigx.com/');
+    await page.locator('.sgx-tb-nav').click();
+    const cur = page.locator('#sgx-tb-navmenu [aria-current="true"]');
+    await expect(cur).toHaveCount(1);
+    await expect(cur).toContainText(/书库|Library/);
+  });
 });

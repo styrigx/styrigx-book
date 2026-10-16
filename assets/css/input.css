@@ -254,15 +254,19 @@ footer { padding-bottom: calc(var(--dock-h) + env(safe-area-inset-bottom, 0px));
 /* 长条：flex:1，高 52，圆角 26，内边距左 6 右 6 */
 .sgx-tb-pill { flex: 1; height: 52px; border-radius: 26px; min-width: 0;
   display: flex; align-items: center; padding: 0 6px; position: relative; }
-/* 品牌组：整体可点，高 40px，左 6px 右 8px，圆角 20px；头像距长条左边缘 12px */
+/* 品牌组：整体可点，高 40px，左 6px 右 8px，圆角 20px；头像距长条左边缘 12px。
+   头像始终显示；「Styrigx」在长条内水平垂直居中（绝对定位，相对 .sgx-tb-pill），
+   滚动后（body.sgx-stuck）Styrigx 上移淡出，小标题在同一位置淡入，二者不同时出现。 */
 .sgx-tb-brand { display: inline-flex; align-items: center; gap: 8px;
   height: 40px; padding-left: 6px; padding-right: 8px; border-radius: 20px;
   border: 0; background: transparent; cursor: pointer; flex-shrink: 0;
   transition: opacity .2s ease; }
 .sgx-tb-avatar { width: 28px; height: 28px; border-radius: 999px; object-fit: cover;
   border: 1px solid var(--m-outline); flex-shrink: 0; }
-.sgx-tb-text { font-size: 15px; font-weight: 700; line-height: 1;
-  color: var(--m-on-surface); white-space: nowrap; }
+.sgx-tb-text { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
+  font-size: 15px; font-weight: 700; line-height: 1;
+  color: var(--m-on-surface); white-space: nowrap;
+  transition: opacity .2s ease, transform .2s ease; }
 /* ⋮：40×40 圆形点击区，中心距长条右边缘 26px */
 .sgx-tb-more { position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
   width: 40px; height: 40px; border-radius: 999px; border: 0; background: transparent;
@@ -286,8 +290,9 @@ footer { padding-bottom: calc(var(--dock-h) + env(safe-area-inset-bottom, 0px));
 .sgx-tb-back:focus-visible, .sgx-tb-nav:focus-visible,
 .sgx-tb-more:focus-visible, .sgx-tb-brand:focus-visible {
   outline: 2px solid var(--m-primary); outline-offset: 2px; }
-/* 滚动后（body.sgx-stuck）：品牌组淡出 */
-body.sgx-stuck .sgx-tb-brand { opacity: 0; pointer-events: none; }
+/* 滚动后（body.sgx-stuck）：头像不动，Styrigx 上移淡出，让位给小标题 */
+body.sgx-stuck .sgx-tb-text { opacity: 0; transform: translate(-50%,-50%) translateY(-6px); }
+.reduced-motion .sgx-tb-text { transition: none; }
 /* 小标题：放进长条，水平垂直居中；最大宽度 = 长条宽 - 104px */
 .sgx-tb-pill .subpage-mini-title { position: absolute; left: 50%; top: 50%;
   transform: translate(-50%,-50%) translateY(6px);
@@ -328,10 +333,9 @@ main > .subpage-head { margin-left: -16px; margin-right: -16px; }
   padding-top:calc(84px + env(safe-area-inset-top,0px));padding-bottom:76px;
   max-width:none;width:min(100vw,1100px);
   margin-left:calc(50% - min(50vw,550px));margin-right:0}
-/* 上滑标题区滚走时轻微淡出 + 缩小 */
-.subpage-hero{transition:opacity .25s ease,transform .25s ease}
-.subpage-head.head-past .subpage-hero{opacity:.15;transform:scale(.96)}
-.reduced-motion .subpage-hero{transition:none}
+/* 上滑时大标题跟着滚动淡出：--hero-fade 由顶栏滚动脚本按大标题与顶栏的距离写入（0 = 完全显示，1 = 完全消失）。
+   大标题碰到顶栏下沿时正好消失，同一时刻顶栏小标题出现，不会两个标题同时在屏幕上。 */
+.subpage-hero{opacity:calc(1 - var(--hero-fade,0));transform:translateY(calc(var(--hero-fade,0) * -8px))}
 .subpage-hero{min-width:0;max-width:640px}
 .subpage-title{font-size:40px;font-weight:800;letter-spacing:-0.02em;line-height:1.15;color:var(--m-primary)}
 .subpage-sub{margin-top:10px;font-size:14px;color:var(--m-on-surface-variant)}
