@@ -52,6 +52,29 @@ async function textRect(page, selector) {
   }, selector);
 }
 
+/** 截取 (x,y) 处 1x1 像素，返回 {r,g,b}。用最小 PNG 解析器，不依赖外部库。 */
+const zlib = require('zlib');
+async function samplePixel(page, x, y) {
+  const buf = await page.screenshot({ clip: { x, y, width: 1, height: 1 } });
+  let pos = 8, colorType = -1;
+  const idat = [];
+  while (pos < buf.length) {
+    const len = buf.readUInt32BE(pos);
+    const type = buf.toString('ascii', pos + 4, pos + 8);
+    const data = buf.slice(pos + 8, pos + 8 + len);
+    if (type === 'IHDR') colorType = data[9];
+    else if (type === 'IDAT') idat.push(data);
+    else if (type === 'IEND') break;
+    pos += 12 + len;
+  }
+  const raw = zlib.inflateSync(Buffer.concat(idat));
+  // 1x1：filter 字节 + 像素数据（小图通常 filter=0；若非 0 则按原样取，1 像素无前行可参考）
+  const px = raw.slice(1);
+  if (colorType === 6) return { r: px[0], g: px[1], b: px[2] };
+  if (colorType === 2) return { r: px[0], g: px[1], b: px[2] };
+  throw new Error('不支持的 PNG 颜色类型: ' + colorType);
+}
+
 async function setup(page, lang, pageKey) {
   await setTheme(page, 'light');
   await mockBookAPIs(page, { owner: true, books: MANY_BOOKS });
@@ -102,6 +125,32 @@ for (const lang of ['zh', 'en']) {
       expect(bg, '#site-nav 背景透明').toBe('rgba(0, 0, 0, 0)');
     });
 
+    /* 验收 3b：像素采样 — y=4,x=4 处像素应等于隐藏顶栏后同一位置的背景色（各通道 ≤2） */
+    test('3b. 顶栏像素与背景一致', async ({ page }) => {
+      for (const theme of ['light', 'dark']) {
+        for (const pageKey of ['home', 'settings']) {
+          await setTheme(page, theme);
+          await mockBookAPIs(page, { owner: true, books: MANY_BOOKS });
+          await gotoReady(page, PAGES[pageKey][lang], pageKey === 'home' ? '#bk-grid:not(.hidden)' : '#adm-main:not(.hidden), main');
+          const px1 = await samplePixel(page, 4, 4);
+          await page.evaluate(() => {
+            document.querySelector('#site-nav').style.visibility = 'hidden';
+            document.querySelector('.sgx-topcard').style.visibility = 'hidden';
+          });
+          const px2 = await samplePixel(page, 4, 4);
+          // 恢复（同一 context 后续测试用新页面，此处仅保险）
+          await page.evaluate(() => {
+            document.querySelector('#site-nav').style.visibility = '';
+            const c = document.querySelector('.sgx-topcard');
+            if (c) c.style.visibility = '';
+          });
+          for (const ch of ['r', 'g', 'b']) {
+            expect(Math.abs(px1[ch] - px2[ch]), `[${theme}][${pageKey}] 通道 ${ch} 差值 ≤2 (实际 ${px1[ch]} vs ${px2[ch]})`).toBeLessThanOrEqual(2);
+          }
+        }
+      }
+    });
+
     /* 验收 4：页面里不存在 #nav-time-center 和 #nav-wx */
     test('4. 无旧顶栏元素', async ({ page }) => {
       await setup(page, lang, 'home');
@@ -144,19 +193,47 @@ for (const lang of ['zh', 'en']) {
       expect(Math.abs(r.moreBottomOffset - 8), '⋮ 距底边 8±1').toBeLessThanOrEqual(1);
     });
 
-    /* 验收 7：DeX（1280 宽）卡片宽 1068±1 且居中 — 仅在 phone-412 项目跑时跳过，由 e2e 配置的视口决定 */
-    test('7. DeX 卡片宽度居中', async ({ page }) => {
-      const vw = page.viewportSize().width;
-      test.skip(vw < 980, '仅 DeX 视口跑');
+  });
+}
+
+/* ===== DeX 验收（1280×800 强制视口）===== */
+test.describe('topbar-spec DeX', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  for (const lang of ['zh', 'en']) {
+    /* 验收 7：DeX（1280 宽）卡片宽 1068±1 且居中 */
+    test(`7. DeX 卡片宽度居中 [${lang}]`, async ({ page }) => {
       await setup(page, lang, 'home');
+      // 确认布局类已切到 dex（视口 ≥980 自动触发）
+      await expect.poll(async () =>
+        page.evaluate(() => document.documentElement.classList.contains('layout-dex'))
+      ).toBe(true);
       const card = page.locator(SEL.card);
       const box = await card.boundingBox();
+      const vw = page.viewportSize().width;
       expect(Math.abs(box.width - 1068), 'DeX 卡片宽 1068±1').toBeLessThanOrEqual(1);
       const centerOffset = Math.abs((box.x + box.x + box.width) / 2 - vw / 2);
       expect(centerOffset, '卡片水平居中').toBeLessThanOrEqual(1);
     });
-  });
-}
+
+    /* 验收 7b：DeX 标题区按钮位置 — ← left = 106±1，⋮ right = 106±1（视口坐标） */
+    test(`7b. DeX 标题区按钮位置 [${lang}]`, async ({ page }) => {
+      await setTheme(page, 'light');
+      await mockBookAPIs(page, { owner: true });
+      await gotoReady(page, PAGES.settings[lang], '#adm-main:not(.hidden), main');
+      await expect.poll(async () =>
+        page.evaluate(() => document.documentElement.classList.contains('layout-dex'))
+      ).toBe(true);
+      const r = await page.evaluate(() => {
+        const back = document.querySelector('.subpage-back').getBoundingClientRect();
+        const more = document.querySelector('.subpage-actions').getBoundingClientRect();
+        return { backLeft: back.left, moreRight: window.innerWidth - more.right };
+      });
+      expect(Math.abs(r.backLeft - 106), `← left 应为 106±1，实测 ${r.backLeft.toFixed(1)}`).toBeLessThanOrEqual(1);
+      expect(Math.abs(r.moreRight - 106), `⋮ right 应为 106±1，实测 ${r.moreRight.toFixed(1)}`).toBeLessThanOrEqual(1);
+    });
+  }
+});
 
 /* 验收 6：滚动后状态 — 三种模式 */
 for (const mode of ['normal', 'js-fallback', 'reduced-motion']) {

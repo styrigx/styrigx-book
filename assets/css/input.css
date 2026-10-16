@@ -319,7 +319,6 @@ main > .subpage-head { margin-left: -16px; margin-right: -16px; }
   width:44px;height:44px;border-radius:999px;display:inline-flex;align-items:center;
   justify-content:center;color:var(--m-on-surface);flex-shrink:0;z-index:2;
   border:0;background:transparent}
-.layout-dex .subpage-back{left:max(16px,calc((100vw - 1100px)/2 + 16px))}
 @media (hover:hover){
 .subpage-back:hover{background:rgba(0,0,0,.05)}
 .dark .subpage-back:hover{background:rgba(255,255,255,.08)}
@@ -332,7 +331,6 @@ main > .subpage-head { margin-left: -16px; margin-right: -16px; }
 .subpage-sub{margin-top:10px;font-size:14px;color:var(--m-on-surface-variant)}
 /* 三点按钮位：展开态 44×44，右 16px，距标题区底边 8px，透明底 */
 .subpage-actions{position:absolute;right:16px;top:auto;bottom:8px;display:flex;gap:8px;flex-shrink:0;z-index:2}
-.layout-dex .subpage-actions{right:max(16px,calc((100vw - 1100px)/2 + 16px))}
 /* 三点按钮（44×44） */
 .subpage-more{width:44px;height:44px;border-radius:999px;border:0;cursor:pointer;
   display:inline-flex;align-items:center;justify-content:center;

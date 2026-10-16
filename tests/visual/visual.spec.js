@@ -103,17 +103,18 @@ for (const theme of ['light', 'dark']) {
       };
     });
     expect(overlap.ok, `页脚文字下边缘(${overlap.footerBottom})应≤胶囊上边缘(${overlap.capTop})`).toBe(true);
-    // Gray 要求：深色滚动后顶栏背景色与页面深色背景一致（不能是浅色遮罩）
+    // v1.0：#site-nav 透明，卡片有毛玻璃背景。深色下卡片背景不能是浅色
     if (theme === 'dark') {
       const topbarBg = await page.evaluate(() => {
         const nav = document.querySelector('#site-nav');
-        const bodyBg = getComputedStyle(document.body).backgroundColor;
-        const navBg = nav ? getComputedStyle(nav).backgroundColor : 'missing';
-        return { navBg, bodyBg };
+        const card = document.querySelector('.sgx-topcard');
+        return {
+          navBg: nav ? getComputedStyle(nav).backgroundColor : 'missing',
+          cardBg: card ? getComputedStyle(card).backgroundColor : 'missing',
+        };
       });
-      // 顶栏是半透明毛玻璃（rgba 0.72），不能是浅色（255,255,255）
-      expect(topbarBg.navBg, `深色顶栏背景应为深色，不能是浅色: ${topbarBg.navBg}`).not.toContain('255, 255, 255');
-      expect(topbarBg.navBg, `深色顶栏背景应为深色: ${topbarBg.navBg}`).toMatch(/rgba?\(30,\s*30,\s*32/);
+      expect(topbarBg.navBg, `#site-nav 应透明: ${topbarBg.navBg}`).toBe('rgba(0, 0, 0, 0)');
+      expect(topbarBg.cardBg, `深色卡片背景不能是浅色: ${topbarBg.cardBg}`).not.toContain('255, 255, 255');
     }
     await expect(page).toHaveScreenshot(`shelf-360-bottom-${theme}.png`, {
       fullPage: false,
@@ -192,7 +193,7 @@ test('admin-upload-scrolled', async ({ page }) => {
   await setup(page, { viewport: { width: 390, height: 600 }, theme: 'light', owner: true });
   await gotoReady(page, '/admin/', '#adm-main:not(.hidden)');
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-  await page.waitForFunction(() => document.body.classList.contains('subpage-scrolled'), { timeout: 5000 });
+  await page.waitForFunction(() => document.body.classList.contains('sgx-stuck'), { timeout: 5000 });
   await page.evaluate(() => document.fonts.ready);
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth);
