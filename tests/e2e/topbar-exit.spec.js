@@ -86,46 +86,51 @@ test('A2 owner menu: 5 items in order', async ({ page }) => {
 });
 
 /* ============ A3：顶栏几何 ============ */
-test('A3 topbar geometry: time left, avatar center, wx right, no Styrigx text', async ({ page }) => {
-  await setupOwner(page);
-  await gotoReady(page, '/', '#bk-grid:not(.hidden)');
-  // 无 "Styrigx" 文字节点
-  const styrigxText = await page.evaluate(() => {
-    const nav = document.getElementById('site-nav');
-    if (!nav) return false;
-    const walker = document.createTreeWalker(nav, NodeFilter.SHOW_TEXT);
-    let node;
-    while ((node = walker.nextNode())) {
-      if (node.textContent.trim() === 'Styrigx') return true;
+for (const lang of ['zh', 'en']) {
+  test(`A3 topbar geometry [${lang}]: brand left, avatar right`, async ({ page }) => {
+    await setupOwner(page);
+    const url = lang === 'en' ? '/en/' : '/';
+    await gotoReady(page, url, '#bk-grid:not(.hidden)');
+    // 旧元素不应存在
+    for (const id of ['#nav-time', '#nav-wx', '#dex-clock-pop']) {
+      await expect(page.locator(id), `不应有 ${id}`).toHaveCount(0);
     }
-    return false;
+    // 品牌文字不翻译
+    const brandText = await page.locator('#nav-brand').textContent();
+    expect(brandText.trim(), '品牌文字应为 Styrigx（不翻译）').toBe('Styrigx');
+    const geom = await page.evaluate(() => {
+      // 用 Range 量品牌文字（精确到字形，不含 span 的多余内边距）
+      const brand = document.getElementById('nav-brand');
+      const range = document.createRange();
+      range.selectNodeContents(brand);
+      const rb = range.getBoundingClientRect();
+      const img = document.querySelector('#nav-home img');
+      const ib = img.getBoundingClientRect();
+      const nav = document.getElementById('site-nav');
+      const nb = nav.getBoundingClientRect();
+      return {
+        brandX: rb.left,
+        brandCy: rb.top + rb.height / 2,
+        imgRight: ib.right,
+        imgCy: ib.top + ib.height / 2,
+        navH: nb.height,
+        navW: nb.width,
+        vw: window.innerWidth,
+      };
+    });
+    // Styrigx 左边缘 16±1px
+    expect(Math.abs(geom.brandX - 16), 'Styrigx 左边缘应在 16±1px').toBeLessThanOrEqual(1);
+    // 头像右边缘离视口右边 16±1px
+    expect(Math.abs(geom.vw - geom.imgRight - 16), '头像右边缘应在右边 16±1px').toBeLessThanOrEqual(1);
+    // 两者垂直居中偏差 ≤1px
+    expect(Math.abs(geom.brandCy - geom.imgCy), '品牌与头像垂直居中偏差').toBeLessThanOrEqual(1);
+    // 顶栏高度 64px（与改之前一致），宽度 = 视口宽
+    expect(Math.abs(geom.navH - 64), '顶栏高度应为 64px').toBeLessThanOrEqual(1);
+    expect(Math.abs(geom.navW - geom.vw), '顶栏宽度应为视口宽').toBeLessThanOrEqual(1);
   });
-  expect(styrigxText, '顶栏不应有 "Styrigx" 文字').toBe(false);
-  // 几何：时间最左，头像居中 ±1px，天气最右
-  const geom = await page.evaluate(() => {
-    const r = (id) => {
-      const el = document.getElementById(id);
-      if (!el) return null;
-      const b = el.getBoundingClientRect();
-      return { left: b.left, right: b.right, cx: b.left + b.width / 2 };
-    };
-    return {
-      time: r('nav-time-center'),
-      home: r('nav-home'),
-      wx: r('nav-wx'),
-      vw: window.innerWidth,
-    };
-  });
-  expect(geom.time, '应有 #nav-time-center').not.toBeNull();
-  expect(geom.home, '应有 #nav-home').not.toBeNull();
-  // 时间靠最左（left < 20px）
-  expect(geom.time.left, '#nav-time 应在最左').toBeLessThan(20);
-  // 头像在水平中线 ±1px
-  const centerX = geom.vw / 2;
-  expect(Math.abs(geom.home.cx - centerX), '头像应在水平中线 ±1px').toBeLessThanOrEqual(1.5);
-});
+}
 
-test('A3 topbar stuck: time/wx fade, mini-title visible', async ({ page }) => {
+test('A3 topbar stuck: brand/avatar fade, mini-title visible', async ({ page }) => {
   await setTheme(page, 'light');
   await freezeTime(page);
   await mockBookAPIs(page, { owner: true, books: MANY_BOOKS });
@@ -140,16 +145,16 @@ test('A3 topbar stuck: time/wx fade, mini-title visible', async ({ page }) => {
   }, null, { timeout: 5000 });
   // 等 opacity transition (.2s) 完成
   await page.waitForFunction(() => {
-    const t = parseFloat(getComputedStyle(document.getElementById('nav-time-center')).opacity);
+    const t = parseFloat(getComputedStyle(document.getElementById('nav-brand')).opacity);
     return t === 0;
   }, null, { timeout: 5000 });
-  // 时间和天气 opacity 0
+  // 品牌和头像 opacity 0
   const opacity = await page.evaluate(() => {
-    const t = getComputedStyle(document.getElementById('nav-time-center')).opacity;
-    const w = getComputedStyle(document.getElementById('nav-wx')).opacity;
-    return { t: parseFloat(t), w: parseFloat(w) };
+    const b = getComputedStyle(document.getElementById('nav-brand')).opacity;
+    const a = getComputedStyle(document.getElementById('nav-home')).opacity;
+    return { b: parseFloat(b), a: parseFloat(a) };
   });
-  expect(opacity.t, '时间应淡出').toBe(0);
+  expect(opacity.b, '品牌应淡出').toBe(0);
   // 小标题可见
   const miniVisible = await page.evaluate(() => {
     const mini = document.querySelector('.subpage-mini-title');
@@ -346,34 +351,4 @@ test('A7 no horizontal overflow: upload page', async ({ page }) => {
   expect(overflow, '上传页 scrollWidth 应 <= clientWidth').toBe(true);
 });
 
-/* ============ A8：cookie 设置同步 ============ */
-test('A8 no cookie: defaults, no error', async ({ page }) => {
-  await setupOwner(page);
-  // 清除 sgx-ui cookie
-  await page.context().clearCookies();
-  await gotoReady(page, '/', '#bk-grid:not(.hidden)');
-  // 页面不应报错，时间应显示（默认本地时间）
-  const timeText = await page.locator('#nav-time').textContent();
-  expect(timeText.trim(), '无 cookie 时时间应显示默认值').not.toBe('--:--');
-  expect(timeText.trim(), '无 cookie 时时间不应为空').not.toBe('');
-});
-
-test('A8 with cookie: time follows tz1/h12', async ({ page }) => {
-  await setupOwner(page);
-  // 设置 sgx-ui cookie：tz1=Asia/Tokyo, h12=1
-  const payload = { v: 1, tz1: 'Asia/Tokyo', tz2: '', h12: 1, clock: 'digital', wx: 0, unit: 'c', loc: 'auto', city: null };
-  const json = JSON.stringify(payload);
-  const b64 = Buffer.from(json, 'utf8').toString('base64')
-    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  await page.context().addCookies([{
-    name: 'sgx-ui',
-    value: b64,
-    domain: 'localhost',
-    path: '/',
-  }]);
-  await gotoReady(page, '/', '#bk-grid:not(.hidden)');
-  const timeText = await page.locator('#nav-time').textContent();
-  // 东京时间 + 12 小时制：应包含 AM/PM 或与本地时间不同
-  // 至少验证时间已按 cookie 渲染（非 --:--）
-  expect(timeText.trim(), '有 cookie 时时间应按 tz1/h12 显示').not.toBe('--:--');
-});
+/* ============ A8：cookie 设置同步（时间/天气已删除，本节保留占位） ============ */
