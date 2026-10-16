@@ -6,9 +6,8 @@
 {{/* 3.0 书架首页：主站同款大标题（subpage-head，noBack）+ 胶囊 + 最近阅读/最近添加条 +
    书架网格（列表/网格/大封面）+ 详情弹层 + 筛选弹层 + 底部搜索胶囊。
    PR 2 起的入口（收藏、阅读统计、书签与笔记、多选）不渲染。 */}}
-{{ $headActions := printf `%s%s` (printf `<button id="bk-menu-btn" type="button" class="bk-icbtn" aria-label="%s"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg></button>` (cond $isEn "More" "更多")) `<div id="bk-more-menu" class="bk-menu hidden" role="menu"></div>` }}
 <main id="bk-main" class="w-full mx-auto pb-6" style="max-width:1100px;padding-left:16px;padding-right:16px">
-  {{ partial "subpage-head.html" (dict "title" (cond $isEn "Library" "书库") "isEn" $isEn "noBack" true "actions" ($headActions | safeHTML)) }}
+  {{ partial "subpage-head.html" (dict "title" (cond $isEn "Library" "书库") "isEn" $isEn) }}
   {{/* ===== 选中条件胶囊 ===== */}}
   <div id="bk-chips" class="flex flex-wrap gap-2 pb-3"></div>
 

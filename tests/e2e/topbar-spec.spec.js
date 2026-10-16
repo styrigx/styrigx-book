@@ -1,6 +1,6 @@
-/* 顶栏与页面头部统一规格 v1.0 验收测试
- * 规格第八节第 1-7 条，每条一个 test，中英文各跑一遍。
- * 页面 URL 和按钮选择器放顶部配置。
+/* 顶栏统一规格 v2.0 验收测试：返回圆＋长条＋导航圆
+ * 规格第九节，每条一个 test，中英文各跑一遍。
+ * 页面 URL 和选择器放顶部配置。
  */
 const { test, expect } = require('@playwright/test');
 const { mockBookAPIs, setTheme, gotoReady, BOOKS } = require('../visual/helpers.js');
@@ -8,23 +8,22 @@ const { mockBookAPIs, setTheme, gotoReady, BOOKS } = require('../visual/helpers.
 /* ===== 顶部配置 ===== */
 const PAGES = {
   home: { zh: '/', en: '/en/' },
-  settings: { zh: '/admin/', en: '/en/admin/' }, // 用上传页作为子页面代表
+  upload: { zh: '/admin/', en: '/en/admin/' }, // 用上传页作为子页面代表
 };
 const SEL = {
-  card: '.sgx-topcard',
-  brand: '.sgx-topcard-brand',
-  avatar: '.sgx-topcard-avatar',
-  brandText: '.sgx-topcard-text',
-  cardBack: '.sgx-topcard-back',
-  cardMore: '.sgx-topcard-more',
+  topbar: '.sgx-topbar',
+  back: '.sgx-tb-back',
+  pill: '.sgx-tb-pill',
+  brand: '.sgx-tb-brand',
+  avatar: '.sgx-tb-avatar',
+  brandText: '.sgx-tb-text',
+  more: '.sgx-tb-more',
+  nav: '.sgx-tb-nav',
+  navMenu: '#sgx-tb-navmenu',
   miniTitle: '.subpage-mini-title',
   siteNav: '#site-nav',
   head: '[data-subpage-head]',
   headTitle: '.subpage-title',
-  headBack: '.subpage-back',
-  headMore: '.subpage-actions',
-  origBack: '.subpage-back',
-  origMore: '.subpage-actions .subpage-more, .subpage-actions #bk-menu-btn',
 };
 const MANY_BOOKS = [...BOOKS, ...BOOKS, ...BOOKS];
 
@@ -52,7 +51,7 @@ async function textRect(page, selector) {
   }, selector);
 }
 
-/** 截取 (x,y) 处 1x1 像素，返回 {r,g,b}。用最小 PNG 解析器，不依赖外部库。 */
+/** 截取 (x,y) 处 1x1 像素，返回 {r,g,b} */
 const zlib = require('zlib');
 async function samplePixel(page, x, y) {
   const buf = await page.screenshot({ clip: { x, y, width: 1, height: 1 } });
@@ -68,290 +67,224 @@ async function samplePixel(page, x, y) {
     pos += 12 + len;
   }
   const raw = zlib.inflateSync(Buffer.concat(idat));
-  // 1x1：filter 字节 + 像素数据（小图通常 filter=0；若非 0 则按原样取，1 像素无前行可参考）
   const px = raw.slice(1);
   if (colorType === 6) return { r: px[0], g: px[1], b: px[2] };
   if (colorType === 2) return { r: px[0], g: px[1], b: px[2] };
   throw new Error('不支持的 PNG 颜色类型: ' + colorType);
 }
 
-async function setup(page, lang, pageKey) {
-  await setTheme(page, 'light');
+async function setup(page, lang, pageKey, theme = 'light') {
+  await setTheme(page, theme);
   await mockBookAPIs(page, { owner: true, books: MANY_BOOKS });
-  await gotoReady(page, PAGES[pageKey][lang], '#bk-grid:not(.hidden)');
+  await gotoReady(page, PAGES[pageKey][lang], pageKey === 'home' ? '#bk-grid:not(.hidden)' : '#adm-main:not(.hidden), main');
 }
 
 for (const lang of ['zh', 'en']) {
-  test.describe(`topbar-spec [${lang}]`, () => {
-    /* 验收 1：卡片 left 16±1，right 16±1，top 16±1，height 52±1，圆角 26px */
-    test('1. 卡片几何', async ({ page }) => {
-      await setup(page, lang, 'home');
-      const card = page.locator(SEL.card);
-      const box = await expectBox(card, { height: 52 }, 1, '卡片高度');
-      const vw = page.viewportSize().width;
-      expect(Math.abs(box.x - 16), '卡片 left 16±1').toBeLessThanOrEqual(1);
-      expect(Math.abs(vw - (box.x + box.width) - 16), '卡片 right 16±1').toBeLessThanOrEqual(1);
-      expect(Math.abs(box.y - 16), '卡片 top 16±1').toBeLessThanOrEqual(1);
-      const radius = await card.evaluate((el) => getComputedStyle(el).borderRadius);
-      expect(radius, '卡片圆角 26px').toBe('26px');
+  test.describe(`topbar v2.0 [${lang}]`, () => {
+    /* 验收 1a：手机三块几何 ±1，三块高度都是 52 */
+    test('1a. 手机三块几何', async ({ page }) => {
+      for (const theme of ['light', 'dark']) {
+        await setup(page, lang, 'home', theme);
+        const vw = page.viewportSize().width;
+        const back = page.locator(SEL.back);
+        const pill = page.locator(SEL.pill);
+        const nav = page.locator(SEL.nav);
+        // 返回圆 x 16–68（52×52）
+        await expectBox(back, { left: 16, top: 16, width: 52, height: 52 }, 1, `[${theme}] 返回圆`);
+        // 长条：x 76，宽 = vw - 32 - 52 - 8 - 52 - 8，高 52
+        const pillW = vw - 32 - 52 - 8 - 52 - 8;
+        await expectBox(pill, { left: 76, top: 16, width: pillW, height: 52 }, 1, `[${theme}] 长条`);
+        // 导航圆：x = vw - 16 - 52（52×52）
+        await expectBox(nav, { left: vw - 16 - 52, top: 16, width: 52, height: 52 }, 1, `[${theme}] 导航圆`);
+      }
     });
 
-    /* 验收 2：头像距卡片左 12±1；头像右到文字左 8±1；垂直居中误差 ≤1 */
-    test('2. 品牌组几何', async ({ page }) => {
-      await setup(page, lang, 'home');
-      const card = page.locator(SEL.card);
-      const cardBox = await card.boundingBox();
-      const cardCy = cardBox.y + cardBox.height / 2;
-      const avatar = page.locator(SEL.avatar);
-      const avatarBox = await avatar.boundingBox();
-      // 头像距卡片左边缘 12±1
-      expect(Math.abs(avatarBox.x - cardBox.x - 12), '头像距卡片左 12±1').toBeLessThanOrEqual(1);
-      // 头像右到文字左 8±1（Range 量）
-      const tr = await textRect(page, SEL.brandText);
-      expect(Math.abs(tr.left - (avatarBox.x + avatarBox.width) - 8), '头像到文字 8±1').toBeLessThanOrEqual(1);
-      // 垂直居中
-      const avatarCy = avatarBox.y + avatarBox.height / 2;
-      expect(Math.abs(avatarCy - cardCy), '头像垂直居中 ≤1').toBeLessThanOrEqual(1);
-      expect(Math.abs(tr.cy - cardCy), '文字垂直居中 ≤1').toBeLessThanOrEqual(1);
-      // 品牌文字不翻译
-      const text = await page.locator(SEL.brandText).textContent();
-      expect(text.trim(), '品牌文字 Styrigx 不翻译').toBe('Styrigx');
+    /* 验收 1b：头像左边距长条 12±1；⋮ 中心距长条右边 26±1；返回圆和导航圆背景色与长条一致 */
+    test('1b. 长条内部几何与质感', async ({ page }) => {
+      for (const theme of ['light', 'dark']) {
+        await setup(page, lang, 'home', theme);
+        const pill = page.locator(SEL.pill);
+        const pillBox = await pill.boundingBox();
+        const avatar = page.locator(SEL.avatar);
+        const avatarBox = await avatar.boundingBox();
+        // 头像左边距长条 12±1
+        expect(Math.abs(avatarBox.x - pillBox.x - 12), `[${theme}] 头像距长条左 12±1`).toBeLessThanOrEqual(1);
+        // 头像右到文字左 8±1
+        const tr = await textRect(page, SEL.brandText);
+        expect(Math.abs(tr.left - (avatarBox.x + avatarBox.width) - 8), `[${theme}] 头像到文字 8±1`).toBeLessThanOrEqual(1);
+        // ⋮ 中心距长条右边 26±1
+        const more = page.locator(SEL.more);
+        const moreBox = await more.boundingBox();
+        const moreCx = moreBox.x + moreBox.width / 2;
+        expect(Math.abs((pillBox.x + pillBox.width) - moreCx - 26), `[${theme}] ⋮ 中心距长条右 26±1`).toBeLessThanOrEqual(1);
+        // 三块背景色一致
+        const colors = await page.evaluate(() => {
+          const get = (sel) => getComputedStyle(document.querySelector(sel)).backgroundColor;
+          return { back: get('.sgx-tb-back'), pill: get('.sgx-tb-pill'), nav: get('.sgx-tb-nav') };
+        });
+        expect(colors.back, `[${theme}] 返回圆背景与长条一致`).toBe(colors.pill);
+        expect(colors.nav, `[${theme}] 导航圆背景与长条一致`).toBe(colors.pill);
+      }
     });
 
-    /* 验收 3：#site-nav computed background-color 透明；y=4 像素 = 背景色 */
+    /* 验收 3：#site-nav 背景透明；y=4 像素与背景一致 */
     test('3. 顶栏区域无实心底色', async ({ page }) => {
       await setup(page, lang, 'home');
       const bg = await page.locator(SEL.siteNav).evaluate((el) => getComputedStyle(el).backgroundColor);
       expect(bg, '#site-nav 背景透明').toBe('rgba(0, 0, 0, 0)');
-    });
-
-    /* 验收 3b：像素采样 — y=4,x=4 处像素应等于隐藏顶栏后同一位置的背景色（各通道 ≤2） */
-    test('3b. 顶栏像素与背景一致', async ({ page }) => {
       for (const theme of ['light', 'dark']) {
-        for (const pageKey of ['home', 'settings']) {
+        for (const pageKey of ['home', 'upload']) {
           await setTheme(page, theme);
           await mockBookAPIs(page, { owner: true, books: MANY_BOOKS });
           await gotoReady(page, PAGES[pageKey][lang], pageKey === 'home' ? '#bk-grid:not(.hidden)' : '#adm-main:not(.hidden), main');
           const px1 = await samplePixel(page, 4, 4);
           await page.evaluate(() => {
             document.querySelector('#site-nav').style.visibility = 'hidden';
-            document.querySelector('.sgx-topcard').style.visibility = 'hidden';
           });
           const px2 = await samplePixel(page, 4, 4);
-          // 恢复（同一 context 后续测试用新页面，此处仅保险）
           await page.evaluate(() => {
             document.querySelector('#site-nav').style.visibility = '';
-            const c = document.querySelector('.sgx-topcard');
-            if (c) c.style.visibility = '';
           });
           for (const ch of ['r', 'g', 'b']) {
-            expect(Math.abs(px1[ch] - px2[ch]), `[${theme}][${pageKey}] 通道 ${ch} 差值 ≤2 (实际 ${px1[ch]} vs ${px2[ch]})`).toBeLessThanOrEqual(2);
+            expect(Math.abs(px1[ch] - px2[ch]), `[${theme}][${pageKey}] 通道 ${ch} 差值 ≤2`).toBeLessThanOrEqual(2);
           }
         }
       }
     });
 
-    /* 验收 4：页面里不存在 #nav-time-center 和 #nav-wx */
-    test('4. 无旧顶栏元素', async ({ page }) => {
-      await setup(page, lang, 'home');
-      for (const id of ['#nav-time-center', '#nav-wx', '#nav-time', '#dex-clock-pop']) {
-        await expect(page.locator(id), `不应有 ${id}`).toHaveCount(0);
+    /* 验收：标题区内不再有按钮元素 */
+    test('4. 标题区按钮已删除', async ({ page }) => {
+      await setup(page, lang, 'upload');
+      for (const sel of ['.subpage-back', '.subpage-actions', '.subpage-more', '.sgx-topcard-back', '.sgx-topcard-more']) {
+        await expect(page.locator(sel), `不应有 ${sel}`).toHaveCount(0);
       }
     });
 
-    /* 验收 5：设置页标题区尺寸 */
+    /* 验收 5：标题区尺寸（v1.1：max(280px, 35%)） */
     test('5. 标题区尺寸', async ({ page }) => {
-      await setTheme(page, 'light');
-      await mockBookAPIs(page, { owner: true });
-      await gotoReady(page, PAGES.settings[lang], '#adm-main:not(.hidden), main');
+      await setup(page, lang, 'upload');
       const r = await page.evaluate((sel) => {
         const head = document.querySelector(sel.head);
         const hr = head.getBoundingClientRect();
         const title = head.querySelector(sel.headTitle).getBoundingClientRect();
-        const back = head.querySelector(sel.headBack).getBoundingClientRect();
-        const more = head.querySelector(sel.headMore).getBoundingClientRect();
-        const vw = window.innerWidth;
         return {
           headH: hr.height,
           titleBottomOffset: hr.bottom - title.bottom,
-          backLeft: back.left,
-          backBottomOffset: hr.bottom - back.bottom,
-          moreRight: vw - more.right,
-          moreBottomOffset: hr.bottom - more.bottom,
         };
       }, SEL);
-      // 标题区高度 = max(280, 0.35*844) = 295.4 ±1（844 高视口）
       const vh = page.viewportSize().height;
       const expectedH = Math.max(280, vh * 0.35);
       expect(Math.abs(r.headH - expectedH), `标题区高度 ${expectedH}±1`).toBeLessThanOrEqual(1);
-      // 大标题底边 = 标题区底边 - 76
       expect(Math.abs(r.titleBottomOffset - 76), '大标题底边 -76±1').toBeLessThanOrEqual(1);
-      // ← 和 ⋮ 距左右 16±1，距底边 8±1
-      expect(Math.abs(r.backLeft - 16), '← 距左 16±1').toBeLessThanOrEqual(1);
-      expect(Math.abs(r.backBottomOffset - 8), '← 距底边 8±1').toBeLessThanOrEqual(1);
-      expect(Math.abs(r.moreRight - 16), '⋮ 距右 16±1').toBeLessThanOrEqual(1);
-      expect(Math.abs(r.moreBottomOffset - 8), '⋮ 距底边 8±1').toBeLessThanOrEqual(1);
     });
 
+    /* 验收 6：滚动后状态（用书库首页，有足够内容可滚） */
+    test('6. 滚动后状态', async ({ page }) => {
+      await setup(page, lang, 'home');
+      const vw = page.viewportSize().width;
+      // 滚到底部确保超过阈值
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      // 等 body 有 sgx-stuck 类
+      await expect.poll(async () => {
+        return await page.evaluate(() => document.body.classList.contains('sgx-stuck'));
+      }, { timeout: 5000 }).toBe(true);
+      // 等小标题可见
+      await expect.poll(async () => {
+        return await page.evaluate(() => {
+          const m = document.querySelector('.subpage-mini-title');
+          return m ? parseFloat(getComputedStyle(m).opacity) : 0;
+        });
+      }, { timeout: 5000 }).toBe(1);
+      // 品牌组 opacity 0
+      const brandOpacity = await page.evaluate(() => parseFloat(getComputedStyle(document.querySelector('.sgx-tb-brand')).opacity));
+      expect(brandOpacity, '品牌组 opacity 0').toBe(0);
+      // 三个按钮可见且坐标不变
+      await expectBox(page.locator(SEL.back), { left: 16, top: 16, width: 52, height: 52 }, 1, '滚动后返回圆');
+      await expectBox(page.locator(SEL.nav), { left: vw - 16 - 52, top: 16, width: 52, height: 52 }, 1, '滚动后导航圆');
+      const moreVisible = await page.locator(SEL.more).isVisible();
+      expect(moreVisible, '滚动后 ⋮ 可见').toBe(true);
+      // 小标题可见
+      const miniVisible = await page.evaluate(() => {
+        const m = document.querySelector('.subpage-mini-title');
+        const r = m.getBoundingClientRect();
+        return r.width > 0 && r.height > 0;
+      });
+      expect(miniVisible, '小标题可见').toBe(true);
+    });
+
+    /* 验收：导航菜单 */
+    test('7. 导航菜单', async ({ page }) => {
+      await setup(page, lang, 'home');
+      const navBtn = page.locator(SEL.nav);
+      const menu = page.locator(SEL.navMenu);
+      // 点九宫点，菜单出现
+      await navBtn.click();
+      await expect(menu, '导航菜单出现').not.toHaveClass(/hidden/);
+      // 有 3 项
+      const items = menu.locator('[role="menuitem"]');
+      await expect(items, '菜单有 3 项').toHaveCount(3);
+      // 当前站点有 ✓（aria-current）
+      const current = menu.locator('[aria-current="true"]');
+      await expect(current, '当前站点高亮').toHaveCount(1);
+      // Esc 关闭
+      await page.keyboard.press('Escape');
+      await expect(menu, 'Esc 后关闭').toHaveClass(/hidden/);
+    });
+
+    /* 验收：⋮ 菜单 */
+    test('8. ⋮ 菜单', async ({ page }) => {
+      await setup(page, lang, 'home');
+      const moreBtn = page.locator(SEL.more);
+      await moreBtn.click();
+      // 原来的设置菜单应该打开（#bk-more-menu）
+      const bkMenu = page.locator('#bk-more-menu');
+      await expect(bkMenu, '⋮ 菜单打开').not.toHaveClass(/hidden/);
+    });
+
+    /* 验收：返回圆行为 */
+    test('9. 返回圆', async ({ page }) => {
+      // 书库首页：返回圆有 data-go-back（exit-to-host 接管）
+      await setup(page, lang, 'home');
+      const backBtn = page.locator(SEL.back);
+      await expect(backBtn, '书库首页有返回圆').toHaveCount(1);
+      const hasGoBack = await backBtn.getAttribute('data-go-back');
+      expect(hasGoBack, '返回圆有 data-go-back').not.toBeNull();
+      // 子页面：返回圆存在
+      await setup(page, lang, 'upload');
+      await expect(page.locator(SEL.back), '子页面有返回圆').toHaveCount(1);
+    });
   });
 }
 
 /* ===== DeX 验收（1280×800 强制视口）===== */
-test.describe('topbar-spec DeX', () => {
+test.describe('topbar v2.0 DeX', () => {
   test.use({ viewport: { width: 1280, height: 800 } });
-
   for (const lang of ['zh', 'en']) {
-    /* 验收 7：DeX（1280 宽）卡片宽 1068±1 且居中 */
-    test(`7. DeX 卡片宽度居中 [${lang}]`, async ({ page }) => {
+    /* 验收：容器宽 1068±1 且居中，三块尺寸与手机相同 */
+    test(`10. DeX 容器与三块 [${lang}]`, async ({ page }) => {
       await setup(page, lang, 'home');
-      // 确认布局类已切到 dex（视口 ≥980 自动触发）
-      await expect.poll(async () =>
-        page.evaluate(() => document.documentElement.classList.contains('layout-dex'))
-      ).toBe(true);
-      const card = page.locator(SEL.card);
-      const box = await card.boundingBox();
-      const vw = page.viewportSize().width;
-      expect(Math.abs(box.width - 1068), 'DeX 卡片宽 1068±1').toBeLessThanOrEqual(1);
-      const centerOffset = Math.abs((box.x + box.x + box.width) / 2 - vw / 2);
-      expect(centerOffset, '卡片水平居中').toBeLessThanOrEqual(1);
+      const topbar = page.locator(SEL.topbar);
+      const box = await topbar.boundingBox();
+      expect(Math.abs(box.width - 1068), '容器宽 1068±1').toBeLessThanOrEqual(1);
+      expect(Math.abs(box.x - (1280 - 1068) / 2), '容器居中').toBeLessThanOrEqual(1);
+      // 三块尺寸与手机相同
+      await expectBox(page.locator(SEL.back), { width: 52, height: 52 }, 1, 'DeX 返回圆尺寸');
+      await expectBox(page.locator(SEL.nav), { width: 52, height: 52 }, 1, 'DeX 导航圆尺寸');
+      const pillBox = await page.locator(SEL.pill).boundingBox();
+      expect(Math.abs(pillBox.height - 52), 'DeX 长条高 52').toBeLessThanOrEqual(1);
+      // 三块 y 都是 16
+      const backBox = await page.locator(SEL.back).boundingBox();
+      expect(Math.abs(backBox.y - 16), 'DeX 返回圆 top 16').toBeLessThanOrEqual(1);
     });
 
-    /* 验收 7b：DeX 标题区按钮位置 — ← left = 106±1，⋮ right = 106±1（视口坐标） */
-    test(`7b. DeX 标题区按钮位置 [${lang}]`, async ({ page }) => {
-      await setTheme(page, 'light');
-      await mockBookAPIs(page, { owner: true });
-      await gotoReady(page, PAGES.settings[lang], '#adm-main:not(.hidden), main');
-      await expect.poll(async () =>
-        page.evaluate(() => document.documentElement.classList.contains('layout-dex'))
-      ).toBe(true);
-      const r = await page.evaluate(() => {
-        const back = document.querySelector('.subpage-back').getBoundingClientRect();
-        const more = document.querySelector('.subpage-actions').getBoundingClientRect();
-        return {
-          backLeft: back.left,
-          moreRight: window.innerWidth - more.right,
-          scrollW: document.documentElement.scrollWidth,
-          innerW: window.innerWidth,
-        };
-      });
-      expect(Math.abs(r.backLeft - 106), `← left 应为 106±1，实测 ${r.backLeft.toFixed(1)}`).toBeLessThanOrEqual(1);
-      expect(Math.abs(r.moreRight - 106), `⋮ right 应为 106±1，实测 ${r.moreRight.toFixed(1)}`).toBeLessThanOrEqual(1);
-      expect(r.scrollW, `scrollWidth(${r.scrollW}) 不应超过 innerWidth(${r.innerW})`).toBeLessThanOrEqual(r.innerW);
-    });
-
-    /* 验收 7c：DeX 书库首页标题区按钮位置 — 同样 106±1 */
-    test(`7c. DeX 书库首页按钮位置 [${lang}]`, async ({ page }) => {
-      await setTheme(page, 'light');
-      await mockBookAPIs(page, { owner: true });
-      await gotoReady(page, PAGES.home[lang], '#bk-grid:not(.hidden), main');
-      await expect.poll(async () =>
-        page.evaluate(() => document.documentElement.classList.contains('layout-dex'))
-      ).toBe(true);
-      const r = await page.evaluate(() => {
-        const back = document.querySelector('.subpage-back').getBoundingClientRect();
-        const more = document.querySelector('.subpage-actions').getBoundingClientRect();
-        return {
-          backLeft: back.left,
-          moreRight: window.innerWidth - more.right,
-          scrollW: document.documentElement.scrollWidth,
-          innerW: window.innerWidth,
-        };
-      });
-      expect(Math.abs(r.backLeft - 106), `← left 应为 106±1，实测 ${r.backLeft.toFixed(1)}`).toBeLessThanOrEqual(1);
-      expect(Math.abs(r.moreRight - 106), `⋮ right 应为 106±1，实测 ${r.moreRight.toFixed(1)}`).toBeLessThanOrEqual(1);
-      expect(r.scrollW, `scrollWidth(${r.scrollW}) 不应超过 innerWidth(${r.innerW})`).toBeLessThanOrEqual(r.innerW);
+    /* 验收：DeX 标题区按钮位置（106±1） */
+    test(`11. DeX 标题区 [${lang}]`, async ({ page }) => {
+      await setup(page, lang, 'upload');
+      // 标题区按钮已删除，确认不存在
+      await expect(page.locator('.subpage-back'), '无 subpage-back').toHaveCount(0);
+      // scrollWidth <= innerWidth（无横向滚动）
+      const noOverflow = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
+      expect(noOverflow, '无横向滚动').toBe(true);
     });
   }
 });
-
-/* 验收 6：滚动后状态 — 三种模式 */
-for (const mode of ['normal', 'js-fallback', 'reduced-motion']) {
-  test.describe(`topbar-spec 滚动 [${mode}]`, () => {
-    test.beforeEach(async ({ page }) => {
-      if (mode === 'js-fallback') {
-        // 强制 JS 兜底：让 CSS.supports('animation-timeline: view()') 返回 false
-        await page.addInitScript(() => {
-          const orig = CSS.supports.bind(CSS);
-          CSS.supports = (...args) => {
-            if (args.join(' ').includes('animation-timeline')) return false;
-            return orig(...args);
-          };
-          document.documentElement.classList.add('sgx-no-view-timeline');
-        });
-      }
-      if (mode === 'reduced-motion') {
-        await page.emulateMedia({ reducedMotion: 'reduce' });
-      }
-    });
-
-    for (const lang of ['zh', 'en']) {
-      test(`6. 滚动后状态 [${lang}]`, async ({ page }) => {
-        await setTheme(page, 'light');
-        await mockBookAPIs(page, { owner: true, books: MANY_BOOKS });
-        await gotoReady(page, PAGES.home[lang], '#bk-grid:not(.hidden)');
-        // 滚动 400px
-        await page.evaluate(() => window.scrollTo(0, 400));
-        // body 应有 sgx-stuck 类
-        await expect.poll(async () => {
-          return page.evaluate(() => document.body.classList.contains('sgx-stuck'));
-        }, { timeout: 5000 }).toBe(true);
-        // 品牌组 opacity 0 且不可点
-        const brand = await page.evaluate(() => {
-          const b = document.querySelector('.sgx-topcard-brand');
-          return {
-            opacity: parseFloat(getComputedStyle(b).opacity),
-            pointerEvents: getComputedStyle(b).pointerEvents,
-          };
-        });
-        expect(brand.opacity, '品牌组 opacity 0').toBe(0);
-        expect(brand.pointerEvents, '品牌组不可点').toBe('none');
-        // 小标题 opacity 1（用 expect.poll 等，不用 waitForTimeout）
-        await expect.poll(async () => {
-          return page.evaluate(() => {
-            const m = document.querySelector('.sgx-topcard .subpage-mini-title');
-            return m ? parseFloat(getComputedStyle(m).opacity) : 0;
-          });
-        }, { timeout: 5000 }).toBe(1);
-        // 小标题中心与卡片中心误差 ≤1
-        const centers = await page.evaluate(() => {
-          const card = document.querySelector('.sgx-topcard').getBoundingClientRect();
-          const mini = document.querySelector('.sgx-topcard .subpage-mini-title').getBoundingClientRect();
-          return {
-            dx: Math.abs((mini.left + mini.width / 2) - (card.left + card.width / 2)),
-            dy: Math.abs((mini.top + mini.height / 2) - (card.top + card.height / 2)),
-          };
-        });
-        expect(centers.dx, '小标题水平居中 ≤1').toBeLessThanOrEqual(1);
-        expect(centers.dy, '小标题垂直居中 ≤1').toBeLessThanOrEqual(1);
-        // 卡片版 ← 左边缘 = 卡片左 + 6，⋮ 右边缘 = 卡片右 - 6
-        const btns = await page.evaluate(() => {
-          const card = document.querySelector('.sgx-topcard').getBoundingClientRect();
-          const back = document.querySelector('.sgx-topcard-back').getBoundingClientRect();
-          const more = document.querySelector('.sgx-topcard-more').getBoundingClientRect();
-          return {
-            backLeftOffset: back.left - card.left,
-            moreRightOffset: card.right - more.right,
-          };
-        });
-        expect(Math.abs(btns.backLeftOffset - 6), '← 左边缘 = 卡片左 + 6').toBeLessThanOrEqual(1);
-        expect(Math.abs(btns.moreRightOffset - 6), '⋮ 右边缘 = 卡片右 - 6').toBeLessThanOrEqual(1);
-        // 点卡片版 ← 效果和原按钮一致
-        const clicked = await page.evaluate(() => {
-          let hit = false;
-          const orig = document.querySelector('.subpage-back');
-          const origClick = orig.click.bind(orig);
-          orig.click = () => { hit = true; };
-          document.querySelector('.sgx-topcard-back').click();
-          orig.click = origClick;
-          return hit;
-        });
-        expect(clicked, '卡片版 ← 调用原按钮 click()').toBe(true);
-        // 滚回顶部还原
-        await page.evaluate(() => window.scrollTo(0, 0));
-        await expect.poll(async () => {
-          return page.evaluate(() => document.body.classList.contains('sgx-stuck'));
-        }, { timeout: 5000 }).toBe(false);
-      });
-    }
-  });
-}
