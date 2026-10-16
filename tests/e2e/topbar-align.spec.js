@@ -1,9 +1,9 @@
 /* Book 顶栏头像尺寸 E2E（#33 最终任务一，v1.0 修订）。
  *
- * v1.0 顶栏规格：#site-nav 透明（pointer-events:none），可见的是 52px 浮动卡片
- * .sgx-topcard。原"顶栏高度 64px"断言已随旧设计删除，见 tests/e2e/topbar-spec.spec.js。
+ * 顶栏 v2.0：#site-nav 透明（pointer-events:none），可见的是返回圆、长条 .sgx-tb-pill、
+ * 导航圆三块。布局与坐标断言见 tests/e2e/topbar-spec.spec.js。
  *
- * 本文件仅保留头像 28×28 断言（w-7 h-7，v1.0 未变）。
+ * 本文件只保留头像 28×28 断言。
  */
 'use strict';
 
