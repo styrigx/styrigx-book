@@ -388,7 +388,7 @@ $('#bk-menu-btn').addEventListener('click', function(e){
   var menu = $('#bk-more-menu');
   var willOpen = menu.classList.contains('hidden');
   closeAllMenus();
-  if(willOpen){ renderMoreMenu(); menu.classList.remove('hidden'); }
+  if(willOpen){ renderMoreMenu(); menu.classList.remove('hidden'); if(window.sgxAnchorMenu) window.sgxAnchorMenu(menu, this); }
 });
 function randomOpen(){
   var list = visibleBooks();

@@ -89,6 +89,17 @@ window.__setHeadH();
 </footer>
 {{/* 顶栏 v2.0：滚动行为 + 导航菜单 */}}
 <script>
+/* 顶栏菜单共用定位：fixed 锚定在按钮下方 8px、右沿与按钮右沿对齐（⋮ 菜单和九宫导航共用） */
+window.sgxAnchorMenu = function(menu, btn){
+  var r = btn.getBoundingClientRect();
+  menu.style.position = 'fixed';
+  menu.style.top = (r.bottom + 8) + 'px';
+  menu.style.right = Math.max(16, window.innerWidth - r.right) + 'px';
+  menu.style.left = 'auto';
+  menu.style.zIndex = '70';
+};
+</script>
+<script>
 (function(){
   var isEn = document.documentElement.lang === 'en';
   /* 品牌组点击：回书库首页 */
@@ -148,12 +159,7 @@ document.addEventListener('click', function(e){
     menu.classList.remove('hidden');
     btn.setAttribute('aria-expanded', 'true');
     /* 锚定在导航圆下方、右对齐 */
-    var r = btn.getBoundingClientRect();
-    menu.style.position = 'fixed';
-    menu.style.top = (r.bottom + 8) + 'px';
-    menu.style.right = Math.max(16, window.innerWidth - r.right) + 'px';
-    menu.style.left = 'auto';
-    menu.style.zIndex = '60';
+    window.sgxAnchorMenu(menu, btn);
   }
   function closeMenu(){
     menu.classList.add('hidden');

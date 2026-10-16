@@ -103,8 +103,8 @@ test.describe('四、⋮ 下拉菜单', () => {
     expect(m.y, '菜单上边界').toBeGreaterThanOrEqual(0);
     expect(m.x + m.width, '菜单右边界').toBeLessThanOrEqual(vw);
     expect(m.y + m.height, '菜单下边界').toBeLessThanOrEqual(vh);
-    /* top:calc(100%-4px)：菜单上沿 = 按钮下沿 - 4px（±2px） */
-    expect(Math.abs(m.y - (b.y + b.height - 4)),
+    /* 顶栏 v2.0：菜单上沿 = 按钮下沿 + 8px（±2px） */
+    expect(Math.abs(m.y - (b.y + b.height + 8)),
       `菜单应贴按钮下方（菜单上 ${m.y.toFixed(1)}，按钮下 ${b.y + b.height})`).toBeLessThanOrEqual(2);
     /* 右对齐：菜单右沿 = 按钮右沿（±1px） */
     expect(Math.abs(m.x + m.width - (b.x + b.width)),
@@ -153,7 +153,7 @@ test.describe('四、⋮ 下拉菜单', () => {
       const b = await btn.boundingBox();
       const m = await menu.boundingBox();
       if (!b || !m) return 'missing';
-      const dy = Math.abs(m.y - (b.y + b.height - 4));
+      const dy = Math.abs(m.y - (b.y + b.height + 8));
       const dx = Math.abs(m.x + m.width - (b.x + b.width));
       return dy <= 2 && dx <= 1 ? 'anchored' : `dy=${dy.toFixed(1)} dx=${dx.toFixed(1)}`;
     }, { timeout: 5000 }).toBe('anchored');
