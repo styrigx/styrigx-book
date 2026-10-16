@@ -1,26 +1,17 @@
-/* Book 顶栏对齐主站 2e7793d E2E（#33 最终任务一）。
+/* Book 顶栏头像尺寸 E2E（#33 最终任务一，v1.0 修订）。
  *
- * 主站常量来源（styrigx-space 2e7793d）：
- * - #site-nav 高度 64px：input.css:487 --nav-h: 64px
- * - .nav-inner：baseof.html:196-197 max-w-[1100px] mx-auto px-4 py-2.5 flex items-center gap-3
- * - #site-nav：input.css:804-806 position:fixed; top/left/right 0; 透明
- * - 头像 28×28（w-7 h-7）
+ * v1.0 顶栏规格：#site-nav 透明（pointer-events:none），可见的是 52px 浮动卡片
+ * .sgx-topcard。原"顶栏高度 64px"断言已随旧设计删除，见 tests/e2e/topbar-spec.spec.js。
  *
- * 断言：Book 顶栏各项与主站常量相差 ≤2px。
+ * 本文件仅保留头像 28×28 断言（w-7 h-7，v1.0 未变）。
  */
 'use strict';
 
 const { test, expect } = require('@playwright/test');
 const { mockBookAPIs, setTheme, freezeTime, gotoReady } = require('../visual/helpers.js');
 
-// 主站常量（来自 styrigx-space 2e7793d）
-const MAIN = {
-  navH: 64,           // 与 space 当前手机顶栏一致
-  navInnerMaxW: 1100, // baseof.html:197 max-w-[1100px]
-  navInnerPx: 16,     // px-4
-  navInnerPy: 10,     // py-2.5
-  avatarSize: 28,     // w-7 h-7
-};
+// 头像常量（v1.0 未变）
+const AVATAR_SIZE = 28;     // w-7 h-7
 
 async function getTopbarGeom(page, url, readySel) {
   await setTheme(page, 'light');
@@ -32,9 +23,7 @@ async function getTopbarGeom(page, url, readySel) {
     const q = s => document.querySelector(s);
     const r = s => { const e = q(s); if (!e) return null; const b = e.getBoundingClientRect(); return { top: b.top, left: b.left, right: b.right, width: b.width, height: b.height }; };
     return {
-      nav: r('#site-nav'),
       avatar: r('#nav-home img'),
-      navH_var: getComputedStyle(document.documentElement).getPropertyValue('--nav-h').trim(),
     };
   });
 }
@@ -43,17 +32,11 @@ for (const [vpName, vp] of [['phone-412', { width: 412, height: 915 }], ['phone-
   test.describe(vpName, () => {
     test.use({ viewport: vp });
 
-    test('顶栏高度 64px（与 space 当前手机顶栏一致）', async ({ page }) => {
-      const g = await getTopbarGeom(page, '/', '#bk-grid:not(.hidden)');
-      expect(Math.abs(g.nav.height - MAIN.navH), '#site-nav 高度').toBeLessThanOrEqual(2);
-      expect(g.navH_var, '--nav-h 变量').toBe('64px');
-    });
-
     test('头像 28×28（主站 w-7 h-7）', async ({ page }) => {
       const g = await getTopbarGeom(page, '/', '#bk-grid:not(.hidden)');
       if (g.avatar) {
-        expect(Math.abs(g.avatar.width - MAIN.avatarSize), '头像宽').toBeLessThanOrEqual(2);
-        expect(Math.abs(g.avatar.height - MAIN.avatarSize), '头像高').toBeLessThanOrEqual(2);
+        expect(Math.abs(g.avatar.width - AVATAR_SIZE), '头像宽').toBeLessThanOrEqual(2);
+        expect(Math.abs(g.avatar.height - AVATAR_SIZE), '头像高').toBeLessThanOrEqual(2);
       }
     });
   });
