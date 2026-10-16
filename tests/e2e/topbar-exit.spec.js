@@ -85,76 +85,85 @@ test('A2 owner menu: 5 items in order', async ({ page }) => {
   expect(texts[4].trim()).toBe('为无封面的书提取封面');
 });
 
-/* ============ A3：顶栏几何 ============ */
+/* ============ A3：顶栏卡片几何（v1.0） ============ */
 for (const lang of ['zh', 'en']) {
-  test(`A3 topbar geometry [${lang}]: brand left, avatar right`, async ({ page }) => {
+  test(`A3 topbar geometry [${lang}]: card 16/16/16/52, avatar 12px from card left`, async ({ page }) => {
     await setupOwner(page);
     const url = lang === 'en' ? '/en/' : '/';
     await gotoReady(page, url, '#bk-grid:not(.hidden)');
     // 旧元素不应存在
-    for (const id of ['#nav-time', '#nav-wx', '#dex-clock-pop']) {
+    for (const id of ['#nav-time', '#nav-wx', '#dex-clock-pop', '#nav-time-center']) {
       await expect(page.locator(id), `不应有 ${id}`).toHaveCount(0);
     }
     // 品牌文字不翻译
-    const brandText = await page.locator('#nav-brand').textContent();
+    const brandText = await page.locator('.sgx-topcard-text').textContent();
     expect(brandText.trim(), '品牌文字应为 Styrigx（不翻译）').toBe('Styrigx');
     const geom = await page.evaluate(() => {
-      // 用 Range 量品牌文字（精确到字形，不含 span 的多余内边距）
-      const brand = document.getElementById('nav-brand');
-      const range = document.createRange();
-      range.selectNodeContents(brand);
-      const rb = range.getBoundingClientRect();
-      const img = document.querySelector('#nav-home img');
+      const card = document.querySelector('.sgx-topcard');
+      const cb = card.getBoundingClientRect();
+      const ccs = getComputedStyle(card);
+      const img = card.querySelector('.sgx-topcard-avatar');
       const ib = img.getBoundingClientRect();
-      const nav = document.getElementById('site-nav');
-      const nb = nav.getBoundingClientRect();
+      // 用 Range 量文字（精确到字形）
+      const text = card.querySelector('.sgx-topcard-text');
+      const range = document.createRange();
+      range.selectNodeContents(text);
+      const rb = range.getBoundingClientRect();
       return {
-        brandX: rb.left,
-        brandCy: rb.top + rb.height / 2,
-        imgRight: ib.right,
-        imgCy: ib.top + ib.height / 2,
-        navH: nb.height,
-        navW: nb.width,
+        cardLeft: cb.left,
+        cardRight: window.innerWidth - cb.right,
+        cardTop: cb.top,
+        cardH: cb.height,
+        cardRadius: ccs.borderRadius,
+        cardCy: cb.top + cb.height / 2,
+        avatarLeftOffset: ib.left - cb.left,
+        gap: rb.left - ib.right,
+        avatarCy: ib.top + ib.height / 2,
+        textCy: rb.top + rb.height / 2,
         vw: window.innerWidth,
       };
     });
-    // Styrigx 左边缘 16±1px
-    expect(Math.abs(geom.brandX - 16), 'Styrigx 左边缘应在 16±1px').toBeLessThanOrEqual(1);
-    // 头像右边缘离视口右边 16±1px
-    expect(Math.abs(geom.vw - geom.imgRight - 16), '头像右边缘应在右边 16±1px').toBeLessThanOrEqual(1);
-    // 两者垂直居中偏差 ≤1px
-    expect(Math.abs(geom.brandCy - geom.imgCy), '品牌与头像垂直居中偏差').toBeLessThanOrEqual(1);
-    // 顶栏高度 64px（与改之前一致），宽度 = 视口宽
-    expect(Math.abs(geom.navH - 64), '顶栏高度应为 64px').toBeLessThanOrEqual(1);
-    expect(Math.abs(geom.navW - geom.vw), '顶栏宽度应为视口宽').toBeLessThanOrEqual(1);
+    // 卡片：left 16±1，right 16±1，top 16±1，height 52±1
+    expect(Math.abs(geom.cardLeft - 16), '卡片左边缘应在 16±1px').toBeLessThanOrEqual(1);
+    expect(Math.abs(geom.cardRight - 16), '卡片右边缘应在 16±1px').toBeLessThanOrEqual(1);
+    expect(Math.abs(geom.cardTop - 16), '卡片上边缘应在 16±1px').toBeLessThanOrEqual(1);
+    expect(Math.abs(geom.cardH - 52), '卡片高度应在 52±1px').toBeLessThanOrEqual(1);
+    expect(geom.cardRadius, '卡片圆角应为 26px').toBe('26px');
+    // 头像距卡片左边缘 12±1
+    expect(Math.abs(geom.avatarLeftOffset - 12), '头像距卡片左边缘应在 12±1px').toBeLessThanOrEqual(1);
+    // 头像右到文字左 8±1
+    expect(Math.abs(geom.gap - 8), '头像到文字间距应在 8±1px').toBeLessThanOrEqual(1);
+    // 头像和文字中心与卡片中心垂直误差 ≤1
+    expect(Math.abs(geom.avatarCy - geom.cardCy), '头像垂直居中偏差').toBeLessThanOrEqual(1);
+    expect(Math.abs(geom.textCy - geom.cardCy), '文字垂直居中偏差').toBeLessThanOrEqual(1);
   });
 }
 
-test('A3 topbar stuck: brand/avatar fade, mini-title visible', async ({ page }) => {
+test('A3 topbar stuck: brand fades, mini-title visible, card buttons appear', async ({ page }) => {
   await setTheme(page, 'light');
   await freezeTime(page);
   await mockBookAPIs(page, { owner: true, books: MANY_BOOKS });
   await gotoReady(page, '/', '#bk-grid:not(.hidden)');
-  // 滚过标题区
-  await page.evaluate(() => {
-    const head = document.querySelector('[data-subpage-head]');
-    window.scrollTo(0, head.offsetHeight);
-  });
+  // 滚过标题区（400px 超过阈值）
+  await page.evaluate(() => window.scrollTo(0, 400));
   await page.waitForFunction(() => {
-    return document.getElementById('site-nav').classList.contains('stuck');
+    return document.body.classList.contains('sgx-stuck');
   }, null, { timeout: 5000 });
   // 等 opacity transition (.2s) 完成
   await page.waitForFunction(() => {
-    const t = parseFloat(getComputedStyle(document.getElementById('nav-brand')).opacity);
+    const t = parseFloat(getComputedStyle(document.querySelector('.sgx-topcard-brand')).opacity);
     return t === 0;
   }, null, { timeout: 5000 });
-  // 品牌和头像 opacity 0
-  const opacity = await page.evaluate(() => {
-    const b = getComputedStyle(document.getElementById('nav-brand')).opacity;
-    const a = getComputedStyle(document.getElementById('nav-home')).opacity;
-    return { b: parseFloat(b), a: parseFloat(a) };
+  // 品牌组 opacity 0 且不可点
+  const brand = await page.evaluate(() => {
+    const b = document.querySelector('.sgx-topcard-brand');
+    return {
+      opacity: parseFloat(getComputedStyle(b).opacity),
+      pointerEvents: getComputedStyle(b).pointerEvents,
+    };
   });
-  expect(opacity.b, '品牌应淡出').toBe(0);
+  expect(brand.opacity, '品牌组应淡出').toBe(0);
+  expect(brand.pointerEvents, '品牌组不应响应点击').toBe('none');
   // 小标题可见
   const miniVisible = await page.evaluate(() => {
     const mini = document.querySelector('.subpage-mini-title');
@@ -163,67 +172,88 @@ test('A3 topbar stuck: brand/avatar fade, mini-title visible', async ({ page }) 
   expect(miniVisible, '小标题应可见').toBe(true);
 });
 
-/* ============ 吸顶 bug 修复断言（#33 视觉核对） ============ */
-test('吸顶后头像淡出', async ({ page }) => {
+/* ============ 卡片版按钮（v1.0） ============ */
+test('滚动后卡片显示 ←/⋮，点击调用原按钮', async ({ page }) => {
   await setTheme(page, 'light');
   await freezeTime(page);
   await mockBookAPIs(page, { owner: true, books: MANY_BOOKS });
   await gotoReady(page, '/', '#bk-grid:not(.hidden)');
-  await page.evaluate(() => {
-    const head = document.querySelector('[data-subpage-head]');
-    window.scrollTo(0, head.offsetHeight);
-  });
+  // 滚动 400px（超过阈值）
+  await page.evaluate(() => window.scrollTo(0, 400));
   await page.waitForFunction(() => {
-    return document.getElementById('site-nav').classList.contains('stuck');
+    return document.body.classList.contains('sgx-stuck');
   }, null, { timeout: 5000 });
+  // 等 opacity transition (.2s) 完成
   await page.waitForFunction(() => {
-    const a = parseFloat(getComputedStyle(document.getElementById('nav-home')).opacity);
-    return a === 0;
+    const b = parseFloat(getComputedStyle(document.querySelector('.sgx-topcard-back')).opacity);
+    return b === 1;
   }, null, { timeout: 5000 });
-  // 头像 opacity 0 + 不响应点击（淡出后视觉上不压小标题）
-  const r = await page.evaluate(() => {
-    const home = document.getElementById('nav-home');
+  // 卡片版 ←/⋮ 可见
+  const btns = await page.evaluate(() => {
+    const card = document.querySelector('.sgx-topcard');
+    const cr = card.getBoundingClientRect();
+    const back = card.querySelector('.sgx-topcard-back');
+    const more = card.querySelector('.sgx-topcard-more');
+    const br = back.getBoundingClientRect();
+    const mr = more.getBoundingClientRect();
     return {
-      avatarOpacity: parseFloat(getComputedStyle(home).opacity),
-      pointerEvents: getComputedStyle(home).pointerEvents,
+      backOpacity: parseFloat(getComputedStyle(back).opacity),
+      moreOpacity: parseFloat(getComputedStyle(more).opacity),
+      backLeftOffset: br.left - cr.left,
+      moreRightOffset: cr.right - mr.right,
     };
   });
-  expect(r.avatarOpacity, '吸顶后头像 opacity 应为 0').toBe(0);
-  expect(r.pointerEvents, '吸顶后头像不应响应点击').toBe('none');
+  expect(btns.backOpacity, '卡片版 ← 应可见').toBe(1);
+  expect(btns.moreOpacity, '卡片版 ⋮ 应可见').toBe(1);
+  expect(Math.abs(btns.backLeftOffset - 6), '← 左边缘 = 卡片左 + 6').toBeLessThanOrEqual(1);
+  expect(Math.abs(btns.moreRightOffset - 6), '⋮ 右边缘 = 卡片右 - 6').toBeLessThanOrEqual(1);
+  // 点击卡片版 ← 调用原按钮的 click()
+  const backClicked = await page.evaluate(() => {
+    let clicked = false;
+    const orig = document.querySelector('.subpage-back');
+    const origClick = orig.click.bind(orig);
+    orig.click = () => { clicked = true; };
+    document.querySelector('.sgx-topcard-back').click();
+    orig.click = origClick;
+    return clicked;
+  });
+  expect(backClicked, '卡片版 ← 应调用原按钮 click()').toBe(true);
 });
 
-test('吸顶前后返回图标是同一个 ←', async ({ page }) => {
+test('卡片版 ← 是 arrow-left 图标（v1.0 不再用 ‹）', async ({ page }) => {
   await setTheme(page, 'light');
   await freezeTime(page);
   await mockBookAPIs(page, { owner: true, books: MANY_BOOKS });
   await gotoReady(page, '/', '#bk-grid:not(.hidden)');
+  // 展开态原按钮
   const before = await page.evaluate(() => {
     const btn = document.querySelector('.subpage-back');
     return {
       svgCount: btn.querySelectorAll('svg').length,
       foldCount: btn.querySelectorAll('.sgx-bk-fold').length,
-      html: btn.innerHTML.length,
     };
   });
   expect(before.svgCount, '展开态应有 svg 图标').toBe(1);
   expect(before.foldCount, '不应有 ‹ 的 span').toBe(0);
-  await page.evaluate(() => {
-    const head = document.querySelector('[data-subpage-head]');
-    window.scrollTo(0, head.offsetHeight);
-  });
+  // 滚动后卡片版 ←（400px 超过阈值）
+  await page.evaluate(() => window.scrollTo(0, 400));
   await page.waitForFunction(() => {
-    const btn = document.querySelector('.subpage-back');
-    return btn && btn.classList.contains('stuck');
+    return document.body.classList.contains('sgx-stuck');
   }, null, { timeout: 5000 });
   const after = await page.evaluate(() => {
-    const btn = document.querySelector('.subpage-back.stuck');
+    const btn = document.querySelector('.sgx-topcard-back');
     return {
       svgCount: btn.querySelectorAll('svg').length,
-      svgVisible: getComputedStyle(btn.querySelector('svg')).display !== 'none',
+      hasFold: !!btn.querySelector('.sgx-bk-fold'),
     };
   });
-  expect(after.svgCount, '吸顶态仍应有 svg 图标').toBe(1);
-  expect(after.svgVisible, '吸顶态 svg 应可见（不是 ‹）').toBe(true);
+  expect(after.svgCount, '卡片版 ← 应有 svg 图标').toBe(1);
+  expect(after.hasFold, '卡片版 ← 不应有 ‹').toBe(false);
+  // 原按钮不再吸顶
+  const origStuck = await page.evaluate(() => {
+    return document.querySelector('.subpage-back').classList.contains('stuck');
+  });
+  expect(origStuck, '原按钮不应再有 .stuck').toBe(false);
 });
 
 test('书库与上传页标题区结构一致', async ({ page }) => {
@@ -256,14 +286,14 @@ test('书库与上传页标题区结构一致', async ({ page }) => {
 });
 
 /* ============ A4：点头像刷新 ============ */
-test('A4 avatar click: full reload to home', async ({ page }) => {
+test('A4 brand click: reloads current page (v1.0)', async ({ page }) => {
   await setupOwner(page);
   await gotoReady(page, '/', '#bk-grid:not(.hidden)');
-  // 监听导航
+  // v1.0：Book 点击品牌组刷新当前页（不再是跳回首页的链接）
   const navPromise = page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 10000 });
-  await page.locator('#nav-home').click();
+  await page.locator('.sgx-topcard-brand').click();
   await navPromise;
-  expect(page.url(), '应刷新到首页').toMatch(/\/$/);
+  expect(page.url(), '应刷新当前页').toMatch(/\/$/);
 });
 
 /* ============ A5：退出逻辑 ============ */
