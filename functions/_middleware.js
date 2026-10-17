@@ -22,8 +22,8 @@
 //   /api/session-check（锁屏会话确认，由接口自己验签、自己返回 401）
 //   /api/shelf、/api/shelf/*（主站书单小组件跨站调用，带 CORS）
 //   /robots.txt、/favicon.ico、静态资源（按扩展名）
-// 其余（页面、/api/books、/api/file、/api/cover、/api/private/*、/api/admin/*、
-// /api/lock-check）均需有效 cookie；admin/private 原有的 401/403 逻辑保持不变。
+// 其余（页面、/api/books、/api/file、/api/cover、/api/private/*、/api/admin/*）
+// 均需有效 cookie；admin/private 原有的 401/403 逻辑保持不变。
 
 import { verifySessionCookieStrict, verifySessionCookieStrictVerbose } from './_sgx-cookie.js';
 
@@ -62,8 +62,6 @@ function isWhitelisted(path) {
   /* /api/session-check：锁屏会话确认，middleware 放行，由接口自己验签、自己返回 401，
      前端才能区分“已锁定”（→ reload 走 302 到主站锁屏）与“网络错误”（→ fail open） */
   if (path === '/api/session-check') return true;
-  /* /api/geo：天气定位（IP 城市+经纬度，只返回非敏感字段），公开放行 */
-  if (path === '/api/geo') return true;
   if (path === '/api/shelf' || path.startsWith('/api/shelf/')) return true;
   const dot = path.lastIndexOf('.');
   const slash = path.lastIndexOf('/');
@@ -240,7 +238,7 @@ export async function onRequest(context) {
   const cookies = getCookies(request, COOKIE_NAME);
   for (const c of cookies) {
     /* #5 权限：owner 与 visitor 均可进站（visitor 只读）；验签与
-       session-check / lock-check / requireOwner 为同一入口 */
+       session-check / requireOwner 为同一入口 */
     const role = await verifySessionCookieStrict(c, env.SGX_LOCK_PUBLIC);
     if (role === 'owner' || role === 'visitor') {
       return withNoStoreForHtml(await next());
