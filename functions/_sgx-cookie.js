@@ -5,7 +5,7 @@
 // 与主站 functions/_middleware.js 的 verifyOneCookie 完全一致；
 // 旧四段式（无 by）一律视为无效，不留兼容层。
 // 供 functions/_middleware.js、functions/api/_auth.js、
-// functions/api/session-check.js、functions/api/lock-check.js 共用。
+// functions/api/session-check.js 共用。
 // SGX_LOCK_PUBLIC 支持 PEM（含头尾）或 raw base64 SPKI DER。
 
 const SESSION_BYS = new Set(['root', 'owner']);
@@ -204,7 +204,7 @@ export function _resetEpochCache() {
 /* 严格验签：verifySessionCookie（签名 + exp）之外，再检查
    cookie epoch >= 主站最新 epoch。拿不到最新 epoch 则 fail closed（返回 null）。
    成功返回 role（'owner' | 'visitor'），失败返回 null。
-   middleware、session-check、lock-check、requireOwner 共用此唯一验签入口。
+   middleware、session-check、requireOwner 共用此唯一验签入口。
    （薄 wrapper：实际逻辑在 verifySessionCookieStrictVerbose，保持调用方零改动。） */
 export async function verifySessionCookieStrict(cookieValue, publicKeyB64) {
   const v = await verifySessionCookieStrictVerbose(cookieValue, publicKeyB64);
