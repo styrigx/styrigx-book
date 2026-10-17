@@ -15,17 +15,9 @@
 @font-face{font-family:'Inter Fallback';src:local('Arial');size-adjust:107%;ascent-override:90%;descent-override:23%;line-gap-override:0%;}
 :root{--nav-h:68px}/* 顶栏卡片底边位置：16 + 52 */
 </style>
-<script>
-/* 主题预读：渲染前应用，避免闪烁（sgx-theme-mode: system/light/dark） */
-(function(){
-  try{
-    var d=document.documentElement;
-    var m=null;try{m=localStorage.getItem('sgx-theme-mode')}catch(e){}
-    var wantDark=m==='dark'||((!m||m==='system')&&matchMedia('(prefers-color-scheme: dark)').matches);
-    if(wantDark){d.classList.add('dark')}else{d.classList.remove('dark')}
-  }catch(e){}
-})();
-</script>
+{{/* B2-7：外观预读（渲染前）——继承主站 sgx-ui cookie 的深浅色、调色板、字体大小、减弱动效；
+     没有 cookie 时与原来一样只看本地 sgx-theme-mode */}}
+<script>{{ (resources.Get "js/sgx/ui-inherit-run.js" | js.Build (dict "format" "iife" "minify" true "target" "es2018")).Content | safeJS }}</script>
 <script>
 /* 布局模式：<980 手机 / ≥980 DeX（沿用主站断点） */
 function __layoutMode(){
@@ -215,6 +207,8 @@ document.addEventListener('click', function(e){
 {{/* SGX 锁屏同步：切回前台 / bfcache 恢复时向服务端确认会话（各页面 pagejs 之前加载） */}}
 <script src="{{ (resources.Get "js/sgx-lock-sync.js" | minify | fingerprint).RelPermalink }}"></script>
 
+{{/* B2-7 网站数字健康：计时上报到主站 */}}
+<script type="module" src="{{ (resources.Get "js/sgx/wb-entry.js" | js.Build (dict "minify" true "target" "es2018") | fingerprint).RelPermalink }}"></script>
 {{ block "pagejs" . }}{{ end }}
 </body>
 </html>
