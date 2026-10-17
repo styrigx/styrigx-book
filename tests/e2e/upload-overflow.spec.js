@@ -161,7 +161,8 @@ for (const vp of VIEWPORTS) {
       const limit = iw * zoom;
       const sw = document.documentElement.scrollWidth;
       const bad = [];
-      const els = document.body.querySelectorAll('*');
+      /* #sgx-wallpaper 是主站同款壁纸层，故意四边外扩 30px 防地址栏伸缩露底；fixed 且不产生滚动，不算越界 */
+      const els = document.body.querySelectorAll('*:not(#sgx-wallpaper)');
       for (const el of els) {
         const r = el.getBoundingClientRect();
         if (r.right > limit + 0.5 && r.width > 0) {
