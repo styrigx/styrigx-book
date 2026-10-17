@@ -340,4 +340,31 @@ test.describe('导航菜单当前站点', () => {
     await expect(cur).toHaveCount(1);
     await expect(cur).toContainText(/书库|Library/);
   });
+
+  /* 三站统一顺序：主站第一，然后书库、博客（以后新增站点往后排） */
+  test('菜单顺序：主站 / 书库 / 博客', async ({ page }) => {
+    await mockBookAPIs(page, { books: BOOKS });
+    await page.goto('/');
+    await page.locator('.sgx-tb-nav').click();
+    const labels = await page.locator('#sgx-tb-navmenu .bk-menu-item').allInnerTexts();
+    expect(labels.map((t) => t.trim())).toEqual(['主站', '书库', '博客']);
+  });
+});
+
+/* 壁纸与主站同一套：独立 fixed 层，不依赖 body 的 background-attachment（手机上会被忽略） */
+test.describe('壁纸', () => {
+  test('#sgx-wallpaper 是 fixed 层且铺着 --m-wallpaper', async ({ page }) => {
+    await mockBookAPIs(page, { books: BOOKS });
+    await page.goto('/');
+    const r = await page.evaluate(() => {
+      const el = document.getElementById('sgx-wallpaper');
+      if (!el) return null;
+      const cs = getComputedStyle(el);
+      return { pos: cs.position, img: cs.backgroundImage, bodyImg: getComputedStyle(document.body).backgroundImage };
+    });
+    expect(r, '#sgx-wallpaper 存在').not.toBeNull();
+    expect(r.pos).toBe('fixed');
+    expect(r.img).toContain('radial-gradient');
+    expect(r.bodyImg).toBe('none');
+  });
 });
