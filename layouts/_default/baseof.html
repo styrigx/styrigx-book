@@ -54,7 +54,8 @@ window.__setHeadH();
 </script>
 <link rel="stylesheet" href="{{ (resources.Get "css/main.css" | minify | fingerprint).RelPermalink }}">
 </head>
-<body class="bg-m-surface text-m-on-surface font-sans antialiased" style="background-image:var(--m-wallpaper);background-attachment:fixed">
+<body class="text-m-on-surface font-sans antialiased">
+<div id="sgx-wallpaper" aria-hidden="true"></div>
 {{/* 顶栏 v2.0：返回圆 + 长条（品牌组 + ⋮）+ 导航圆 */}}
 {{ $avatar := resources.Get "images/avatar.png" }}
 <header id="site-nav">
@@ -122,7 +123,7 @@ document.addEventListener('click', function(e){
   var host = location.host;
   /* 菜单项配置：以后新增子站只需加一行 */
   var items = [
-    { id: 'home', label: isEn ? 'Home' : '主页', url: 'https://styrigx.com' + (isEn ? '/en/' : '/'), match: /^(www\.)?styrigx\.com$/ },
+    { id: 'home', label: isEn ? 'Main Site' : '主站', url: 'https://styrigx.com' + (isEn ? '/en/' : '/'), match: /^(www\.)?styrigx\.com$/ },
     { id: 'book', label: isEn ? 'Library' : '书库', url: 'https://book.styrigx.com' + (isEn ? '/en/' : '/'), match: /(^|\.)book\.styrigx\.com$|^localhost/ },
     { id: 'blog', label: isEn ? 'Blog' : '博客', url: 'https://blog.styrigx.com' + (isEn ? '/en/' : '/'), match: /(^|\.)blog\.styrigx\.com$/ },
   ];
