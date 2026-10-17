@@ -562,11 +562,14 @@ $('#filter-clear').addEventListener('click', function(){
   renderAll();
 });
 
-/* 书库设置：主题（沿用 baseof 的 sgx-theme-mode） */
+/* 书库设置：主题（沿用 baseof 的 sgx-theme-mode；B2-7 记修改时间 sgx-theme-at，和主站谁后改听谁的） */
 function applyTheme(mode){
-  try{ localStorage.setItem('sgx-theme-mode', mode); }catch(e){}
-  var dark = mode === 'dark' || (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-  document.documentElement.classList.toggle('dark', dark);
+  try{ localStorage.setItem('sgx-theme-mode', mode); localStorage.setItem('sgx-theme-at', String(Date.now())); }catch(e){}
+  if (window.__sgxApplyUi) window.__sgxApplyUi();
+  else {
+    var dark = mode === 'dark' || (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.classList.toggle('dark', dark);
+  }
   document.querySelectorAll('.bk-theme-opt').forEach(function(btn){
     var active = btn.dataset.theme === mode;
     btn.classList.toggle('bk-theme-active', active);
@@ -575,8 +578,8 @@ function applyTheme(mode){
   });
 }
 function openSettingsSheet(){
-  var cur = 'system';
-  try{ cur = localStorage.getItem('sgx-theme-mode') || 'system'; }catch(e){}
+  /* B2-7：显示实际生效的模式（可能来自主站） */
+  var cur = document.documentElement.getAttribute('data-theme-mode') || 'system';
   document.querySelectorAll('.bk-theme-opt').forEach(function(btn){
     var active = btn.dataset.theme === cur;
     btn.classList.toggle('bk-theme-active', active);
