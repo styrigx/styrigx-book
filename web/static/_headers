@@ -1,0 +1,12 @@
+# 静态资源缓存（Pages 现在只放静态文件，_headers 生效）。
+# /js/ /css/ 下由 Hugo Pipes 生成的文件名都带内容哈希（CI 检查构建产物里没有未指纹化的 /js/ 引用），长期缓存。
+# /js/vendor/（foliate-js、pdfjs）文件名不带哈希：每次重新验证，避免升级后客户端还跑旧库。
+/js/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/css/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/js/vendor/*
+  ! Cache-Control
+  Cache-Control: no-cache

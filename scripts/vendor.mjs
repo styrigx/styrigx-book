@@ -1,4 +1,4 @@
-// 把 foliate-js 和 pdfjs-dist 从 node_modules 复制到 static/js/vendor/，不走 CDN。
+// 把 foliate-js 和 pdfjs-dist 从 node_modules 复制到 web/static/js/vendor/，不走 CDN。
 // 只拷阅读器实际用到的文件（白名单），第三方库自己的 LICENSE 一并保留。
 // 用法：node scripts/vendor.mjs
 import { copyFileSync, mkdirSync, rmSync, existsSync } from 'node:fs';
@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const out = join(root, 'static', 'js', 'vendor');
+const out = join(root, 'web', 'static', 'js', 'vendor');
 mkdirSync(out, { recursive: true });
 
 function copyList(srcRoot, dstRoot, files) {
