@@ -1,4 +1,4 @@
-name: Build and Deploy to Cloudflare Pages
+name: Build and Deploy (book Pages + styrigx-book-api)
 
 on:
   push:
@@ -16,27 +16,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Assert no legacy key names
+      - name: Assert zero-key layout
+        # 书库不持任何钥匙：页面会话在主站鉴权网关验，接口（workers/book-api）经服务绑定问网关。
+        # 仓库里不许有 Pages Functions，不许出现钥匙变量名或会话验签代码。
         run: |
-          # 禁止旧变量名：SGX_ED25519_*（已改名为 SGX_LOCK_*），SGX_STEPUP_KEY（已改名为 SGX_STEPUP_PRIVATE）
-          # 注意：不扫描 .github/，避免匹配到本文件自身的注释
-          if grep -rn "SGX_ED25519_" --include="*.js" --include="*.mjs" --include="*.toml" functions/ tests/ scripts/ static/ layouts/ 2>/dev/null; then
-            echo "ERROR: Found SGX_ED25519_* (use SGX_LOCK_* per key spec v1.0)."
-            exit 1
+          set -u
+          if [ -e functions ] || [ -e web/functions ]; then echo "FAIL: Pages Functions must not exist"; exit 1; fi
+          if grep -rn -E "SGX_[A-Z]+_(PUBLIC|PRIVATE|KEY)|SGX_ED25519_|SGX_STEPUP_|SGX_ROOT_KEY" \
+               --include="*.js" --include="*.mjs" --include="*.toml" --include="*.html" web/ workers/ scripts/; then
+            echo "FAIL: book must not hold keys"; exit 1
           fi
-          if grep -rn "SGX_ED25519_" wrangler.toml 2>/dev/null; then
-            echo "ERROR: Found SGX_ED25519_* in wrangler.toml."
-            exit 1
-          fi
-          if grep -rn "SGX_STEPUP_KEY" --include="*.js" --include="*.mjs" --include="*.toml" functions/ tests/ scripts/ static/ layouts/ 2>/dev/null; then
-            echo "ERROR: Found SGX_STEPUP_KEY (use SGX_STEPUP_PRIVATE per key spec v1.0)."
-            exit 1
-          fi
-          if grep -rn "SGX_STEPUP_KEY" wrangler.toml 2>/dev/null; then
-            echo "ERROR: Found SGX_STEPUP_KEY in wrangler.toml."
-            exit 1
-          fi
-          echo "OK: no legacy key names."
+          echo "OK: zero-key layout."
 
       - name: Setup Hugo
         uses: peaceiris/actions-hugo@v3
@@ -56,23 +46,17 @@ jobs:
         run: node scripts/vendor.mjs
 
       - name: Build CSS
-        run: npx tailwindcss -i assets/css/input.css -o assets/css/main.css --minify
+        run: npm run build:css
 
       - name: Run tests
         run: npm test
 
-      - name: Key distribution static check (2.10.0)
-        # book 是子站：functions/ 里不得出现任何 *_PRIVATE 或 SGX_STEPUP_*。
-        # 私钥只在主站，STEPUP 密钥对只在主站。出现即构建失败。
-        run: |
-          if grep -rn --include="*.js" -E "_PRIVATE|SGX_STEPUP_" functions/; then
-            echo "FAIL: functions/ must not contain *_PRIVATE or SGX_STEPUP_"
-            exit 1
-          fi
-          echo "key distribution check passed"
+      - name: book-api bundle check (dry-run)
+        working-directory: workers/book-api
+        run: npx --yes wrangler@4 deploy --dry-run --outdir "$RUNNER_TEMP/book-api-dist"
 
       - name: Build site
-        run: hugo --minify
+        run: hugo --minify -s web
 
       - name: Install Playwright Chromium
         run: npx playwright install chromium --with-deps
@@ -82,7 +66,7 @@ jobs:
 
       - name: Check no unversioned /js/ refs in build output
         run: |
-          refs=$(grep -rhoE 'src="/js/[a-zA-Z0-9_.-]+\.js"' public/ 2>/dev/null | sort -u | grep -v '/js/vendor/' || true)
+          refs=$(grep -rhoE 'src="/js/[a-zA-Z0-9_.-]+\.js"' web/public/ 2>/dev/null | sort -u | grep -v '/js/vendor/' || true)
           bad=$(echo "$refs" | grep -vE '\.[0-9a-f]{8,}\.(js|mjs)"' || true)
           if [ -n "$bad" ]; then
             echo "ERROR: Found unversioned /js/ refs in build output:"
@@ -91,10 +75,89 @@ jobs:
           fi
           echo "OK: all /js/ refs are fingerprinted (vendor/ excluded)."
 
+      - name: Gate check - gateway must already guard book pages
+        # Pages 没有验票代码、book-api 要经服务绑定问网关：网关（含 SessionVerifier）必须先部署。
+        # 未登录访问首页必须是网关回的 302（带 X-SGX-Runtime: worker）。不满足就什么都不部署。
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          set -u
+          hdr=$(curl -sS -o /dev/null -D - -w 'HTTP_CODE:%{http_code}\n' https://book.styrigx.com/ | tr -d '\r')
+          code=$(printf '%s' "$hdr" | sed -n 's/^HTTP_CODE://p')
+          rt=$(printf '%s' "$hdr" | awk -F': ' 'tolower($1)=="x-sgx-runtime"{print $2}')
+          echo "book.styrigx.com/ -> $code runtime=${rt:-none}"
+          [ "$code" = "302" ] && [ "$rt" = "worker" ] || { echo "::error::gateway is not guarding book.styrigx.com yet; deploy the gateway first"; exit 1; }
+
+      - name: Deploy styrigx-book-api
+        # 先部署接口 Worker（路由 book.styrigx.com/api/* 优先于 Pages），再部署 Pages。
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: workers/book-api
+          wranglerVersion: '4'
+          command: deploy
+
+      - name: Smoke test book-api (must be served by the Worker)
+        # 只发不带 cookie 的只读请求。失败时 Pages 不部署；修好或 revert 后重跑。
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          set -u
+          check() { # 路径 期望状态码 期望的标记头
+            for i in 1 2 3 4 5 6; do
+              hdr=$(curl -sS -o /dev/null -D - -w 'HTTP_CODE:%{http_code}\n' "https://book.styrigx.com$1" | tr -d '\r' || true)
+              code=$(printf '%s' "$hdr" | sed -n 's/^HTTP_CODE://p')
+              rt=$(printf '%s' "$hdr" | awk -F': ' -v h="$(echo "$3" | tr A-Z a-z)" 'tolower($1)==h{print $2}')
+              echo "$1 -> $code $3=${rt:-none} (try $i)"
+              if [ "$code" = "$2" ] && [ "$rt" = "worker" ]; then return 0; fi
+              sleep 5
+            done
+            echo "::error::$1 expected $2 with $3: worker"; return 1
+          }
+          ok=0
+          check /api/books 401 X-Book-Runtime || ok=1
+          check /api/private/me 401 X-Book-Runtime || ok=1
+          check /api/shelf 200 X-Book-Runtime || ok=1
+          check /api/session-check 401 X-SGX-Runtime || ok=1
+          exit $ok
+
       - name: Deploy to Cloudflare Pages
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: web
           command: pages deploy public --project-name=styrigx-book --commit-dirty=true
+
+      - name: Smoke test Pages (pages behind the gateway, static files direct, pages.dev not open)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          set -u
+          ok=0
+          probe() { # url 期望状态码 期望 X-SGX-Runtime(worker|none)
+            for i in 1 2 3; do
+              hdr=$(curl -sS -o /dev/null -D - -w 'HTTP_CODE:%{http_code}\n' "$1" | tr -d '\r' || true)
+              code=$(printf '%s' "$hdr" | sed -n 's/^HTTP_CODE://p')
+              rt=$(printf '%s' "$hdr" | awk -F': ' 'tolower($1)=="x-sgx-runtime"{print $2}')
+              echo "$1 -> $code runtime=${rt:-none} (try $i)"
+              if [ "$code" = "$2" ] && [ "${rt:-none}" = "$3" ]; then return 0; fi
+              sleep 5
+            done
+            echo "::error::$1 expected $2 runtime=$3"; return 1
+          }
+          # 每个页面所在的一级目录抽一个，未登录必须是网关回的 302（新页面目录忘了在网关登记 → 红）
+          paths=$(cd web/public && find . -name '*.html' ! -name '404.html' | sed 's|^\.||; s|index\.html$||' | awk -F/ '{k=($2==""?"/":$2); if(!(k in s)){s[k]=1; print}}')
+          for p in $paths /index.xml /sitemap.xml; do probe "https://book.styrigx.com$p" 302 worker || ok=1; done
+          js=$(cd web/public && find js -maxdepth 1 -name '*.js' | head -1)
+          [ -n "$js" ] && { probe "https://book.styrigx.com/$js" 200 none || ok=1; }
+          hdr=$(curl -sS -o /dev/null -D - -w 'HTTP_CODE:%{http_code}\n' https://styrigx-book.pages.dev/ | tr -d '\r' || true)
+          code=$(printf '%s' "$hdr" | sed -n 's/^HTTP_CODE://p')
+          loc=$(printf '%s' "$hdr" | awk -F': ' 'tolower($1)=="location"{print $2}')
+          echo "pages.dev / -> $code $loc"
+          case "$code $loc" in
+            "301 https://book.styrigx.com/") ;;
+            "302 https://styrigx.cloudflareaccess.com/"*) ;;
+            *) echo "::error::pages.dev neither redirected nor sat behind Access"; ok=1 ;;
+          esac
+          exit $ok
