@@ -59,19 +59,18 @@ window.__setHeadH();
 </head>
 <body class="text-m-on-surface font-sans antialiased">
 <div id="sgx-wallpaper" aria-hidden="true"></div>
-{{/* 顶栏 v2.0：返回圆 + 长条（品牌组 + ⋮）+ 导航圆 */}}
+{{/* 顶栏 v3（与主站同一套，左右对称）：左圆九宫格导航，右圆头像（只显示，不可点）；
+   长条：返回 / 居中 Styrigx（滚动后换成小标题）/ ⋮。书库首页也有返回（exit-to-host 接管）。 */}}
 <header id="site-nav">
   <div class="sgx-topbar">
-    <button type="button" class="sgx-tb-back" data-go-back aria-label="{{ if $isEn }}Back{{ else }}返回{{ end }}">{{ partial "icon.html" "chevron-left" }}</button>
+    <button type="button" class="sgx-tb-nav" aria-label="{{ if $isEn }}Apps{{ else }}导航{{ end }}" aria-haspopup="menu" aria-expanded="false">{{ partial "icon.html" "apps-grid" }}</button>
     <div class="sgx-tb-pill">
-      <button type="button" class="sgx-tb-brand" id="nav-home" aria-label="{{ if $isEn }}Library home{{ else }}书库首页{{ end }}">
-        {{/* 头像由主站统一管理（主站设置页可换），直接读主站 /avatar/ */}}
-        <img src="https://styrigx.com/avatar/96.webp" alt="" class="sgx-tb-avatar">
-        <span class="sgx-tb-text">Styrigx</span>
-      </button>
+      <button type="button" class="sgx-tb-pbtn sgx-tb-back" data-go-back aria-label="{{ if $isEn }}Back{{ else }}返回{{ end }}">{{ partial "icon.html" "chevron-left" }}</button>
+      <button type="button" class="sgx-tb-brand" id="nav-home" aria-label="{{ if $isEn }}Library home{{ else }}书库首页{{ end }}"><span class="sgx-tb-text">Styrigx</span></button>
       <button type="button" class="sgx-tb-more" id="bk-menu-btn" aria-label="{{ if $isEn }}More options{{ else }}更多选项{{ end }}"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.9"/><circle cx="12" cy="12" r="1.9"/><circle cx="12" cy="19" r="1.9"/></svg></button>
     </div>
-    <button type="button" class="sgx-tb-nav" aria-label="{{ if $isEn }}Apps{{ else }}导航{{ end }}" aria-haspopup="menu" aria-expanded="false">{{ partial "icon.html" "apps-grid" }}</button>
+    {{/* 头像由主站统一管理（主站设置页可换），直接读主站 /avatar/ */}}
+    <span class="sgx-tb-me"><img src="https://styrigx.com/avatar/192.webp" alt="" width="52" height="52" class="sgx-tb-avatar"></span>
   </div>
   <div id="sgx-tb-navmenu" class="bk-menu hidden" role="menu" aria-label="{{ if $isEn }}Apps{{ else }}导航{{ end }}"></div>
   <div id="bk-more-menu" class="bk-menu hidden" role="menu"></div>
@@ -83,22 +82,28 @@ window.__setHeadH();
     <p class="sgx-powered">Powered by Styrigx UI</p>
   </div>
 </footer>
-{{/* 顶栏 v2.0：滚动行为 + 导航菜单 */}}
+{{/* 顶栏 v3：滚动行为 + 导航菜单 */}}
 <script>
-/* 顶栏菜单共用定位：fixed 锚定在按钮下方 8px、右沿与按钮右沿对齐（⋮ 菜单和九宫导航共用） */
+/* 顶栏菜单共用定位：fixed 锚定在按钮下方 8px（⋮ 菜单和九宫导航共用）；
+   按钮在左半边（左圆九宫格）就左沿对齐，否则右沿对齐（与主站一致） */
 window.sgxAnchorMenu = function(menu, btn){
   var r = btn.getBoundingClientRect();
   menu.style.position = 'fixed';
   menu.style.top = (r.bottom + 8) + 'px';
-  menu.style.right = Math.max(16, window.innerWidth - r.right) + 'px';
-  menu.style.left = 'auto';
+  if (r.left + r.width / 2 < window.innerWidth / 2) {
+    menu.style.left = Math.max(16, r.left) + 'px';
+    menu.style.right = 'auto';
+  } else {
+    menu.style.right = Math.max(16, window.innerWidth - r.right) + 'px';
+    menu.style.left = 'auto';
+  }
   menu.style.zIndex = '70';
 };
 </script>
 <script>
 (function(){
   var isEn = document.documentElement.lang === 'en';
-  /* 品牌组点击：回书库首页 */
+  /* Styrigx 点击：回书库首页 */
   var brand = document.querySelector('.sgx-tb-brand');
   if (brand) brand.addEventListener('click', function(){
     location.href = isEn ? '/en/' : '/';
@@ -110,7 +115,7 @@ window.sgxAnchorMenu = function(menu, btn){
 })();
 </script>
 <script>
-/* 返回圆：有历史则回退，否则回书库首页（书库首页走 exit-to-host，由其 JS 接管） */
+/* 返回（长条左侧）：有历史则回退，否则回书库首页（书库首页走 exit-to-host，由其 JS 接管） */
 document.addEventListener('click', function(e){
   var b = e.target.closest('[data-go-back]');
   if (!b || b.dataset.exitHost) return;
@@ -154,7 +159,7 @@ document.addEventListener('click', function(e){
     render();
     menu.classList.remove('hidden');
     btn.setAttribute('aria-expanded', 'true');
-    /* 锚定在导航圆下方、右对齐 */
+    /* 锚定在导航圆下方、左对齐 */
     window.sgxAnchorMenu(menu, btn);
   }
   function closeMenu(){

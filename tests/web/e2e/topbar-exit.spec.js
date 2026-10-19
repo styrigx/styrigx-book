@@ -25,16 +25,17 @@ async function setupVisitor(page) {
   await mockBookAPIs(page, { owner: false });
 }
 
-/* ============ A1：标题区与顶栏（v2.0：标题区不再有按钮，← ⋮ 在顶栏） ============ */
+/* ============ A1：标题区与顶栏（v3：标题区不再有按钮，← ⋮ 在顶栏长条里） ============ */
 test('A1 homepage: head has no buttons, topbar has back and menu', async ({ page }) => {
   await setupOwner(page);
   await gotoReady(page, '/', '#bk-grid:not(.hidden)');
   const heads = page.locator('[data-subpage-head]');
   await expect(heads, '首页应只有 1 个 [data-subpage-head]').toHaveCount(1);
   await expect(heads.locator('button'), '标题区内不应有按钮').toHaveCount(0);
-  await expect(page.locator('.sgx-topbar .sgx-tb-back'), '顶栏应有返回圆').toBeVisible();
+  await expect(page.locator('.sgx-topbar .sgx-tb-pill .sgx-tb-back'), '顶栏长条应有返回').toBeVisible();
   await expect(page.locator('.sgx-topbar #bk-menu-btn'), '顶栏应有 ⋮').toBeVisible();
-  await expect(page.locator('.sgx-topbar .sgx-tb-nav'), '顶栏应有导航圆').toBeVisible();
+  await expect(page.locator('.sgx-topbar .sgx-tb-nav'), '顶栏应有左圆九宫格').toBeVisible();
+  await expect(page.locator('.sgx-topbar .sgx-tb-me'), '顶栏应有右圆头像').toBeVisible();
 });
 
 test('A1 upload page: head has no buttons, topbar has back and menu', async ({ page }) => {
@@ -43,7 +44,7 @@ test('A1 upload page: head has no buttons, topbar has back and menu', async ({ p
   const heads = page.locator('[data-subpage-head]');
   await expect(heads, '上传页应只有 1 个 [data-subpage-head]').toHaveCount(1);
   await expect(heads.locator('button'), '标题区内不应有按钮').toHaveCount(0);
-  await expect(page.locator('.sgx-topbar .sgx-tb-back'), '顶栏应有返回圆').toBeVisible();
+  await expect(page.locator('.sgx-topbar .sgx-tb-pill .sgx-tb-back'), '顶栏长条应有返回').toBeVisible();
   await expect(page.locator('.sgx-topbar #bk-menu-btn'), '顶栏应有 ⋮').toBeVisible();
 });
 
@@ -88,11 +89,11 @@ test('A2 owner menu: 5 items in order', async ({ page }) => {
 
 /* A3（v1.0 卡片几何/滚动/卡片按钮/标题区结构）已由 topbar-spec.spec.js（v2.0）覆盖，此处删除 */
 
-/* ============ A4：点品牌组回书库首页（v2.0） ============ */
+/* ============ A4：点 Styrigx 回书库首页（v3：品牌按钮只包着绝对居中的 Styrigx 文字，与主站一致，点文字触发） ============ */
 test('A4 brand click: goes to library home', async ({ page }) => {
   await setupOwner(page);
   await gotoReady(page, '/admin/', '#adm-main:not(.hidden)');
-  await Promise.all([page.waitForURL(/\/$/), page.locator('.sgx-tb-brand').click()]);
+  await Promise.all([page.waitForURL(/\/$/), page.locator('.sgx-tb-brand .sgx-tb-text').click()]);
   await expect(page.locator('#bk-grid'), '应回到书库首页').toBeAttached();
 });
 

@@ -1,5 +1,5 @@
-/* 顶栏统一规格 v2.0 验收测试：返回圆＋长条＋导航圆
- * 规格第九节，每条一个 test，中英文各跑一遍。
+/* 顶栏 v3 验收测试（与主站 styrigx-space 同一套）：左圆九宫格＋长条（返回 / Styrigx / ⋮）＋右圆头像
+ * 沿用 v2.0 规格第九节的结构，每条一个 test，中英文各跑一遍。
  * 页面 URL 和选择器放顶部配置。
  */
 const { test, expect } = require('@playwright/test');
@@ -12,10 +12,11 @@ const PAGES = {
 };
 const SEL = {
   topbar: '.sgx-topbar',
-  back: '.sgx-tb-back',
+  back: '.sgx-tb-pill .sgx-tb-back',
   pill: '.sgx-tb-pill',
   brand: '.sgx-tb-brand',
-  avatar: '.sgx-tb-avatar',
+  me: '.sgx-tb-me',
+  avatar: '.sgx-tb-me .sgx-tb-avatar',
   brandText: '.sgx-tb-text',
   more: '.sgx-tb-more',
   nav: '.sgx-tb-nav',
@@ -80,35 +81,34 @@ async function setup(page, lang, pageKey, theme = 'light') {
 }
 
 for (const lang of ['zh', 'en']) {
-  test.describe(`topbar v2.0 [${lang}]`, () => {
+  test.describe(`topbar v3 [${lang}]`, () => {
     /* 验收 1a：手机三块几何 ±1，三块高度都是 52 */
     test('1a. 手机三块几何', async ({ page }) => {
       for (const theme of ['light', 'dark']) {
         await setup(page, lang, 'home', theme);
         const vw = page.viewportSize().width;
-        const back = page.locator(SEL.back);
-        const pill = page.locator(SEL.pill);
         const nav = page.locator(SEL.nav);
-        // 返回圆 x 16–68（52×52）
-        await expectBox(back, { left: 16, top: 16, width: 52, height: 52 }, 1, `[${theme}] 返回圆`);
+        const pill = page.locator(SEL.pill);
+        const me = page.locator(SEL.me);
+        // 左圆九宫格 x 16–68（52×52）
+        await expectBox(nav, { left: 16, top: 16, width: 52, height: 52 }, 1, `[${theme}] 左圆九宫格`);
         // 长条：x 76，宽 = vw - 32 - 52 - 8 - 52 - 8，高 52
         const pillW = vw - 32 - 52 - 8 - 52 - 8;
         await expectBox(pill, { left: 76, top: 16, width: pillW, height: 52 }, 1, `[${theme}] 长条`);
-        // 导航圆：x = vw - 16 - 52（52×52）
-        await expectBox(nav, { left: vw - 16 - 52, top: 16, width: 52, height: 52 }, 1, `[${theme}] 导航圆`);
+        // 右圆头像：x = vw - 16 - 52（52×52）
+        await expectBox(me, { left: vw - 16 - 52, top: 16, width: 52, height: 52 }, 1, `[${theme}] 右圆头像`);
       }
     });
 
-    /* 验收 1b：头像左边距长条 12±1；⋮ 中心距长条右边 26±1；返回圆和导航圆背景色与长条一致 */
+    /* 验收 1b：返回中心距长条左 26±1；⋮ 中心距长条右边 26±1；左圆背景色与长条一致 */
     test('1b. 长条内部几何与质感', async ({ page }) => {
       for (const theme of ['light', 'dark']) {
         await setup(page, lang, 'home', theme);
         const pill = page.locator(SEL.pill);
         const pillBox = await pill.boundingBox();
-        const avatar = page.locator(SEL.avatar);
-        const avatarBox = await avatar.boundingBox();
-        // 头像左边距长条 12±1
-        expect(Math.abs(avatarBox.x - pillBox.x - 12), `[${theme}] 头像距长条左 12±1`).toBeLessThanOrEqual(1);
+        // 返回：40×40，中心距长条左边 26±1
+        const backBox = await expectBox(page.locator(SEL.back), { width: 40, height: 40 }, 1, `[${theme}] 返回`);
+        expect(Math.abs(backBox.x + backBox.width / 2 - pillBox.x - 26), `[${theme}] 返回中心距长条左 26±1`).toBeLessThanOrEqual(1);
         // Styrigx 在长条内水平、垂直居中（±1）
         const tr = await textRect(page, SEL.brandText);
         expect(Math.abs(tr.cx - (pillBox.x + pillBox.width / 2)), `[${theme}] Styrigx 水平居中`).toBeLessThanOrEqual(1);
@@ -118,13 +118,12 @@ for (const lang of ['zh', 'en']) {
         const moreBox = await more.boundingBox();
         const moreCx = moreBox.x + moreBox.width / 2;
         expect(Math.abs((pillBox.x + pillBox.width) - moreCx - 26), `[${theme}] ⋮ 中心距长条右 26±1`).toBeLessThanOrEqual(1);
-        // 三块背景色一致
+        // 左圆与长条背景色一致
         const colors = await page.evaluate(() => {
           const get = (sel) => getComputedStyle(document.querySelector(sel)).backgroundColor;
-          return { back: get('.sgx-tb-back'), pill: get('.sgx-tb-pill'), nav: get('.sgx-tb-nav') };
+          return { pill: get('.sgx-tb-pill'), nav: get('.sgx-tb-nav') };
         });
-        expect(colors.back, `[${theme}] 返回圆背景与长条一致`).toBe(colors.pill);
-        expect(colors.nav, `[${theme}] 导航圆背景与长条一致`).toBe(colors.pill);
+        expect(colors.nav, `[${theme}] 左圆背景与长条一致`).toBe(colors.pill);
       }
     });
 
@@ -196,19 +195,20 @@ for (const lang of ['zh', 'en']) {
           return m ? parseFloat(getComputedStyle(m).opacity) : 0;
         });
       }, { timeout: 5000 }).toBe(1);
-      // 头像一直显示；Styrigx 隐藏；大标题已完全淡出
+      // 右圆头像一直显示；Styrigx 隐藏；大标题已完全淡出
       const st = await page.evaluate(() => ({
-        avatar: parseFloat(getComputedStyle(document.querySelector('.sgx-tb-avatar')).opacity),
+        avatar: parseFloat(getComputedStyle(document.querySelector('.sgx-tb-me')).opacity),
         brand: parseFloat(getComputedStyle(document.querySelector('.sgx-tb-brand')).opacity),
         text: parseFloat(getComputedStyle(document.querySelector('.sgx-tb-text')).opacity),
         hero: parseFloat(getComputedStyle(document.querySelector('.subpage-hero')).opacity),
       }));
-      expect(st.avatar * st.brand, '头像一直显示').toBe(1);
+      expect(st.avatar, '右圆头像一直显示').toBe(1);
       await expect.poll(() => page.evaluate(() => parseFloat(getComputedStyle(document.querySelector('.sgx-tb-text')).opacity)), { timeout: 5000 }).toBe(0);
       expect(st.hero, '大标题完全淡出').toBe(0);
-      // 三个按钮可见且坐标不变
-      await expectBox(page.locator(SEL.back), { left: 16, top: 16, width: 52, height: 52 }, 1, '滚动后返回圆');
-      await expectBox(page.locator(SEL.nav), { left: vw - 16 - 52, top: 16, width: 52, height: 52 }, 1, '滚动后导航圆');
+      // 两个圆和返回可见且坐标不变
+      await expectBox(page.locator(SEL.nav), { left: 16, top: 16, width: 52, height: 52 }, 1, '滚动后左圆九宫格');
+      await expectBox(page.locator(SEL.me), { left: vw - 16 - 52, top: 16, width: 52, height: 52 }, 1, '滚动后右圆头像');
+      expect(await page.locator(SEL.back).isVisible(), '滚动后返回可见').toBe(true);
       const moreVisible = await page.locator(SEL.more).isVisible();
       expect(moreVisible, '滚动后 ⋮ 可见').toBe(true);
       // 小标题可见
@@ -228,6 +228,10 @@ for (const lang of ['zh', 'en']) {
       // 点九宫点，菜单出现
       await navBtn.click();
       await expect(menu, '导航菜单出现').not.toHaveClass(/hidden/);
+      // 左圆在左半边：菜单左沿与左圆左沿对齐（16±1），在导航圆下方 8px
+      const mb = await menu.boundingBox();
+      expect(Math.abs(mb.x - 16), '导航菜单左对齐 16±1').toBeLessThanOrEqual(1);
+      expect(Math.abs(mb.y - (16 + 52 + 8)), '导航菜单在左圆下方 8px').toBeLessThanOrEqual(1);
       // 有 3 项
       const items = menu.locator('[role="menuitem"]');
       await expect(items, '菜单有 3 项').toHaveCount(3);
@@ -249,23 +253,46 @@ for (const lang of ['zh', 'en']) {
       await expect(bkMenu, '⋮ 菜单打开').not.toHaveClass(/hidden/);
     });
 
-    /* 验收：返回圆行为 */
-    test('9. 返回圆', async ({ page }) => {
-      // 书库首页：返回圆有 data-go-back（exit-to-host 接管）
-      await setup(page, lang, 'home');
-      const backBtn = page.locator(SEL.back);
-      await expect(backBtn, '书库首页有返回圆').toHaveCount(1);
-      const hasGoBack = await backBtn.getAttribute('data-go-back');
-      expect(hasGoBack, '返回圆有 data-go-back').not.toBeNull();
-      // 子页面：返回圆存在
+    /* 验收：返回在长条左侧（书库首页也有，exit-to-host 接管）；旧返回圆、长条里的旧头像都已删除 */
+    test('9. 返回在长条内', async ({ page }) => {
+      for (const pageKey of ['home', 'upload']) {
+        await setup(page, lang, pageKey);
+        const backBtn = page.locator(SEL.back);
+        await expect(backBtn, `[${pageKey}] 长条内有返回`).toHaveCount(1);
+        expect(await backBtn.getAttribute('data-go-back'), `[${pageKey}] 返回有 data-go-back`).not.toBeNull();
+        await expect(page.locator('.sgx-topbar > .sgx-tb-back'), `[${pageKey}] 不应再有返回圆`).toHaveCount(0);
+        await expect(page.locator('.sgx-tb-pill img'), `[${pageKey}] 长条里不应再有头像`).toHaveCount(0);
+      }
+    });
+
+    /* 验收：右圆头像只显示，不可点、不进 Tab 顺序、没有按钮角色 */
+    test('9b. 右圆头像不可交互', async ({ page }) => {
       await setup(page, lang, 'upload');
-      await expect(page.locator(SEL.back), '子页面有返回圆').toHaveCount(1);
+      const r = await page.evaluate(() => {
+        const me = document.querySelector('.sgx-tb-me');
+        const img = me && me.querySelector('img');
+        return me && {
+          tag: me.tagName, role: me.getAttribute('role'), tabindex: me.getAttribute('tabindex'),
+          interactive: !!me.closest('a,button') || !!me.querySelector('a,button'),
+          src: img && img.getAttribute('src'),
+        };
+      });
+      expect(r, '右圆头像存在').not.toBeNull();
+      expect(r.tag, '右圆是 span').toBe('SPAN');
+      expect(r.role, '没有 role').toBeNull();
+      expect(r.tabindex, '没有 tabindex').toBeNull();
+      expect(r.interactive, '不包在链接或按钮里').toBe(false);
+      expect(r.src, '头像读主站 /avatar/').toMatch(/^https:\/\/styrigx\.com\/avatar\//);
+      const url = page.url();
+      await page.locator(SEL.me).click();
+      await page.waitForTimeout(300);
+      expect(page.url(), '点头像不跳转').toBe(url);
     });
   });
 }
 
 /* ===== DeX 验收（1280×800 强制视口）===== */
-test.describe('topbar v2.0 DeX', () => {
+test.describe('topbar v3 DeX', () => {
   test.use({ viewport: { width: 1280, height: 800 } });
   for (const lang of ['zh', 'en']) {
     /* 验收：容器宽 1068±1 且居中，三块尺寸与手机相同 */
@@ -276,13 +303,13 @@ test.describe('topbar v2.0 DeX', () => {
       expect(Math.abs(box.width - 1068), '容器宽 1068±1').toBeLessThanOrEqual(1);
       expect(Math.abs(box.x - (1280 - 1068) / 2), '容器居中').toBeLessThanOrEqual(1);
       // 三块尺寸与手机相同
-      await expectBox(page.locator(SEL.back), { width: 52, height: 52 }, 1, 'DeX 返回圆尺寸');
-      await expectBox(page.locator(SEL.nav), { width: 52, height: 52 }, 1, 'DeX 导航圆尺寸');
+      await expectBox(page.locator(SEL.nav), { left: (1280 - 1068) / 2, width: 52, height: 52 }, 1, 'DeX 左圆九宫格');
+      await expectBox(page.locator(SEL.me), { left: (1280 - 1068) / 2 + 1068 - 52, width: 52, height: 52 }, 1, 'DeX 右圆头像');
       const pillBox = await page.locator(SEL.pill).boundingBox();
       expect(Math.abs(pillBox.height - 52), 'DeX 长条高 52').toBeLessThanOrEqual(1);
       // 三块 y 都是 16
-      const backBox = await page.locator(SEL.back).boundingBox();
-      expect(Math.abs(backBox.y - 16), 'DeX 返回圆 top 16').toBeLessThanOrEqual(1);
+      const navBox = await page.locator(SEL.nav).boundingBox();
+      expect(Math.abs(navBox.y - 16), 'DeX 左圆 top 16').toBeLessThanOrEqual(1);
     });
 
     /* 验收：DeX 标题区按钮位置（106±1） */
