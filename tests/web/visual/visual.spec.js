@@ -103,14 +103,14 @@ for (const theme of ['light', 'dark']) {
       };
     });
     expect(overlap.ok, `页脚文字下边缘(${overlap.footerBottom})应≤胶囊上边缘(${overlap.capTop})`).toBe(true);
-    // 顶栏 v2.0：#site-nav 透明，可见的是返回圆、长条、导航圆三块。深色下三块背景不能是浅色，且必须存在
+    // 顶栏 v3：#site-nav 透明，可见的是左圆九宫格、长条、右圆头像。深色下左圆和长条背景不能是浅色，且必须存在（右圆是头像图，无底色）
     if (theme === 'dark') {
       const topbarBg = await page.evaluate(() => {
         const nav = document.querySelector('#site-nav');
         const bg = (sel) => { const el = document.querySelector(sel); return el ? getComputedStyle(el).backgroundColor : 'missing'; };
         return {
           navBg: nav ? getComputedStyle(nav).backgroundColor : 'missing',
-          blocks: ['.sgx-tb-back', '.sgx-tb-pill', '.sgx-tb-nav'].map((sel) => [sel, bg(sel)]),
+          blocks: ['.sgx-tb-nav', '.sgx-tb-pill'].map((sel) => [sel, bg(sel)]),
         };
       });
       expect(topbarBg.navBg, `#site-nav 应透明: ${topbarBg.navBg}`).toBe('rgba(0, 0, 0, 0)');
